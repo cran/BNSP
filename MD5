@@ -1,0 +1,16 @@
+15cbaf73653953f895d2f211ddf95860 *DESCRIPTION
+416c4c9f9819315720ad1dc4cd31cba8 *NAMESPACE
+0b86f2a006d3fe8e5807840953226af9 *R/bnpglm.R
+63589571e7e830d0ffb719e3b1f65e9a *R/print.bnp.R
+51963ed1482880dc991a7a47487539b6 *data/simD.rda
+b2b1753fac7caaea36e8b1ebece84df4 *man/BNSP-package.Rd
+b0b4799c171fb51beaf5c2f99536c47e *man/bnpglm.Rd
+1d7cbf2452717d9eaa277cc7981b7fbb *man/simD.rd
+85bd6fb2d25bd1bf2d5d30087a0ff2eb *src/Makevars
+348b7fec91033baebbc42cca243b86e5 *src/OneResLtnt.c
+511c004cf4823bc2cb8b9f1805d86152 *src/SpecOneRL.h
+58eeb43d50034144b374226a5bc18c5a *src/matalg.h
+980ebda9513a806e89e5128bc8fc094f *src/mathm.h
+14b8466adcfd9145852613123afe8e1f *src/other.functions.h
+1d8ac527ca0fe15dc7c1faf21550ecfe *src/pdfs.h
+76d104f7135116e09226f5bbb7200ea7 *src/sampling.h

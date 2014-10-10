@@ -1,0 +1,5 @@
+useDynLib(BNSP)
+
+export(bnpglm)
+
+S3method(print, bnp)

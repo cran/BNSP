@@ -1,0 +1,329 @@
+/* sampling.h Includes sampling methods
+ * Copyright (C) 2014  Georgios Papageorgiou, gpapageo@gmail.com
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+//Sample from a univariate truncated normal distribution. Arguments: seed, lower and upper bounds, subject, store latent
+void sampleTUN(unsigned long int s, int i, double tnmean, double tnsd, double lower, double upper, double *latentx){
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+
+    if ((lower - upper) == 0)
+        latentx[i] = lower;
+    else{
+        latentx[i] = lower - 1.0;
+        if ((lower < tnmean) && (upper < tnmean)){
+            while ((trunc(pow(10,10)*(latentx[i] - lower)) < 0) || (trunc(pow(10,10)*(latentx[i] - upper)) > 0))
+                latentx[i] = tnmean - gsl_ran_gaussian_tail(r,-upper+tnmean,tnsd);
+        }
+        else if ((lower > tnmean) && (upper > tnmean)){
+            while ((trunc(pow(10,10)*(latentx[i] - lower)) < 0) || (trunc(pow(10,10)*(latentx[i] - upper)) > 0))
+                latentx[i] = tnmean + gsl_ran_gaussian_tail(r,lower-tnmean,tnsd);
+        }
+        else{
+            while ((trunc(pow(10,10)*(latentx[i] - lower)) < 0) || (trunc(pow(10,10)*(latentx[i] - upper)) > 0))
+                latentx[i] = tnmean+gsl_ran_gaussian(r,tnsd);
+        }
+    }
+    gsl_rng_free(r);
+}
+
+//Sample from a multivariate truncated normal distribution. Arguments: seed, dim, lower bounds,
+//upper bounds, sample from previous iteration, mean, covariance, tolerance.
+//Samples are stored in gsl vector y.
+void sampleTMN(unsigned long int s, int p, double *L, double *U, gsl_vector *y, gsl_vector *m,
+               gsl_matrix *Sigma, double tol){
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+    int i;
+    double res1, res2, res3, temp;
+    double cm[2*p];
+    gsl_vector *V1, *V2;
+    gsl_matrix *cSigma, *V;
+    V1 = gsl_vector_alloc(p);
+    V2 = gsl_vector_alloc(p);
+    cSigma = gsl_matrix_alloc(p,p);
+    V = gsl_matrix_alloc(p,p);
+    gsl_matrix_memcpy(V,Sigma);
+    //ginv(p,tol,V);
+    Inverse(p,V);
+    gsl_vector_view Sigmai;
+    gsl_vector_view Vi;
+    for (i=0; i < p; i++){
+        gsl_vector_memcpy(V1,y);
+        gsl_matrix_memcpy(cSigma,Sigma);
+        gsl_vector_sub(V1,m);
+        gsl_vector_set(V1,i,0);
+        gsl_blas_dgemv(CblasNoTrans,1.0,V,V1,0.0,V2);
+        gsl_vector_set(V2,i,0);
+        Sigmai = gsl_matrix_row(cSigma,i);
+        gsl_vector_set(&Sigmai.vector,i,0);
+        gsl_blas_ddot(&Sigmai.vector,V2,&res1);
+        Vi = gsl_matrix_row(V,i);
+        gsl_blas_ddot(&Sigmai.vector,&Vi.vector,&res2);
+        gsl_blas_ddot(&Vi.vector,V1,&res3);
+        cm[i] = gsl_vector_get(m,i) + res1 - res2*res3/gsl_matrix_get(V,i,i);
+        gsl_blas_dgemv(CblasNoTrans,1.0,V,&Sigmai.vector,0.0,V1);
+        gsl_blas_ddot(&Sigmai.vector,V1,&res1);
+        cm[i+p] = gsl_matrix_get(Sigma,i,i) - res1 + res2*res2/gsl_matrix_get(V,i,i);
+        temp = L[i]-0.01; // temp replaces y[i] to avoid using gsl get and set
+        if ((L[i] < cm[i]) && (U[i] < cm[i])){
+            while ((trunc(pow(10,10)*(temp - L[i])) < 0) || (trunc(pow(10,10)*(temp - U[i])) > 0))
+                temp = cm[i]-gsl_ran_gaussian_tail(r,-U[i]+cm[i],sqrt(cm[i+p]));
+        }
+        else if ((L[i] > cm[i]) && (U[i] > cm[i])){
+            while ((trunc(pow(10,10)*(temp - L[i])) < 0) || (trunc(pow(10,10)*(temp - U[i])) > 0))
+                temp = cm[i]+gsl_ran_gaussian_tail(r,L[i]-cm[i],sqrt(cm[i+p]));
+        }
+        else{
+            while ((trunc(pow(10,10)*(temp - L[i])) < 0) || (trunc(pow(10,10)*(temp - U[i])) > 0))
+                temp = cm[i]+gsl_ran_gaussian(r,sqrt(cm[i+p]));
+        }
+        gsl_vector_set(y,i,temp);
+    }
+    gsl_vector_free(V1);
+    gsl_vector_free(V2);
+    gsl_matrix_free(cSigma);
+    gsl_matrix_free(V);
+    gsl_rng_free(r);
+}
+
+//Sample from a multivariate normal distribution. Arguments: seed, dim, vector to store sample, mean, covariance, tolerance.
+//Samples are stored in gsl vector y.
+void sampleMN(unsigned long int s, int p, gsl_vector *y, gsl_vector *mu, gsl_matrix *Sigma, double tol){
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+    int i;
+    gsl_matrix *SigmaHalf = gsl_matrix_alloc(p,p);
+    gsl_vector *temp = gsl_vector_alloc(p);
+    gsl_matrix_memcpy(SigmaHalf,Sigma);
+    matHalf(p,tol,SigmaHalf);
+    for (i=0; i < p; i++) // N(0,1)
+	    gsl_vector_set(temp,i,gsl_ran_gaussian(r,1));
+    gsl_blas_dgemv(CblasNoTrans,1.0,SigmaHalf,temp,0.0,y);
+    gsl_vector_add(y,mu);
+    gsl_matrix_free(SigmaHalf);
+    gsl_vector_free(temp);
+    gsl_rng_free(r);
+}
+
+//Sample from a Wishart distribution. Takes as input seed s, dimension p, degrees of freedom n, scale matrix scale, random
+//variate rw. The random variate is stored in rw.
+void rwish(unsigned long int s, int p, double n, gsl_matrix *scale, gsl_matrix *rw){
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+
+    int i,j;
+
+    // Declare matrices
+    gsl_matrix *CC, *Z, *Prod1;
+    CC = gsl_matrix_alloc(p,p);
+    Z = gsl_matrix_calloc(p,p);
+    Prod1 = gsl_matrix_alloc(p,p);
+
+    // Set matrix CC equal to the scale matrix
+    gsl_matrix_memcpy(CC,scale);
+
+    // Cholesky decomposition
+    //gsl_set_error_handler_off();
+    gsl_linalg_cholesky_decomp(CC);
+    //gsl_set_error_handler(NULL);
+
+    // Make CC lower triangular (gsl returns full matrix)
+    for (i = 1; i < p; i++)
+         for (j = 0; j < i; j++)
+           gsl_matrix_set(CC,i,j,0.0);
+
+    // Continue with matrix Z which require Chi-sq random variates
+    for (i = 0; i < p; i++)
+       gsl_matrix_set(Z, i, i, sqrt(gsl_ran_chisq(r,(n-i))));
+
+    for (i = 0; i < (p-1); i++)
+       for (j = (i+1); j < p; j++)
+          gsl_matrix_set(Z,i,j,gsl_ran_ugaussian(r));
+
+    // Finally, the random variate is given by crossprod(Z %*% CC) = t(Z%*%CC) %*% Z%*%CC
+    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,Z,CC,0.0,Prod1);
+    gsl_blas_dgemm(CblasTrans,CblasNoTrans,1.0,Prod1,Prod1,0.0,rw);
+
+    // Free up gsl objects
+    gsl_matrix_free(CC);
+    gsl_matrix_free(Z);
+    gsl_matrix_free(Prod1);
+    gsl_rng_free(r);
+}
+
+//Given seed, sample size, number of components, (a,b) prior parameters, number of subjects per cluster, and current value
+//of the concentration parameter, the function returns a new value for the concentration paramter
+double updateAlpha(unsigned long int s, int n, int ncomp, double a, double b, double TruncAlpha, int *nmembers, double alpha){
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+
+    int h;
+    double eta, pieta, unifRV, newalpha, K;
+
+    eta = gsl_ran_beta(r,alpha+1.0,(double) n);
+
+    K = 0.0;
+    for (h = 0; h < ncomp; h++)
+        if (nmembers[h] > 0) K++;
+
+    pieta = (a+K-1.0)/(a+K-1.0+n*(b-log(eta)));
+
+    unifRV = gsl_ran_flat(r,0.0,1.0);
+
+    newalpha = 0.0;
+
+    while (newalpha < TruncAlpha){
+        if (unifRV < pieta)
+            newalpha = gsl_ran_gamma(r,a+K,(1.0/(b-log(eta))));
+        else
+            newalpha = gsl_ran_gamma(r,a+K-1.0,(1.0/(b-log(eta))));
+    }
+    gsl_rng_free(r);
+
+    return(newalpha);
+}
+
+//Given component  allocation and eta that plays the role of the mean, update z: for spatial only
+void updatez(unsigned long int s, int n, int ncomp, int *compAlloc, double eta[ncomp][n], double z[ncomp][n]){
+    int j,h;
+    double muZ;
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+
+    for (j = 0; j < n; j++){
+        for (h = 0; h < ncomp; h++){
+            muZ = eta[h][j];
+            if ((h < compAlloc[j]) && (muZ > 0)) z[h][j] = muZ - gsl_ran_gaussian_tail(r, muZ, 1.0);
+            if ((h < compAlloc[j]) && (muZ < 0)){
+                z[h][j] = 10.0;
+                while (z[h][j] > 0) {z[h][j] = muZ + gsl_ran_gaussian(r,1);}
+            }
+            if ((h == compAlloc[j]) && (muZ > 0)){
+                z[h][j] = -10.0;
+                while (z[h][j] < 0) {z[h][j] = muZ + gsl_ran_gaussian(r,1);}
+            }
+            if ((h == compAlloc[j]) && (muZ < 0)) z[h][j] = muZ + gsl_ran_gaussian_tail(r, -muZ, 1.0);;
+            if (h > compAlloc[j]) z[h][j] = muZ + gsl_ran_gaussian(r,1);
+        }
+    }
+    gsl_rng_free(r);
+}
+
+//Impute GMRF
+void imputeGMRF(unsigned long int s, int n, int ncomp, double alphau, double phiu, double lu, double *eigenvl, gsl_matrix *qij,
+                double z[ncomp][n], double eta[ncomp][n]){
+
+    int k, h, i;
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+
+    gsl_matrix *dgnl = gsl_matrix_calloc(n,n);
+    gsl_matrix *WM = gsl_matrix_alloc(n,n);
+    gsl_matrix *WM2 = gsl_matrix_alloc(n,n);
+    gsl_vector *W = gsl_vector_alloc(n);
+    gsl_vector *W1 = gsl_vector_alloc(n);
+    gsl_vector *V = gsl_vector_alloc(n);
+
+    for (k = 0; k < n; k++)
+        gsl_matrix_set(dgnl,k,k,1/sqrt(phiu*phiu*lu*eigenvl[k]+phiu*phiu+1.0));
+
+    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,qij,dgnl,0.0,WM2);
+    gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,WM2,qij,0.0,WM);
+    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,WM,WM,0.0,WM2);
+
+    //Impute Gaussian Markov random fields
+    for (h = 0; h < ncomp; h++){
+        for (i = 0; i < n; i++) // N(0,1)
+	        gsl_vector_set(W,i,gsl_ran_gaussian(r,1));
+        for (i = 0; i < n; i++)
+            gsl_vector_set(V,i,alphau*phiu*phiu+z[h][i]);
+        gsl_blas_dgemv(CblasNoTrans,1.0,WM,W,0.0,W1);
+        gsl_blas_dgemv(CblasNoTrans,1.0,WM2,V,1.0,W1);
+        for (i = 0; i < n; i++)
+            eta[h][i] = gsl_vector_get(W1,i);
+    }
+    gsl_matrix_free(dgnl); gsl_matrix_free(WM); gsl_matrix_free(WM2);
+    gsl_vector_free(W); gsl_vector_free(W1); gsl_vector_free(V);
+    gsl_rng_free(r);
+}
+
+double updatespatialalpha(unsigned long int s, int n, int ncomp, int *nmembers, double phiu, double mualpha, double sigmalpha,
+                          double eta[ncomp][n], double nClusters){
+    int h, i;
+    double sumeta, alphau;
+
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+
+    sumeta = 0.0;
+
+    for (h = 0; h < ncomp; h++){
+        if (nmembers[h] > 0){
+            for (i = 0; i < n; i++)
+                sumeta += eta[h][i];
+        }
+    }
+
+    alphau = (phiu*phiu*sumeta+mualpha/(sigmalpha*sigmalpha))/(n*nClusters*phiu*phiu+1/(sigmalpha*sigmalpha)) +
+             gsl_ran_gaussian(r,1/sqrt(n*nClusters*phiu*phiu+1/(sigmalpha*sigmalpha)));
+
+    gsl_rng_free(r);
+    return(alphau);
+}
+
+double updatespatialphiu(unsigned long int s, int n, double lu, double alphaphi,
+                         double betaphi, double nClusters, double *BS){
+    double BS1, BS2, phisq, phiu;
+
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+
+    BS1 = BS[0]; BS2 = BS[1];
+
+    phisq = gsl_ran_gamma(r, (double) alphaphi+n*nClusters/2.0, 1.0/(betaphi+0.5*(BS1+lu*BS2)));
+    phiu = sqrt(phisq);
+
+    gsl_rng_free(r);
+    return(phiu);
+}
+
+double updatespatiallu(unsigned long int s, int n, double *eigenvl, double lu, double steplu, double phiu,
+                       double Mlu, double nClusters, double *BS){
+    int i;
+    double proplu, Detr, logRt, Rt, ludecision, BS2;
+
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+
+    BS2 = BS[1];
+
+    proplu = lu + gsl_ran_gaussian(r,steplu);
+
+    if ((proplu < Mlu) && (proplu > 0.0)){
+        Detr = 0.0;
+        for (i = 0; i < n; i++)
+            Detr += log(eigenvl[i]*proplu+1)-log(eigenvl[i]*lu+1);
+        logRt = Detr*nClusters/2-(phiu*phiu/2)*BS2*(proplu-lu);
+        Rt = exp(logRt);
+        if (Rt > 1.0) Rt = 1.0;
+        ludecision = gsl_ran_flat(r, 0.0, 1.0);
+        if (ludecision < Rt) lu = proplu;
+    }
+    gsl_rng_free(r);
+    return(lu);
+}

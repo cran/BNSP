@@ -1,0 +1,6 @@
+2014-10-27 (Version 1.0.1) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
+
+  * Added 2 familes of distributions for the response: 1. negative binomial and 2. beta binomial
+  * Added function dnorm.pois()
+
+

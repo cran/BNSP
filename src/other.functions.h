@@ -57,36 +57,100 @@ double invlogit(double p){
     return exp(p)/(1+exp(p));
 }
 
-//Initialize Gamma coefficients: they are set equal to the mean of the cluster;
+//Initialize Xi coefficients. For Poisson and Binomial mixtures they are set equal to the mean of the cluster;
 //for empty clusters, they are set randomly to mean + error.
-void initGLMOneResLtnt(unsigned long int s, int *Y, double *H, int n, int p, int ncomp,
-                       int *nmembers, int *compAlloc, double *gamma, double Ymean, int family){
-    double sumhN, sumhD;
+void initGLMOneResLtnt12(unsigned long int s, int *Y, double *H, int n, int p, int ncomp, int nRespPars,
+                         int *nmembers, int *compAlloc, double Xi[ncomp][nRespPars], double Ymean, int family){
+    double sumhY1, sumhH;
     int i, h;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
     gsl_rng_set(r,s);
     for (h = 0; h < ncomp; h++){
         if (nmembers[h] > 0){
-            sumhN = 0.0;
-            sumhD = 0.0;
+            sumhY1 = 0.0;
+            sumhH = 0.0;
             for (i = 0; i < n; i++){
                 if (compAlloc[i]==h){
-                    sumhN += (double) Y[i];
-                    sumhD += H[i];
+                    sumhY1 += (double) Y[i];
+                    sumhH += H[i];
                 }
             }
-            if (sumhN > 0)
-                gamma[h] = sumhN/sumhD;
+            if (sumhY1 > 0)
+                Xi[h][0] = sumhY1/sumhH;
             else
-                gamma[h] = (sumhN+1.0)/sumhD;
+                Xi[h][0] = 1.0/sumhH;
         }
-        if (nmembers[h] == 0){
-            if (family == 1) gamma[h] = exp(log(Ymean) + gsl_ran_gaussian(r,1.0));
-            if (family == 2) gamma[h] = invlogit(logit(Ymean) + gsl_ran_gaussian(r,1.0));
+        else if (nmembers[h] == 0){
+                 if (family == 1) Xi[h][0] = exp(log(Ymean) + gsl_ran_gaussian(r,1.0));
+                 if (family == 2) Xi[h][0] = invlogit(logit(Ymean) + gsl_ran_gaussian(r,1.0));
         }
     }
     gsl_rng_free(r);
 }
+
+//Initialize Xi coefficients for negative binomial and beta binomial mixtures
+void initGLMOneResLtnt34(unsigned long int s, int *Y, double *H, int n, int p, int ncomp, int nRespPars,
+                         int *nmembers, int *compAlloc, double Xi[ncomp][nRespPars], int family){
+    double sumhY1, sumhY2, sumhH;
+    double Ybarh, Hbarh, Yvarh;
+    double Ymean, Hmean, Yvar;
+    int i, h;
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+    sumhY1 = 0.0;
+    sumhY2 = 0.0;
+    sumhH = 0.0;
+    for (i = 0; i < n; i++){
+        sumhY1 += (double) Y[i];
+        sumhY2 += (double) Y[i]*Y[i];
+        sumhH += H[i];
+    }
+    Ymean = sumhY1 / n;
+    Hmean = sumhH / n;
+    Yvar = (sumhY2 - n*Ymean*Ymean)/(n-1);
+    for (h = 0; h < ncomp; h++){
+        if (nmembers[h] > 1){ //problem with variance when n=1
+            sumhY1 = 0.0;
+            sumhY2 = 0.0;
+            sumhH = 0.0;
+            for (i = 0; i < n; i++){
+                if (compAlloc[i]==h){
+                    sumhY1 += (double) Y[i];
+                    sumhY2 += (double) Y[i]*Y[i];
+                    sumhH += H[i];
+                }
+            }
+            Ybarh = sumhY1 / nmembers[h];
+            if (Ybarh == 0.0) Ybarh = 1.0 / nmembers[h];
+            Hbarh = sumhH / nmembers[h];
+            Yvarh = (sumhY2 - nmembers[h]*Ybarh*Ybarh)/(nmembers[h]-1);
+            if (family == 3){
+                Xi[h][1] = Hbarh * Ybarh / (Yvarh - Ybarh);
+                if (Xi[h][1] < 0.1) Xi[h][1] = 0.1;
+                Xi[h][0] = Xi[h][1] * Ybarh / Hbarh;
+            }
+            else if (family == 4){
+                Xi[h][0] = 2;//(-Ybarh*Yvarh+Ybarh*Ybarh*(Hbarh-Ybarh))/(Hbarh*Yvarh-Ybarh*(Hbarh-Ybarh));
+                if (Xi[h][0] < 0.1) Xi[h][0] = 0.1;
+                Xi[h][1] = Xi[h][0] * (Hbarh/Ybarh-1);
+            }
+        }
+        else if (nmembers[h] < 2){
+            if (family == 3){
+                Xi[h][1] = Hmean * Ymean / (Yvar - Ymean) * exp(gsl_ran_gaussian(r,1.0));
+                if (Xi[h][1] < 0.1) Xi[h][1] = 0.1;
+                Xi[h][0] = Xi[h][1] * Ymean / Hmean * exp(gsl_ran_gaussian(r,1.0));
+            }
+            else if (family == 4){
+                Xi[h][0] = (Ymean*Yvar-Ymean*Ymean*(Hmean-Ymean))/(Hmean*Yvar-Ymean*(Hmean-Ymean)) * exp(gsl_ran_gaussian(r,1.0));
+                if (Xi[h][0] < 0.1) Xi[h][0] = 0.1;
+                Xi[h][1] = Xi[h][0] * (Hmean/Ymean-1) * exp(gsl_ran_gaussian(r,1.0));
+            }
+        }
+    }
+    gsl_rng_free(r);
+}
+
 
 //Initialize Poisson regression coefs: intercepts are set equal to the mean SMR of the cluster;
 //for empty clusters they are set randomly to mean SMR + error. Slopes are set to zero.
@@ -223,40 +287,47 @@ void calcLimits(double *X, int *Y, double *E, int n, int nreg, int nres, int i, 
 
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith sampling unit,
 //given responses Y, offsets H, sampling unit, rates, and two doubles where lower and upper limits are stored.
-void calcGLMLimits(int *Y, double *H, int i, double gamma, double *lower, double *upper, int family){
+void calcGLMLimits(int *Y, double *H, int i, double *Xi, double *lower, double *upper, int family){
         double lmt = 999.99;
         if (Y[i]==0)
             *lower = -lmt;
         else{
-            if (family == 1) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i]-1,H[i]*gamma));
-            else if (family == 2) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i]-1,gamma,(int) H[i]));
+            if (family == 1) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i]-1,H[i]*Xi[0]));
+            else if (family == 2) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i]-1,Xi[0],(int) H[i]));
+            else if (family == 3) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i]-1,Xi[1]/(H[i]+Xi[1]),Xi[0]));
+            else if (family == 4) *lower = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i]-1,Xi[0],Xi[1]));
         }
         if (*lower < -lmt) *lower = -lmt;
         if (*lower > lmt) *lower = lmt;
-        if (family == 1) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i],H[i]*gamma));
-        else if (family == 2) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i],gamma,(int) H[i]));
+        if (family == 1) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i],H[i]*Xi[0]));
+        else if (family == 2) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i],Xi[0],(int) H[i]));
+        else if (family == 3) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i],Xi[1]/(H[i]+Xi[1]),Xi[0]));
+        else if (family == 4) *upper = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i],Xi[0],Xi[1]));
         if (*upper < -lmt) *upper = -lmt;
         if (*upper > lmt) *upper = lmt;
 }
 
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith predictive scenario,
 //given offsets H, value, scenario, rates, and two doubles where lower and upper limits are stored.
-void calcGLMLimitsPred(double *H, int k, int i, double gamma, double *lower, double *upper, int family){
+void calcGLMLimitsPred(double *H, int k, int i, double *Xi, double *lower, double *upper, int family){
         double lmt = 999.99;
         if (k==0)
             *lower = -lmt;
         else{
-            if (family == 1) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(k-1,H[i]*gamma));
-            else if (family == 2) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(k-1,gamma,(int) H[i]));
+            if (family == 1) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(k-1,H[i]*Xi[0]));
+            else if (family == 2) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(k-1,Xi[0],(int) H[i]));
+            else if (family == 3) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(k-1,Xi[1]/(H[i]+Xi[1]),Xi[0]));
+            else if (family == 4) *lower = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],k-1,Xi[0],Xi[1]));
         }
         if (*lower < -lmt) *lower = -lmt;
         if (*lower > lmt) *lower = lmt;
-        if (family == 1) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(k,H[i]*gamma));
-        else if (family == 2) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(k,gamma,(int) H[i]));
+        if (family == 1) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(k,H[i]*Xi[0]));
+        else if (family == 2) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(k,Xi[0],(int) H[i]));
+        else if (family == 3) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(k,Xi[1]/(H[i]+Xi[1]),Xi[0]));
+        else if (family == 4) *upper = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],k,Xi[0],Xi[1]));
         if (*upper < -lmt) *upper = -lmt;
         if (*upper > lmt) *upper = lmt;
 }
-
 
 //Returns c_{y-1} (lower) and c_{y} (upper) limits for 1 sampling unit, for one count and one binomial response,
 //given design matrix X, responses Y, offsets E, sample size, vector with number of regressors, cumulative number of regressors,

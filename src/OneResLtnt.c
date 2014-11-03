@@ -33,6 +33,7 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_eigen.h>
 #include <gsl/gsl_statistics.h>
+#include <gsl/gsl_sf_gamma.h>
 #include "matalg.h"
 #include "pdfs.h"
 #include "sampling.h"
@@ -46,7 +47,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                 double *Vprior, double *Vdf1,
                 double *munu, double *sigmanu,
                 double *mumu, double *sigmamu,
-                double *alphagamma1, double *betagamma1,
+                double *alphaXi, double *betaXi,
                 double *Alphaa1, double *Alphab1, double *TruncAlpha1,
                 double *xbar, double *xsd, double *Ymean,
                 int *family1, int *sampler1,
@@ -66,7 +67,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     int burn = burn1[0]; // integer burn-in period
 
     //Family
-    int family = family1[0]; //1=poisson, 2=binomial
+    int family = family1[0]; //1=poisson, 2=binomial, 3=negative binomial, 4=beta binomial
     int sampler = sampler1[0]; //1=slice, 2=truncated
 
     //Declare variables for loops: h for components, k,j for covariates, i for subjects, sw for sweeps
@@ -77,6 +78,8 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     int p = p1[0]; // number of covariates
     int ncomp = ncomp1[0]; //number of clusters/components
     int npred = npred1[0]; //number of predictions
+    int nRespPars = 1; // number of parameters in response pmf
+    if (family > 2) nRespPars = 2;
 
     //Tolerance level
     double tol = 0.0001; //tolerance level for eigen values when inverting matrices
@@ -120,8 +123,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     gHalfInv(p,tol,SigmaMuHalf);
     gsl_blas_dgemv(CblasNoTrans,1.0,SigmaMuInv,MuMu,0.0,SIMmu); // Sigma_mu^{-1} Mu_mu
     // - 4 - A. gamma ~ Gamma(alpha,beta) for poisson. B. gamma ~ Beta(alpha,beta) for binomial
-    double alphagamma = alphagamma1[0];
-    double betagamma = betagamma1[0];
+    // Directly use arguments of the function
     // - 5 - concentration parameter alpha ~ Gamma(a,b) I[alpha>c]
     double Alphaa = Alphaa1[0];
     double Alphab = Alphab1[0];
@@ -146,7 +148,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     out_file4 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.muh.txt");
     out_file5 = fopen(path_name, "wt");
-    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.gammah.txt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.xih.txt");
     out_file6 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.alpha.txt");
     out_file7 = fopen(path_name, "wt");
@@ -165,7 +167,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     double SigmahI[ncomp][p*p]; // to store \Sigma_{h}^{-1}
     double nuh[ncomp][p]; // to store nu
     double muh[ncomp][p]; // mu_h
-    double gamma[ncomp]; // GLM mean
+    double Xi[ncomp][nRespPars]; // GLM mean
     double alpha; //concentration parameter
     int compAlloc[n]; // allocation
     int nmembers[ncomp]; // number of cluster members
@@ -180,7 +182,9 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     double minU, sumPIh;
     int nUpdated, upperL;
     double latentx[n]; // continuous latext variables underlying discrete ones
-    double gammaC, gammaP, gammaLC, gammaLP, cyC, cyP, cymoC, cymoP, Acp, NAcp, DAcp; //MH  step
+    double XiC[nRespPars];
+    double XiP[nRespPars];
+    double XiLC, XiLP, cyC, cyP, cymoC, cymoP, Acp, NAcp, DAcp; //MH  step
     double nuSInu, nuSIxmm; //nu^T S^-1 nu and nu^T SI (x-mu)
     double storenuSInu[ncomp]; // to store nu^T Sigma^(-1) nu
     double storenuSI[ncomp][p]; // to store nu^T Sigma^(-1)
@@ -188,7 +192,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     double sumxsq; // sum of cluster latentx[i]^2
     double toths[p];  // total of clusters: x-mu-y1^* * nu
     double temp, temp2;
-    int temp3, temp4;
+    int temp3;
     double lower, upper;
 
     // Declare and allocate gsl vectors and matrices
@@ -275,14 +279,15 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
         for (k = 0; k < p; k++)
             nuh[h][k] = 0.0;
 
-    // Step 7: Initialize parameters gamma_h of the response variables
+    // Step 7: Initialize parameters Xi_h of the response variables
     s = gsl_ran_flat(r,1.0,100000);
-    initGLMOneResLtnt(s,Y,H,n,p,ncomp,nmembers,compAlloc,gamma,Ymean[0],family);
+    if (family < 3) initGLMOneResLtnt12(s,Y,H,n,p,ncomp,nRespPars,nmembers,compAlloc,Xi,Ymean[0],family);
+    if (family > 2) initGLMOneResLtnt34(s,Y,H,n,p,ncomp,nRespPars,nmembers,compAlloc,Xi,family);
 
     // Step 8: Inpute latentx from N(0,1)*I
     for (i = 0; i < n; i++){
-        gammaC = gamma[compAlloc[i]];
-        calcGLMLimits(Y,H,i,gammaC,&lower,&upper,family);
+        for (j = 0; j < nRespPars; j++) XiC[j] = Xi[compAlloc[i]][j];
+        calcGLMLimits(Y,H,i,XiC,&lower,&upper,family);
         s = gsl_ran_flat(r,1.0,100000);
         sampleTUN(s,i,0.0,1.0,lower,upper,latentx);
     }
@@ -291,7 +296,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     for (sw = 0; sw < sweeps; sw++){
 
         if (sw==0) Rprintf("%i %s \n",sw, "posterior samples...");
-        if (((sw+1) % 1000)==0) Rprintf("%i %s \n",sw+1, "posterior samples...");
+        if (((sw+1) % 500)==0) Rprintf("%i %s \n",sw+1, "posterior samples...");
 
         //Generate all cluster parameters
         nmb = 0; // counts nmembers up to cluster h
@@ -381,13 +386,18 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
             for (k = 0; k < p; k++)
                 muh[h][k] = gsl_vector_get(U1,k);
 
-            // - 6 - gamma_h
+            // - 6 - Xi_h
             // Current and proposed gammas and their likelihoods
-            gammaC = gamma[h];
-            if (family == 1) gammaP = gsl_ran_gamma(r,gammaC*gammaC,1/gammaC); //has mean gammaC and variance=1
-            else if (family == 2) gammaP = gsl_ran_beta(r,gammaC+1.0,2.0-gammaC); // has mode gammaC
-            gammaLC = 0.0;
-            gammaLP = 0.0;
+            for (k = 0; k < nRespPars; k++)
+                XiC[k] = Xi[h][k];
+            if (family == 1) XiP[0] = gsl_ran_gamma(r,XiC[0]*XiC[0],1/XiC[0]); //has mean XiC[0] and variance=1
+            else if (family == 2) XiP[0] = gsl_ran_beta(r,XiC[0]+1.0,2.0-XiC[0]); // has mode XiC[0]
+            else if (family == 3 || family == 4)
+                for (k = 0; k < nRespPars; k++)
+                    XiP[k] = gsl_ran_gamma(r,XiC[k]*XiC[k],1/XiC[k]);
+
+            XiLC = 0.0;
+            XiLP = 0.0;
 
             gsl_matrix_memcpy(Dg2,Th); // copy Th: sample from rwish
             Inverse(p,Dg2);
@@ -415,36 +425,52 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                 storenuSI[h][k] = gsl_vector_get(nuSI,k);
 
             //MH algorithm
-            if (gammaP > 0.00001){
+            temp3 = 0;
+            for (k = 0; k < nRespPars; k++)
+                if (XiP[k] > 0.00001) temp3 +=1;
+            if (temp3 == nRespPars){
                 for (i = 0; i < n; i++){
                     if (compAlloc[i]==h){
                         nuSIxmm = 0.0;
                         for (k = 0; k < p; k++)
                             nuSIxmm += gsl_vector_get(nuSI,k)*(X[k*n+i]-muh[h][k]);
-                        calcGLMLimits(Y,H,i,gammaC,&cymoC,&cyC,family);
-                        calcGLMLimits(Y,H,i,gammaP,&cymoP,&cyP,family);
-                        gammaLC += log(gsl_cdf_ugaussian_P((cyC-nuSIxmm)/sqrt(1-nuSInu)) - gsl_cdf_ugaussian_P((cymoC-nuSIxmm)/sqrt(1-nuSInu)));
-                        gammaLP += log(gsl_cdf_ugaussian_P((cyP-nuSIxmm)/sqrt(1-nuSInu)) - gsl_cdf_ugaussian_P((cymoP-nuSIxmm)/sqrt(1-nuSInu)));
+                        calcGLMLimits(Y,H,i,XiC,&cymoC,&cyC,family);
+                        calcGLMLimits(Y,H,i,XiP,&cymoP,&cyP,family);
+                        XiLC += log(gsl_cdf_ugaussian_P((cyC-nuSIxmm)/sqrt(1-nuSInu)) - gsl_cdf_ugaussian_P((cymoC-nuSIxmm)/sqrt(1-nuSInu)));
+                        XiLP += log(gsl_cdf_ugaussian_P((cyP-nuSIxmm)/sqrt(1-nuSInu)) - gsl_cdf_ugaussian_P((cymoP-nuSIxmm)/sqrt(1-nuSInu)));
                     }
                 }
                 if (family == 1){
-                    NAcp = exp(gammaLP)*gsl_ran_gamma_pdf(gammaP,alphagamma,1/betagamma)*
-                           gsl_ran_gamma_pdf(gammaC,gammaP*gammaP,1/gammaP);
-                    DAcp = exp(gammaLC)*gsl_ran_gamma_pdf(gammaC,alphagamma,1/betagamma)*
-                           gsl_ran_gamma_pdf(gammaP,gammaC*gammaC,1/gammaC);
+                    NAcp = exp(XiLP)*gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
+                           gsl_ran_gamma_pdf(XiC[0],XiP[0]*XiP[0],1/XiP[0]);
+                    DAcp = exp(XiLC)*gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
+                           gsl_ran_gamma_pdf(XiP[0],XiC[0]*XiC[0],1/XiC[0]);
                 }
                 else if (family == 2){
-                    NAcp = exp(gammaLP)*gsl_ran_beta_pdf(gammaP,alphagamma,betagamma)*
-                           gsl_ran_beta_pdf(gammaC,gammaP+1,2-gammaP);
-                    DAcp = exp(gammaLC)*gsl_ran_beta_pdf(gammaC,alphagamma,betagamma)*
-                           gsl_ran_beta_pdf(gammaP,gammaC+1,2-gammaC);
+                    NAcp = exp(XiLP)*gsl_ran_beta_pdf(XiP[0],alphaXi[0],betaXi[0])*
+                           gsl_ran_beta_pdf(XiC[0],XiP[0]+1,2-XiP[0]);
+                    DAcp = exp(XiLC)*gsl_ran_beta_pdf(XiC[0],alphaXi[0],betaXi[0])*
+                           gsl_ran_beta_pdf(XiP[0],XiC[0]+1,2-XiC[0]);
+                }
+                if (family == 3 || family == 4){
+                    NAcp = exp(XiLP)*gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
+                                     gsl_ran_gamma_pdf(XiP[1],alphaXi[1],1/betaXi[1])*
+                           gsl_ran_gamma_pdf(XiC[0],XiP[0]*XiP[0],1/XiP[0])*gsl_ran_gamma_pdf(XiC[1],XiP[1]*XiP[1],1/XiP[1]);
+                    DAcp = exp(XiLC)*gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
+                                     gsl_ran_gamma_pdf(XiC[1],alphaXi[1],1/betaXi[1])*
+                           gsl_ran_gamma_pdf(XiP[0],XiC[0]*XiC[0],1/XiC[0])*gsl_ran_gamma_pdf(XiP[1],XiC[1]*XiC[1],1/XiC[1]);
                 }
                 temp = NAcp/DAcp;
                 if (temp > 1.0) Acp = 1.0;else Acp = temp;
                 temp = gsl_ran_flat(r,0.0,1.0);
-                if (Acp > temp) gamma[h] = gammaP;else gamma[h] = gammaC;
-            }else gamma[h] = gammaC;
-            gammaC = gamma[h];
+                if (Acp > temp)
+                    for (k = 0; k < nRespPars; k++) Xi[h][k] = XiP[k];
+                else
+                    for (k = 0; k < nRespPars; k++) Xi[h][k] = XiC[k];
+            }
+            else
+                for (k = 0; k < nRespPars; k++) Xi[h][k] = XiC[k];
+            for (k = 0; k < nRespPars; k++) XiC[k] = Xi[h][k];
 
             // - 7 - Impute latent y^*
             for (i = 0; i < n; i++){
@@ -452,7 +478,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                     nuSIxmm = 0.0;
                     for (k = 0; k < p; k++)
                         nuSIxmm += gsl_vector_get(nuSI,k)*(X[k*n+i]-muh[h][k]);
-                    calcGLMLimits(Y,H,i,gammaC,&lower,&upper,family);
+                    calcGLMLimits(Y,H,i,XiC,&lower,&upper,family);
                     s = gsl_ran_flat(r,1.0,100000);
                     sampleTUN(s,i,nuSIxmm,sqrt(1-nuSInu),lower,upper,latentx);
                 }
@@ -478,13 +504,13 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
             for (k = 0; k < p*p; k++)
                 baseSigmahI[k] = SigmahI[h][k];
             SigmahIview = gsl_matrix_view_array(baseSigmahI,p,p);
-            gammaC = gamma[h];
+            for (k = 0; k < nRespPars; k++) XiC[k] = Xi[h][k];
             for (i = 0; i < n; i++){
                 if (pi[h] > u[i]){
                     nuSIxmm = 0.0;
                     for (k = 0; k < p; k++)
                         nuSIxmm += storenuSI[h][k]*(X[k*n+i]-muh[h][k]);
-                    calcGLMLimits(Y,H,i,gammaC,&lower,&upper,family);
+                    calcGLMLimits(Y,H,i,XiC,&lower,&upper,family);
                     temp = gsl_cdf_ugaussian_P((upper-nuSIxmm)/sqrt(1-storenuSInu[h])) - gsl_cdf_ugaussian_P((lower-nuSIxmm)/sqrt(1-storenuSInu[h]));
                     for (k = 0; k < p; k++)
                         baseXmM[k] = X[k*n+i]-muh[h][k];
@@ -510,11 +536,11 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
 
         // - 12a - Label switching
         s = gsl_ran_flat(r,1.0,100000);
-        labelSwtchA(s,n,p,ncomp,Th1,Sigmah,SigmahI,nuh,muh,gamma,nmembers,compAlloc,pi);
+        labelSwtchA(s,n,p,ncomp,nRespPars,Th1,Sigmah,SigmahI,nuh,muh,Xi,nmembers,compAlloc,pi);
 
         // - 12b - Label switching
         s = gsl_ran_flat(r,1.0,100000);
-        labelSwtchB(s,n,p,ncomp,Th1,Sigmah,SigmahI,nuh,muh,gamma,nmembers,compAlloc,Vdp);
+        labelSwtchB(s,n,p,ncomp,nRespPars,Th1,Sigmah,SigmahI,nuh,muh,Xi,nmembers,compAlloc,Vdp);
 
         // - 13 - Update concentration parameter
         s = gsl_ran_flat(r,1.0,100000);
@@ -575,12 +601,12 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
             for (i = 0; i < npred; i++){
                 for (h = 0; h < ncomp; h++){
                     if (PredProb[i][h]>0){
-                        gammaC = gamma[h];
+                        for (k = 0; k < nRespPars; k++) XiC[k] = Xi[h][k];
                         nuSIxmm = 0.0;
                         for (k = 0; k < p; k++)
                             nuSIxmm += storenuSI[h][k]*(Xpred[k*n+i]-muh[h][k]);
                         for (k = 0; k < maxy; k++){
-                            calcGLMLimitsPred(Hpred,k,i,gammaC,&lower,&upper,family);
+                            calcGLMLimitsPred(Hpred,k,i,XiC,&lower,&upper,family);
                             temp = gsl_cdf_ugaussian_P((upper-nuSIxmm)/sqrt(1-storenuSInu[h]))-
                                    gsl_cdf_ugaussian_P((lower-nuSIxmm)/sqrt(1-storenuSInu[h]));
                             Disthi[h][k] = temp * PredProb[i][h]/denomPred[i];
@@ -666,8 +692,11 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                 fprintf (out_file5, "\n");
             }
 
-            for (h = 0; h < ncomp; h++)
-                fprintf(out_file6, "%f \n", gamma[h]);
+            for (h = 0; h < ncomp; h++){
+                for (j = 0; j < nRespPars; j++)
+                    fprintf(out_file6, "%f ", Xi[h][j]);
+                fprintf (out_file6, "\n");
+            }
 
             fprintf(out_file7, "%f \n", alpha);
 
@@ -708,5 +737,4 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     gsl_matrix_free(nTDi);
     gsl_vector_free(vecZero);
     gsl_vector_free(Z); gsl_vector_free(U1); gsl_vector_free(U2); gsl_vector_free(U3);
-    //free(path); free(copypath);
 }

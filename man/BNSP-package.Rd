@@ -13,8 +13,8 @@
 \tabular{ll}{
 Package: \tab BNSP\cr
 Type: \tab Package\cr
-Version: \tab 1.0.0\cr
-Date: \tab 2014-10-10\cr
+Version: \tab 1.0.1\cr
+Date: \tab 2014-10-27\cr
 License: \tab GPL (>=2)\cr}
 
 This program is free software; you can redistribute it and/or
@@ -42,6 +42,3 @@ Maintainer: Georgios Papageorgiou <gpapageo@gmail.com>}
 \references{
 Papageorgiou, G., Richardson, S. and Best, N. (2014). Bayesian nonparametric models for spatially indexed data of mixed type.
 Accepted: Journal of the Royal Statistical Society - Series B.}
-
-\keyword{models}
-\keyword{regression}

@@ -1,21 +1,14 @@
-bnpglm <- function(formula,family=poisson,data,offset,sampler="slice",WorkingDir,ncomp,sweeps,burn,seed,
-                   V,Vdf,Mu.nu,Sigma.nu,Mu.mu,Sigma.mu,Alpha.gamma,Beta.gamma,Alpha.alpha,Beta.alpha,Turnc.alpha,
+bnpglm <- function(formula,family,data,offset,sampler="slice",WorkingDir,ncomp,sweeps,burn,seed,
+                   V,Vdf,Mu.nu,Sigma.nu,Mu.mu,Sigma.mu,Alpha.xi,Beta.xi,Alpha.alpha,Beta.alpha,Turnc.alpha,
                    Xpred,offsetPred,...){
-    # Match call and family
+    # Match call
     call <- match.call()
-    if (is.character(family))
-        family <- get(family, mode = "function", envir = parent.frame())
-    if (is.function(family))
-        family <- family()
-    if (is.null(family$family)) {
-        print(family)
-        stop("'family' not recognized")
-    }
-    family.indicator <- match(family$family,c("poisson","binomial"))
+    # Family
+    family.indicator <- match(c(family),c("poisson","binomial","negative binomial","beta binomial"))
     if (is.na(family.indicator)){
-        stop("only the poisson and binomial families are supported for now")
+        stop('family must be character, and one of "poisson", "binomial", "negative binomial" and "beta binomial"')
     }
-    # Data environment, design matrix
+    # Data environment & design matrix
     if (missing(data))
         data <- environment(formula)
     mf <- match.call(expand.dots = FALSE)
@@ -49,8 +42,8 @@ bnpglm <- function(formula,family=poisson,data,offset,sampler="slice",WorkingDir
         xbar<-mean(X)
         xsd<-sd(X)
     }
-    # Family specific
-    if (family.indicator==1){
+    # Family specific responses and offset terms
+    if (family.indicator==1 | family.indicator==3){
         Y <- model.response(mf, "any")
         offset <- as.vector(model.offset(mf))
         if (!is.null(offset)) {
@@ -59,9 +52,7 @@ bnpglm <- function(formula,family=poisson,data,offset,sampler="slice",WorkingDir
                    length(offset), NROW(Y)), domain = NA)
         }
         if (missing(offset)) offset<-rep(1,n)
-        if (missing(Alpha.gamma)) Alpha.gamma<-1.0
-        if (missing(Beta.gamma)) Beta.gamma<-0.1
-    } else if (family.indicator==2){
+    } else if (family.indicator==2 | family.indicator==4){
         Y1 <- model.response(mf, "any")
         if (NCOL(Y1)==1){
 	        if (any(Y1 < 0 | Y1 > 1)) stop("y values must be 0 <= y <= 1")
@@ -75,8 +66,28 @@ bnpglm <- function(formula,family=poisson,data,offset,sampler="slice",WorkingDir
 			             "a vector of 0 and 1's or a 2 column",
 			             "matrix where col 1 is no. successes",
 			             "and col 2 is no. failures"))
-        if (missing(Alpha.gamma)) Alpha.gamma<-1.0
-        if (missing(Beta.gamma)) Beta.gamma<-1.0
+    }
+    # Family specific prior parameters
+    if (family.indicator==1){
+        if (!missing(Alpha.xi)) if (!length(Alpha.xi)==1) stop(paste("For Poisson mixtures, argument Alpha.xi must be of length 1"))
+        if (missing(Alpha.xi)) Alpha.xi<-1.0
+        if (!missing(Beta.xi)) if (!length(Beta.xi)==1) stop(paste("For Poisson mixtures, argument Beta.xi must be of length 1"))
+        if (missing(Beta.xi)) Beta.xi<-0.1
+    } else if (family.indicator==2){
+        if (!missing(Alpha.xi)) if (!length(Alpha.xi)==1) stop(paste("For Binomial mixtures, argument Alpha.xi must be of length 1"))
+        if (missing(Alpha.xi)) Alpha.xi<-1.0
+        if (!missing(Beta.xi)) if (!length(Beta.xi)==1) stop(paste("For Binomial mixtures, argument Beta.xi must be of length 1"))
+        if (missing(Beta.xi)) Beta.xi<-1.0
+    } else if (family.indicator==3){
+        if (!missing(Alpha.xi)) if (!length(Alpha.xi)==2) stop(paste("For Negative Binimial mixtures, argument Alpha.xi must be of length 2"))
+        if (missing(Alpha.xi)) Alpha.xi<-c(1.0,1.0)
+        if (!missing(Beta.xi)) if (!length(Beta.xi)==2) stop(paste("For Negative Binimial mixtures, argument Beta.xi must be of length 2"))
+        if (missing(Beta.xi)) Beta.xi<-c(0.1,0.1)
+    } else if (family.indicator==4){
+        if (!missing(Alpha.xi)) if (!length(Alpha.xi)==2) stop(paste("For Beta Binimial mixtures, argument Alpha.xi must be of length 2"))
+        if (missing(Alpha.xi)) Alpha.xi<-c(1.0,1.0)
+        if (!missing(Beta.xi)) if (!length(Beta.xi)==2) stop(paste("For Beta Binimial mixtures, argument Beta.xi must be of length 2"))
+        if (missing(Beta.xi)) Beta.xi<-c(0.1,0.1)
     }
     # Predictions
     if (missing(Xpred)){
@@ -99,18 +110,18 @@ bnpglm <- function(formula,family=poisson,data,offset,sampler="slice",WorkingDir
     q3Reg <- array(0,npred)
     modeReg <- array(0,npred)
     # Family specific predictions
-    if (family.indicator==1){
+    if (family.indicator==1 | family.indicator==3){
         m.pred.mean <- max(offsetPred) * max(Y/offset)
         maxy <- round(m.pred.mean)
         while (dpois(maxy,m.pred.mean)>0.00000001) maxy<-maxy+1
-    } else if (family.indicator==2){
+    } else if (family.indicator==2 | family.indicator==4){
         maxy <- max(offsetPred)+1
     }
     sampler.indicator <- match(sampler,c("slice","truncated"))
     if (is.na(sampler.indicator)){
         stop(c(sampler," 'sampler' not recognized"))
     }
-    # Working directory
+    # Working directory & files
     WF <- 1
     if (!missing(WorkingDir)){
         WorkingDir <- path.expand(WorkingDir)
@@ -120,22 +131,24 @@ bnpglm <- function(formula,family=poisson,data,offset,sampler="slice",WorkingDir
     if (missing(WorkingDir)) {WF <- 0; WorkingDir <- paste(getwd(),"/",sep="")}
     on.exit(if (WF==0) file.remove(paste(WorkingDir,"BNSP.Th.txt",sep=""), paste(WorkingDir,"BNSP.Sigmah.txt",sep=""),
     paste(WorkingDir,"BNSP.SigmahI.txt",sep=""), paste(WorkingDir,"BNSP.nuh.txt",sep=""), paste(WorkingDir,"BNSP.muh.txt",sep=""),
-    paste(WorkingDir,"BNSP.gammah.txt",sep=""), paste(WorkingDir,"BNSP.alpha.txt",sep=""),
+    paste(WorkingDir,"BNSP.xih.txt",sep=""), paste(WorkingDir,"BNSP.alpha.txt",sep=""),
     paste(WorkingDir,"BNSP.compAlloc.txt",sep=""), paste(WorkingDir,"BNSP.nmembers.txt",sep=""),
     paste(WorkingDir,"BNSP.Updated.txt",sep=""),paste(WorkingDir,"BNSP.PD.txt",sep="")))
+    #Call C
     out<-.C("OneResLtnt", as.integer(seed), as.double(unlist(c(X))), as.integer(Y),
             as.double(offset), as.integer(sweeps), as.integer(burn), as.integer(ncomp),
             as.integer(n), as.integer(p),
             as.double(V), as.double(Vdf),
             as.double(Mu.nu), as.double(Sigma.nu),
             as.double(Mu.mu), as.double(Sigma.mu),
-            as.double(Alpha.gamma),as.double(Beta.gamma),
+            as.double(Alpha.xi),as.double(Beta.xi),
             as.double(Alpha.alpha),as.double(Beta.alpha),as.double(Turnc.alpha),
             as.double(xbar), as.double(xsd), as.double(sum(Y)/sum(offset)),
             as.integer(family.indicator), as.integer(sampler.indicator),
             as.integer(npred),as.double(Xpred),as.double(offsetPred),as.integer(maxy),
             as.double(meanReg),as.double(medianReg),as.double(q1Reg),as.double(q3Reg),as.double(modeReg),
             as.character(WorkingDir),as.integer(WF))
+    #Output
     location<-30
     meanReg <- out[[location+0]][1:npred]
     medianReg <- out[[location+1]][1:npred]

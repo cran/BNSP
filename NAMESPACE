@@ -1,5 +1,5 @@
 useDynLib(BNSP)
 
-export(bnpglm)
+export(bnpglm,dnorm.pois)
 
 S3method(print, bnp)

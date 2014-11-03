@@ -66,8 +66,8 @@ void SetSampleTotMu(int p, int n, int h, int ncomp, double *sampleTot, int *comp
     }
 }
 
-void labelSwtchA(unsigned long int s, int n, int p, int ncomp, double Th[ncomp][p*p], double Sigmah[ncomp][p*p],
-                 double SigmahI[ncomp][p*p], double nuh[ncomp][p], double muh[ncomp][p], double *gamma,
+void labelSwtchA(unsigned long int s, int n, int p, int ncomp, int nRespPars, double Th[ncomp][p*p], double Sigmah[ncomp][p*p],
+                 double SigmahI[ncomp][p*p], double nuh[ncomp][p], double muh[ncomp][p], double Xi[ncomp][nRespPars],
                  int *nmembers, int *compAlloc, double *pi){
     int i, j, h, komp, labelA, labelB;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
@@ -79,7 +79,7 @@ void labelSwtchA(unsigned long int s, int n, int p, int ncomp, double Th[ncomp][
 
     double mnhtemp[p];
     double covtemp[p*p];
-    double gammatemp;
+    double Xitemp[nRespPars];
     int compAlloctemp[n];
     int nmemberstemp;
 
@@ -134,9 +134,9 @@ void labelSwtchA(unsigned long int s, int n, int p, int ncomp, double Th[ncomp][
         for (j = 0; j < p; j++) muh[labelA][j] = muh[labelB][j];
         for (j = 0; j < p; j++) muh[labelB][j] = mnhtemp[j];
 
-        gammatemp = gamma[labelA];
-        gamma[labelA] = gamma[labelB];
-        gamma[labelB] = gammatemp;
+        for (j = 0; j < nRespPars; j++) Xitemp[j] = Xi[labelA][j];
+        for (j = 0; j < nRespPars; j++) Xi[labelA][j] = Xi[labelB][j];
+        for (j = 0; j < nRespPars; j++) Xi[labelB][j] = Xitemp[j];
 
         nmemberstemp = nmembers[labelA];
         nmembers[labelA] = nmembers[labelB];
@@ -152,8 +152,8 @@ void labelSwtchA(unsigned long int s, int n, int p, int ncomp, double Th[ncomp][
     gsl_rng_free(r);
 }
 
-void labelSwtchB(unsigned long int s, int n, int p, int ncomp, double Th[ncomp][p*p], double Sigmah[ncomp][p*p],
-                 double SigmahI[ncomp][p*p], double nuh[ncomp][p], double muh[ncomp][p], double *gamma,
+void labelSwtchB(unsigned long int s, int n, int p, int ncomp, int nRespPars, double Th[ncomp][p*p], double Sigmah[ncomp][p*p],
+                 double SigmahI[ncomp][p*p], double nuh[ncomp][p], double muh[ncomp][p], double Xi[ncomp][nRespPars],
                  int *nmembers, int *compAlloc, double *V){
     int i, j, h, komp, maxZ, labelC;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
@@ -163,7 +163,7 @@ void labelSwtchB(unsigned long int s, int n, int p, int ncomp, double Th[ncomp][
 
     double mnhtemp[p];
     double covtemp[p*p];
-    double gammatemp;
+    double Xitemp[nRespPars];
     int compAlloctemp[n];
     int nmemberstemp;
     double Vtemp;
@@ -210,9 +210,9 @@ void labelSwtchB(unsigned long int s, int n, int p, int ncomp, double Th[ncomp][
         for (j = 0; j < p; j++) muh[labelC][j] = muh[labelC+1][j];
         for (j = 0; j < p; j++) muh[labelC+1][j] = mnhtemp[j];
 
-        gammatemp = gamma[labelC];
-        gamma[labelC] = gamma[labelC+1];
-        gamma[labelC+1] = gammatemp;
+        for (j = 0; j < nRespPars; j++) Xitemp[j] = Xi[labelC][j];
+        for (j = 0; j < nRespPars; j++) Xi[labelC][j] = Xi[labelC+1][j];
+        for (j = 0; j < nRespPars; j++) Xi[labelC+1][j] = Xitemp[j];
 
         nmemberstemp = nmembers[labelC];
         nmembers[labelC] = nmembers[labelC+1];

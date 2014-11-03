@@ -337,3 +337,12 @@ double logtrnsR(gsl_matrix *Ehc, gsl_matrix *Ehp, int nres, int nconf, double nu
 
     return(result);
 }
+
+//Beta-Binomial cdf
+double cdf_beta_binomial_P(int n, int q, double a, double b){
+    int j;
+    double result = 0.0;
+    double Bab = gsl_sf_beta(a,b);
+    for (j = 0; j < q+1; j++) result += gsl_sf_choose(n,j) * gsl_sf_beta(j+a,n-j+b);
+    return(result/Bab);
+}

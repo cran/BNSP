@@ -1,12 +1,12 @@
-2f6f94784533b2bed8156f59ce21736b *ChangeLog
-5d0a3f29ce05940301867a2cffbbd8f8 *DESCRIPTION
+f35a72724b2a7bed612b02387099e09d *ChangeLog
+062c192802956aa88d05d9b3a8702ef2 *DESCRIPTION
 01745fbab08833d70413ee671388eee4 *NAMESPACE
 589b09c22d05fc0f08d5336f8940b743 *R/bnpglm.R
 63589571e7e830d0ffb719e3b1f65e9a *R/print.bnp.R
 7ed8e438434b1e3615b0be32cec4a466 *R/some.pdfs.R
 51963ed1482880dc991a7a47487539b6 *data/simD.rda
-2c80922fb12637cceefe2a49f55f1976 *man/BNSP-package.Rd
-d72dedf5e1850b725f4a2356e9b9cc09 *man/bnpglm.Rd
+ea36bc440e6d60a4848a7358577beabb *man/BNSP-package.Rd
+8efa593b6dfe87e56acf15cdffb24587 *man/bnpglm.Rd
 1d7cbf2452717d9eaa277cc7981b7fbb *man/simD.rd
 7d5a4f152ff7870e1fa508828da2bd19 *man/some.pdfs.Rd
 85bd6fb2d25bd1bf2d5d30087a0ff2eb *src/Makevars

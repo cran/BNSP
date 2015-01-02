@@ -14,7 +14,7 @@
 Package: \tab BNSP\cr
 Type: \tab Package\cr
 Version: \tab 1.0.1\cr
-Date: \tab 2014-10-27\cr
+Date: \tab 2015-01-01\cr
 License: \tab GPL (>=2)\cr}
 
 This program is free software; you can redistribute it and/or

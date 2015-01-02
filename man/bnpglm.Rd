@@ -269,7 +269,7 @@ fit1 <- bnpglm(cbind(Y,(E-Y))~X, family="binomial", data=simD, ncomp=30, sweeps=
                burn=100, Xpred=pred, offsetPred=rep(30,npred))
 \donttest{fit2 <- bnpglm(cbind(Y,(E-Y))~X, family="binomial", data=simD, ncomp=50, sweeps=5000,
                burn=1000, Xpred=pred, offsetPred=rep(30,npred))
-plot(X,Y/E)
+plot(with(simD,X),with(simD,Y)/with(simD,E))
 lines(pred,fit2$medianReg,col=3,lwd=2)}
 }
 

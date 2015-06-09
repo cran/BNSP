@@ -8,17 +8,17 @@ continuous while the discrete responses are represented utilizing continuous lat
 section for a full model description.}
 
 \usage{
-bnpglm(formula,family,data,offset,sampler="slice",WorkingDir,
-       ncomp,sweeps,burn,seed,V,Vdf,Mu.nu,Sigma.nu,Mu.mu,Sigma.mu,
-       Alpha.xi,Beta.xi,Alpha.alpha,Beta.alpha,Turnc.alpha,
+bnpglm(formula,family,data,offset,sampler="slice",StorageDir,
+       ncomp,sweeps,burn,thin=1,seed,prec,V,Vdf,Mu.nu,Sigma.nu,
+       Mu.mu,Sigma.mu,Alpha.xi,Beta.xi,Alpha.alpha,Beta.alpha,Turnc.alpha,
        Xpred,offsetPred,...)
 }
 
 \arguments{
 \item{formula}{a formula defining the response and the covariates e.g. \code{y ~ x}.}
 
-\item{family}{a description of the distribution of the response variable. Currently four options are
-              supported: "poisson", "binomial", "negative binomial" and "beta binomial".}
+\item{family}{a description of the distribution of the response variable. Currently five options are
+              supported: "poisson", "binomial", "negative binomial", "beta binomial" and "generalized poisson".}
 
 \item{data}{an optional data frame, list or environment (or object coercible by `as.data.frame' to a data frame)
             containing the variables in the model.  If not found in `data', the variables are taken from
@@ -34,18 +34,25 @@ bnpglm(formula,family,data,offset,sampler="slice",WorkingDir,
                \code{sampler="truncated"} which proceeds
                by truncating the countable mixture at \code{ncomp} components (see argument \code{ncomp}).}
 
-\item{WorkingDir}{a directory to store files with the posterior samples of all models parameters. If a
+\item{StorageDir}{a directory to store files with the posterior samples of all models parameters. If a
                   directory is not provided, files are created in the current directory and removed when the sampler completes.}
 
 \item{ncomp}{number of mixture components. Defines where the countable mixture of densities [in (1) below] is truncated.
              Even if  \code{sampler="slice"} is chosen, \code{ncomp} needs to be specified as it is used in the initialization process.}
 
-\item{sweeps}{integer number of posterior samples required.}
+\item{sweeps}{total number of posterior samples, including those discarded in burn-in period (see argument \code{burn}) 
+              and those discarded by the thinning process (see argument \code{thin}).}
 
-\item{burn}{integer number of samples in the burn-in period. In the files described below, \code{sweeps-burn}
-            samples will be written.}
+\item{burn}{length of burn-in period.}
 
+\item{thin}{thinning parameter.}
+            
 \item{seed}{optional seed for the random generator.}
+
+\item{prec}{precision parameter. Updating of the parameters of the response distribution requires a 
+            Metropolis - Hastings step, with proposal distributions centered at current values and 
+            with precision equal to this argument. It can be of length one ("poisson" and "binomial"
+            families) or of length two ("negative binomial", "beta binomial" and "generalized-poisson").}
 
 \item{V}{optional scale matrix \eqn{V} of the prior Wishart distribution assigned to precision matrix \eqn{T_h}.
          See `Details' section.}
@@ -65,13 +72,29 @@ bnpglm(formula,family,data,offset,sampler="slice",WorkingDir,
                 \enumerate{
                 \item If \code{family="poisson"}, this argument is parameter \eqn{\alpha_{\xi}} of the prior of the Poisson rate:
                 \eqn{\xi \sim} Gamma(\eqn{\alpha_{\xi},\beta_{\xi}}).
-                \item If \code{family="binomial"}, this argument is parameter \eqn{\alpha_{\xi}} of the prior of the Binimial probability:
+                
+                \item If \code{family="binomial"}, this argument is parameter \eqn{\alpha_{\xi}} of the prior of the Binomial probability:
                 \eqn{\xi \sim} Beta(\eqn{\alpha_{\xi},\beta_{\xi}}).
-                \item If \code{family="netative binomial"} or \code{family="beta binomial"}, this argument is a two-dimensional
-                vector that includes parameters \eqn{\alpha_{1\xi}} and \eqn{\alpha_{2\xi}} of the priors:
+                
+                \item If \code{family="netative binomial"},
+                this argument is a two-dimensional vector that includes parameters 
+                \eqn{\alpha_{1\xi}} and \eqn{\alpha_{2\xi}} of the priors:
                 \eqn{\xi_1 \sim } Gamma(\eqn{\alpha_{1\xi},\beta_{1\xi}}) and
                 \eqn{\xi_2 \sim } Gamma(\eqn{\alpha_{2\xi},\beta_{2\xi}}), where \eqn{\xi_1} and \eqn{\xi_2}
-                are the Negative Binomial/Beta Binomial parameters.
+                are the two parameters of the Negative Binomial pmf.
+                
+                \item If \code{family="beta binomial"}, 
+                this argument is a two-dimensional vector that includes parameters 
+                \eqn{\alpha_{1\xi}} and \eqn{\alpha_{2\xi}} of the priors:
+                \eqn{\xi_1 \sim } Gamma(\eqn{\alpha_{1\xi},\beta_{1\xi}}) and
+                \eqn{\xi_2 \sim } Gamma(\eqn{\alpha_{2\xi},\beta_{2\xi}}), where \eqn{\xi_1} and \eqn{\xi_2}
+                are the two parameters of the Beta Binomial pmf.
+                
+                \item If \code{family="generalized-poisson"}, this argument is a two-dimensional vector 
+                that includes parameters \eqn{\alpha_{1\xi}} and \eqn{\alpha_{2\xi}} of the priors:
+                \eqn{\xi_1 \sim } Gamma(\eqn{\alpha_{1\xi},\beta_{1\xi}}) and
+                \eqn{\xi_2 \sim } Normal(\eqn{\alpha_{2\xi},\beta_{2\xi}}), where \eqn{\xi_1} and \eqn{\xi_2}
+                are the two parameters of the Generalized Poisson pmf.
                 }
                 See `Details' section.}
 
@@ -79,13 +102,29 @@ bnpglm(formula,family,data,offset,sampler="slice",WorkingDir,
                \enumerate{
                \item If \code{family="poisson"}, this argument is parameter \eqn{\beta_{\xi}} of the prior of the Poisson rate:
                \eqn{\xi \sim} Gamma(\eqn{\alpha_{\xi},\beta_{\xi}}).
+               
                \item If \code{family="binomial"}, this argument is parameter \eqn{\beta_{\xi}} of the prior of the Binimial probability:
                \eqn{\xi \sim} Beta(\eqn{\alpha_{\xi},\beta_{\xi}}).
-               \item If \code{family="netative binomial"} or \code{family="beta binomial"}, this argument is a two-dimensional
-               vector that includes parameters \eqn{\beta_{1\xi}} and \eqn{\beta_{2\xi}} of the priors:
-               \eqn{\xi_1 \sim } Gamma(\eqn{\alpha_{1\xi},\beta_{1\xi}}) and
-               \eqn{\xi_2 \sim } Gamma(\eqn{\alpha_{2\xi},\beta_{2\xi}}), where \eqn{\xi_1} and \eqn{\xi_2}
-               are the Negative Binomial/Beta Binomial parameters.
+               
+               \item If \code{family="netative binomial"},
+                this argument is a two-dimensional vector that includes parameters 
+                \eqn{\beta_{1\xi}} and \eqn{\beta_{2\xi}} of the priors:
+                \eqn{\xi_1 \sim } Gamma(\eqn{\alpha_{1\xi},\beta_{1\xi}}) and
+                \eqn{\xi_2 \sim } Gamma(\eqn{\alpha_{2\xi},\beta_{2\xi}}), where \eqn{\xi_1} and \eqn{\xi_2}
+                are the two parameters of the Negative Binomial pmf.
+                
+                \item If \code{family="beta binomial"}, 
+                this argument is a two-dimensional vector that includes parameters 
+                \eqn{\beta_{1\xi}} and \eqn{\beta_{2\xi}} of the priors:
+                \eqn{\xi_1 \sim } Gamma(\eqn{\alpha_{1\xi},\beta_{1\xi}}) and
+                \eqn{\xi_2 \sim } Gamma(\eqn{\alpha_{2\xi},\beta_{2\xi}}), where \eqn{\xi_1} and \eqn{\xi_2}
+                are the two parameters of the Beta Binomial pmf.
+                
+                \item If \code{family="generalized-poisson"}, this argument is a two-dimensional vector 
+                that includes parameters \eqn{\beta_{1\xi}} and \eqn{\beta_{2\xi}} of the priors:
+                \eqn{\xi_1 \sim } Gamma(\eqn{\alpha_{1\xi},\beta_{1\xi}}) and
+                \eqn{\xi_2 \sim } Normal(\eqn{\alpha_{2\xi},\beta_{2\xi}}), where \eqn{\xi_1} and \eqn{\xi_2}
+                are the two parameters of the Generalized Poisson pmf.
                }
                See `Details' section.}
 
@@ -103,8 +142,10 @@ bnpglm(formula,family,data,offset,sampler="slice",WorkingDir,
              they do not contribute to the likelihood.}
 
 \item{offsetPred}{the offset term associated with the new covariates \code{Xpred}. \code{offsetPred} is a vector of
-                  length equal to the rows of \code{Xpred}. If \code{family=poisson}, its entries are the associated
-                  Poisson offsets. If \code{family=binomial}, its entries are the Binomial number of trials.}
+                  length equal to the rows of \code{Xpred}. If \code{family=poisson} or \code{family=negative binomial}
+                  or \code{family=generalized poisson}, its entries are the associated
+                  Poisson offsets. If \code{family=binomial} or \code{family=beta binomial}, its entries are the Binomial 
+                  number of trials.}
 
 \item{...}{Other options that will be ignored.}
 }
@@ -129,10 +170,14 @@ and \eqn{F()} denotes an appropriate cdf. Further, latent variables are assumed 
 independently follow a \eqn{N(0,1)} distribution, where the mean and variance are restricted to be zero and one as
 they are non-identifiable by the data. Choices for \eqn{F()} are described next.
 
-For counts, currently two options are supported. First, \eqn{F(.;\lambda_i)} can be specified as the 
+For counts, currently three options are supported. First, \eqn{F(.;\lambda_i)} can be specified as the 
 cdf of a Poisson\eqn{(H_i \xi_h)} variable. Here \eqn{\lambda_i=(\xi_h,H_i)^T, \xi_h} denotes the Poisson rate 
 associated with cluster \eqn{h}, and \eqn{H_i} the offset term associated with sampling unit \eqn{i}.
 Second, \eqn{F(.;\lambda_i)} can be specified as the negative binomial cdf, where \eqn{\lambda=(\xi_{1h},\xi_{2h},H_i)^T}.
+This option allows for overdispersion within each cluster. With this added flexibility the model usually requires 
+fewer effective clusters. Third, \eqn{F(.;\lambda_i)} can be specified as the Generalized Poisson cdf, where, again, 
+\eqn{\lambda=(\xi_{1h},\xi_{2h},H_i)^T}. This option allows for both over- and under-dispersion within each
+cluster. See Consul and Famoye (1992) for more details. 
 
 For Binomial data, currently two options are supported. First, \eqn{F(.;\lambda_i)} may be taken to be the cdf of a
 Binomial\eqn{(H_i,\xi_h)} variable, with \eqn{\xi_h} denoting the success probability of cluster \eqn{h} and \eqn{H_i} 
@@ -200,6 +245,13 @@ a priori we take \eqn{\xi_{jh} \sim} Gamma\eqn{(\alpha_{j\xi},\beta_{j\xi})}, \e
 The default values are \eqn{\alpha_{j\xi}=1.0,\beta_{j\xi}=0.1}.
 Default values for \eqn{\{\alpha_{j\xi}: j=1,2\}} can be altered using argument \code{Alpha.xi},
 and default values for \eqn{\{\beta_{j\xi}: j=1,2\}} can be altered using argument \code{Beta.xi}.
+For count data with \code{family="generalized poisson"}, 
+a priori we take \eqn{\xi_{1h} \sim} Gamma\eqn{(\alpha_{1\xi},\beta_{1\xi})}, 
+and \eqn{\xi_{2h} \sim} Normal\eqn{(\alpha_{2\xi},\beta_{2\xi})}.
+The default values are \eqn{\alpha_{j\xi}=1.0,\beta_{j\xi}=0.1}.
+Default values for \eqn{\{\alpha_{j\xi}: j=1,2\}} can be altered using argument \code{Alpha.xi},
+and default values for \eqn{\{\beta_{j\xi}: j=1,2\}} can be altered using argument \code{Beta.xi}.
+
 
 \item The concentration parameter \eqn{\alpha} is assigned a Gamma\eqn{(\alpha_{\alpha},\beta_{\alpha})}
 prior over the range \eqn{(c_{\alpha},\infty)}, that is,
@@ -220,28 +272,31 @@ and \eqn{c_{\alpha}=0.25}. Users can alter the default using using arguments \co
 \item{modeReg}{if \code{Xpred} is specified, the function returns the conditional mode of the response given each new covariate \eqn{x}.}
 Further, function \code{bnpglm} creates files where the posterior samples are written. These files are (with all file names
 preceded by `BNSP.'):
-\item{Th.txt}{this file contains samples from the posteriors of the \eqn{p \times p} precision matrices \eqn{T_h, h=1,2,\dots,ncomp}. The file is arranged in \code{(sweeps-burn)*ncomp} lines and \eqn{p^2} columns. In more detail, each sweep creates \code{ncomp} lines representing samples \eqn{T_h^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. The elements of
+\item{Th.txt}{this file contains samples from the posteriors of the \eqn{p \times p} precision matrices \eqn{T_h, h=1,2,\dots,ncomp}. The file is arranged in \code{((sweeps-burn)/thin)*ncomp} lines and \eqn{p^2} columns. In more detail, each sweep creates \code{ncomp} lines representing samples \eqn{T_h^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. The elements of
 \eqn{T_h^{(sw)}} are written in the columns of the file: the entries in the first \eqn{p} columns of the file are those in the first column (or row) of \eqn{T_h^{(sw)}}, while the entries in the last \eqn{p} columns of the file are those in the last  column (or row) of \eqn{T_h^{(sw)}}.}
-\item{Sigmah.txt}{this file contains samples from the posteriors of the \eqn{p \times p} covariance  matrices \eqn{\Sigma_h, h=1,2,\dots,ncomp}. The file is arranged in \code{(sweeps-burn)*ncomp} lines and \eqn{p^2} columns. In more detail, each sweep creates \code{ncomp} lines representing samples \eqn{\Sigma_h^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. The elements of
+\item{Sigmah.txt}{this file contains samples from the posteriors of the \eqn{p \times p} covariance  matrices \eqn{\Sigma_h, h=1,2,\dots,ncomp}. The file is arranged in \code{((sweeps-burn)/thin)*ncomp} lines and \eqn{p^2} columns. In more detail, each sweep creates \code{ncomp} lines representing samples \eqn{\Sigma_h^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. The elements of
 \eqn{\Sigma_h^{(sw)}} are written in the columns of the file: the entries in the first \eqn{p} columns of the file are those in the first column (or row) of \eqn{\Sigma_h^{(sw)}}, while the entries in the last \eqn{p} columns of the file are those in the last  column (or row) of \eqn{\Sigma_h^{(sw)}}.}
-\item{SigmahI.txt}{this file contains samples from the posteriors of the \eqn{p \times p} precision   matrices \eqn{\Sigma_h^{-1}, h=1,2,\dots,ncomp}. The file is arranged in \code{(sweeps-burn)*ncomp} lines and \eqn{p^2} columns. In more detail, each sweep creates \code{ncomp} lines representing samples \eqn{(\Sigma_h^{-1})^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. The elements of \eqn{(\Sigma_h^{-1})^{(sw)}} are written in the columns of the file: the entries in the first \eqn{p} columns of the file are those in the first column (or row) of \eqn{(\Sigma_h^{-1})^{(sw)}}, while the entries in the last \eqn{p} columns of the file are those in the last  column (or row) of \eqn{(\Sigma_h^{-1})^{(sw)}}.}
-\item{nuh.txt}{this file contains samples from the posteriors of the \eqn{p}-dimensional covariance vectors \eqn{\nu_h, h=1,2,\dots,ncomp}. The file is arranged in \code{(sweeps-burn)*ncomp} lines and \eqn{p} columns. In more detail, each sweep creates \code{ncomp} lines representing samples \eqn{\nu_h^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. The elements of \eqn{\nu_h^{(sw)}} are written in the columns of the file.}
-\item{muh.txt}{this file contains samples from the posteriors of the \eqn{p}-dimensional mean vectors  \eqn{\mu_h, h=1,2,\dots,ncomp}. The file is arranged in \code{(sweeps-burn)*ncomp} lines and \eqn{p} columns. In more detail, each sweep creates \code{ncomp} lines representing samples \eqn{\mu_h^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. The elements of \eqn{\mu_h^{(sw)}} are written in the columns of the file.}
+\item{SigmahI.txt}{this file contains samples from the posteriors of the \eqn{p \times p} precision   matrices \eqn{\Sigma_h^{-1}, h=1,2,\dots,ncomp}. The file is arranged in \code{((sweeps-burn)/thin)*ncomp} lines and \eqn{p^2} columns. In more detail, each sweep creates \code{ncomp} lines representing samples \eqn{(\Sigma_h^{-1})^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. The elements of \eqn{(\Sigma_h^{-1})^{(sw)}} are written in the columns of the file: the entries in the first \eqn{p} columns of the file are those in the first column (or row) of \eqn{(\Sigma_h^{-1})^{(sw)}}, while the entries in the last \eqn{p} columns of the file are those in the last  column (or row) of \eqn{(\Sigma_h^{-1})^{(sw)}}.}
+\item{nuh.txt}{this file contains samples from the posteriors of the \eqn{p}-dimensional covariance vectors \eqn{\nu_h, h=1,2,\dots,ncomp}. The file is arranged in \code{((sweeps-burn)/thin)*ncomp} lines and \eqn{p} columns. In more detail, each sweep creates \code{ncomp} lines representing samples \eqn{\nu_h^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. The elements of \eqn{\nu_h^{(sw)}} are written in the columns of the file.}
+\item{muh.txt}{this file contains samples from the posteriors of the \eqn{p}-dimensional mean vectors  \eqn{\mu_h, h=1,2,\dots,ncomp}. The file is arranged in \code{((sweeps-burn)/thin)*ncomp} lines and \eqn{p} columns. In more detail, each sweep creates \code{ncomp} lines representing samples \eqn{\mu_h^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. The elements of \eqn{\mu_h^{(sw)}} are written in the columns of the file.}
 \item{xih.txt}{this file contains samples from the posteriors of parameters  \eqn{\xi_h}, \eqn{h=1,2,\dots,ncomp}.
-The file is arranged in
-\code{(sweeps-burn)*ncomp} lines and one or two columns, depending on the number of parameters in the selected \eqn{F(.;\lambda)}. Sweeps write in the file \code{ncomp} lines representing samples \eqn{\xi_h^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. }
-\item{alpha.txt}{this file contains samples from the posterior of the concentration parameters  \eqn{\alpha}. The file is arranged in \code{(sweeps-burn)} lines and one column, each line including one posterior sample.}
-\item{compAlloc.txt}{this file contains the allocations or configurations obtained at each iteration of the sampler. It consists of \code{(sweeps-burn)} lines, that represent the posterior samples, and \eqn{n} columns, that represent the sampling units. Entries in this file range from 0 to \eqn{ncomp-1}.  }
-\item{nmembers.txt}{this file contains \code{(sweeps-burn)} lines and \code{ncomp} columns, where the lines represent posterior samples while the columns represent the components or clusters. The entries represent the number of sampling units allocated to the components.  }
-\item{Updated.txt}{this file contains \code{(sweeps-burn)} lines with the number of components updated at each iteration of the sampler.}
-\item{PD.txt}{this file contains samples from the posterior conditional distribution \eqn{Y|x,D} described in \code{Xpred}.
-The file has \code{(sweeps-burn)*npred} lines, where \code{npred} is the number of rows in \code{Xpred}. That is,
-at each iteration of the sampler, one line for each `new' covariate vector \eqn{x} is written. The columns of the file represent
-the possible values of \eqn{Y}, staring from zero and continuing to a max number.}}
+The file is arranged in \code{((sweeps-burn)/thin)*ncomp} lines and one or two columns, depending on the number of parameters in the selected \eqn{F(.;\lambda)}. Sweeps write in the file \code{ncomp} lines representing samples \eqn{\xi_h^{(sw)}, h=1,\dots,ncomp}, where superscript \eqn{sw} represents a particular sweep. }
+\item{alpha.txt}{this file contains samples from the posterior of the concentration parameters  \eqn{\alpha}. The file is arranged in \code{(sweeps-burn)/thin} lines and one column, each line including one posterior sample.}
+\item{compAlloc.txt}{this file contains the allocations or configurations obtained at each iteration of the sampler. It consists of \code{(sweeps-burn)/thin} lines, that represent the posterior samples, and \eqn{n} columns, that represent the sampling units. Entries in this file range from 0 to \eqn{ncomp-1}.  }
+\item{nmembers.txt}{this file contains \code{(sweeps-burn)/thin} lines and \code{ncomp} columns, where the lines represent posterior samples while the columns represent the components or clusters. The entries represent the number of sampling units allocated to the components.  }
+\item{Updated.txt}{this file contains \code{(sweeps-burn)/thin} lines with the number of components updated at each iteration of the sampler.}
+%\item{PD.txt}{this file contains samples from the posterior conditional distribution \eqn{Y|x,D} described in \code{Xpred}.
+%The file has \code{(sweeps-burn)*npred} lines, where \code{npred} is the number of rows in \code{Xpred}. That is,
+%at each iteration of the sampler, one line for each `new' covariate vector \eqn{x} is written. The columns of the file represent
+%the possible values of \eqn{Y}, staring from zero and continuing to a max number.}
+}
 
 
 
 \references{
+Consul, P. C. & Famoye, G. C. (1992). Generalized Poisson regression model. Communications in 
+Statistics - Theory and Methods, 1992, 89-109.
+
 McCulloch, R. E., Polson, N. G., & Rossi, P. E. (2000). A Bayesian analysis of the multinomial probit
 model with fully identified parameters. Journal of Econometrics, 99(1), 173-193.
 
@@ -264,14 +319,19 @@ data(simD)
 pred<-seq(with(simD,min(X))+0.1,with(simD,max(X))-0.1,length.out=30)
 npred<-length(pred)
 # fit1 and fit2 define the same model but with different numbers of
-# components and posterior samples
+# components and posterior samples. They both use a slice sampler
+# and parameter prec=200 achieves optimal acceptance rate, about 22 percent.
 fit1 <- bnpglm(cbind(Y,(E-Y))~X, family="binomial", data=simD, ncomp=30, sweeps=150,
-               burn=100, Xpred=pred, offsetPred=rep(30,npred))
+               burn=100, sampler="slice", prec=c(200), Xpred=pred, offsetPred=rep(30,npred))
 \donttest{fit2 <- bnpglm(cbind(Y,(E-Y))~X, family="binomial", data=simD, ncomp=50, sweeps=5000,
-               burn=1000, Xpred=pred, offsetPred=rep(30,npred))
+               burn=1000, sampler="slice", prec=c(200), Xpred=pred, offsetPred=rep(30,npred))
 plot(with(simD,X),with(simD,Y)/with(simD,E))
 lines(pred,fit2$medianReg,col=3,lwd=2)}
 }
 
 \keyword{nonparametric}
 \keyword{cluster}
+
+
+
+

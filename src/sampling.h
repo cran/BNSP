@@ -327,3 +327,27 @@ double updatespatiallu(unsigned long int s, int n, double *eigenvl, double lu, d
     gsl_rng_free(r);
     return(lu);
 }
+
+//obtained proposed values for the One Res Ltnt model. prec is the precision around the current estimate
+void propose(unsigned long int s, double *XiC, double *XiP, int nRespPars, double *prec, int family){
+    int k;
+    double alpha, beta;
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+    if (family == 1)
+        XiP[0] = gsl_ran_gamma(r,prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0])); //has mean XiC[0] and variance=1/prec
+    else if (family == 2){
+        beta = XiC[0] - 1 + XiC[0]*(1-XiC[0])*(1-XiC[0])*prec[0];
+        alpha = beta * XiC[0]/(1-XiC[0]);
+        XiP[0] = gsl_ran_beta(r,alpha,beta); // has mean XiC[0] and variance=1/prec
+    }
+    else if (family == 3 || family == 4)
+        for (k = 0; k < nRespPars; k++)
+            XiP[k] = gsl_ran_gamma(r,prec[k]*XiC[k]*XiC[k],1/(prec[k]*XiC[k]));
+    else if (family == 5){
+        XiP[0] = gsl_ran_gamma(r,prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]));
+        XiP[1] = XiC[1] + gsl_ran_gaussian(r,prec[1]);
+        while(XiP[1] < 0.5) XiP[1] = XiC[1] + gsl_ran_gaussian(r,prec[1]);
+    }
+    gsl_rng_free(r);
+}

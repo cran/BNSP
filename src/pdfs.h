@@ -340,9 +340,78 @@ double logtrnsR(gsl_matrix *Ehc, gsl_matrix *Ehp, int nres, int nconf, double nu
 
 //Beta-Binomial cdf
 double cdf_beta_binomial_P(int n, int q, double a, double b){
-    int j;
     double result = 0.0;
-    double Bab = gsl_sf_beta(a,b);
-    for (j = 0; j < q+1; j++) result += gsl_sf_choose(n,j) * gsl_sf_beta(j+a,n-j+b);
-    return(result/Bab);
+    if (q >= n) result = 1.0;
+    else {
+        int j;
+        double Bab = gsl_sf_lnbeta(a,b);
+        for (j = 0; j < q+1; j++) result += exp(gsl_sf_lnchoose(n,j) + gsl_sf_lnbeta(j+a,n-j+b) - Bab);
+        if (result > 1.0) result = 1.0;
+    }
+    return(result);
+}
+
+//A Generalized-Poisson cdf
+double cdf_generalized_poisson_P1(int q, double lambda1, double lambda2){
+    int j = 0;
+    double B = -lambda1/lambda2; //for making sure that pmf is always >=0, (3.1) of Consul and Jain 1973
+    double result = 0.0;
+    if (lambda2 >= 0) for (j = 0; j < q+1; j++) result += exp((j-1)*log(lambda1+j*lambda2)-(lambda1+j*lambda2)-gsl_sf_lnfact(j));
+    else if (lambda2 < 0 ){
+        while (j < q+1 && j < B){
+            result += exp((j-1)*log(lambda1+j*lambda2)-(lambda1+j*lambda2)-gsl_sf_lnfact(j));
+            j++;
+        }
+    }
+    return(lambda1*result);
+}
+
+//A Generalized-Poisson cdf that can include offset
+double cdf_generalized_poisson_P2(int q, double mu, double f){
+    double normConst = 0.0; //for when f < 1 normalization is needed
+    double result;
+    int j = 0;
+    double B = -mu/(f-1); //for making sure that pmf is always >=0, (2.3) of Consul and Famoye 1992
+    double Tot = 0.0;
+    if (f == 1) Tot = gsl_cdf_poisson_P(q,mu);
+    else if (f > 1) for (j = 0; j < q+1; j++) Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+    else if (f < 1 ){
+        while (j < q+1 && j < B){
+            Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            j++;
+        }
+        normConst = Tot;
+        while (j < B){
+            normConst += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            j++;
+        }
+    }
+    if (f>1 && Tot>1) Tot=1.0;
+    if (f>=1) result = Tot;
+    else result = Tot/normConst;
+    return(result);
+}
+
+//COM_Poisson cdf
+double cdf_com_poisson_P(int x, double lambda, double nu){
+    int j, k, K; //of (32) of COM-Poisson revival paper
+    double unnormalized = 0.0;
+    double normalized;
+    double epsilon = 0.99;//of (32) of COM-Poisson revival paper
+    double Z = 0.0;
+    double R;
+    for (j = 0; j < x+1; j++) unnormalized += exp(j*log(lambda)-nu*gsl_sf_lnfact(j));
+    K = 0;
+    while(lambda/pow(K+1,nu) > epsilon) K++;
+    k = K + 2;
+    for (j = 0; j < k+1; j++) Z += exp(j*log(lambda)-nu*gsl_sf_lnfact(j));
+    R = exp((k+1)*log(lambda)-nu*gsl_sf_lnfact(k+1))/((1-epsilon)*Z);
+    while(R > 0.000001){
+        k++;
+        Z += exp(k*log(lambda)-nu*gsl_sf_lnfact(k));
+        R = exp((k+1)*log(lambda)-nu*gsl_sf_lnfact(k+1))/((1-epsilon)*Z);
+    }
+    normalized = unnormalized/Z;
+    if (normalized > 1.0) normalized = 1.0;
+    return(normalized);
 }

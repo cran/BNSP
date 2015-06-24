@@ -142,10 +142,11 @@ bnpglm(formula,family,data,offset,sampler="slice",StorageDir,
              they do not contribute to the likelihood.}
 
 \item{offsetPred}{the offset term associated with the new covariates \code{Xpred}. \code{offsetPred} is a vector of
-                  length equal to the rows of \code{Xpred}. If \code{family=poisson} or \code{family=negative binomial}
-                  or \code{family=generalized poisson}, its entries are the associated
-                  Poisson offsets. If \code{family=binomial} or \code{family=beta binomial}, its entries are the Binomial 
-                  number of trials.}
+                  length equal to the rows of \code{Xpred}. If \code{family} is one of \code{poisson} or 
+                  \code{negative binomial} or \code{generalized poisson}, its entries are the associated
+                  Poisson offsets. If \code{family} is one of \code{binomial} or \code{beta binomial}, 
+                  its entries are the Binomial number of trials. If \code{offsetPred} is missing, it is taken to be the
+                  mean of \code{offset}, rounded to the nearest integer.}
 
 \item{...}{Other options that will be ignored.}
 }
@@ -320,7 +321,7 @@ pred<-seq(with(simD,min(X))+0.1,with(simD,max(X))-0.1,length.out=30)
 npred<-length(pred)
 # fit1 and fit2 define the same model but with different numbers of
 # components and posterior samples. They both use a slice sampler
-# and parameter prec=200 achieves optimal acceptance rate, about 22 percent.
+# and parameter prec=200 achieves optimal acceptance rate, about 22%.
 fit1 <- bnpglm(cbind(Y,(E-Y))~X, family="binomial", data=simD, ncomp=30, sweeps=150,
                burn=100, sampler="slice", prec=c(200), Xpred=pred, offsetPred=rep(30,npred))
 \donttest{fit2 <- bnpglm(cbind(Y,(E-Y))~X, family="binomial", data=simD, ncomp=50, sweeps=5000,

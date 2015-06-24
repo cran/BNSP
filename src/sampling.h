@@ -16,11 +16,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-//Sample from a univariate truncated normal distribution. Arguments: seed, lower and upper bounds, subject, store latent
+//Sample from a univariate truncated normal distribution. Arguments: seed, subject index,
+//mean and standard deviation, lower and upper bounds, store latent
 void sampleTUN(unsigned long int s, int i, double tnmean, double tnsd, double lower, double upper, double *latentx){
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
     gsl_rng_set(r,s);
-
     if ((lower - upper) == 0)
         latentx[i] = lower;
     else{

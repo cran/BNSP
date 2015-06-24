@@ -377,18 +377,60 @@ double cdf_generalized_poisson_P2(int q, double mu, double f){
     else if (f > 1) for (j = 0; j < q+1; j++) Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
     else if (f < 1 ){
         while (j < q+1 && j < B){
-            Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            if ((mu+(f-1)*j)>0) Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
             j++;
         }
         normConst = Tot;
         while (j < B){
-            normConst += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            if ((mu+(f-1)*j)>0) normConst += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
             j++;
         }
     }
     if (f>1 && Tot>1) Tot=1.0;
     if (f>=1) result = Tot;
     else result = Tot/normConst;
+    return(result);
+}
+
+//A Generalized-Poisson cdf that can include offset and doesn't always calculate norm const
+double cdf_generalized_poisson_P3(int q, double mu, double f){
+    double normConst = 0.0;
+    double result;
+    int j = 0;
+    double B = -mu/(f-1); //for making sure that pmf is always >=0, (2.3) of Consul and Famoye 1992
+    double Tot = 0.0;
+    if (f == 1.0){
+        Tot = gsl_cdf_poisson_P(q,mu);
+        result = Tot;
+    }
+    else if (f > 1.0){
+        for (j = 0; j < q+1; j++)
+            Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+        result = Tot;
+    }
+    else if ((mu < 1.0 && f < 0.97) || (mu < 2.0 && f < 0.80) || (mu < 3.0 && f < 0.65) || (mu < 4.0 && f < 0.60) ||
+        (mu < 5.0 && f < 0.55))
+    {
+        while (j < q+1 && j < B){
+            if ((mu+(f-1)*j)>0) Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            j++;
+        }
+        normConst = Tot;
+        while (j < B){
+            if ((mu+(f-1)*j)>0) normConst += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            j++;
+        }
+        result = Tot/normConst;
+    }
+    else
+    {
+        while (j < q+1 && j < B){
+            if ((mu+(f-1)*j)>0) Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            j++;
+        }
+        result = Tot;
+    }
+    if (result > 1.0) result=1.0;
     return(result);
 }
 

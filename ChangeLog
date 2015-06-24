@@ -1,13 +1,19 @@
+2015-06-23 (Version 1.0.4) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
+  
+  * Added another modification for faster predictions for all models (save cut-points)
+  * Added another modification for faster predictions for Generalized Poisson models (calc of norm const)
+  * Fixed 4 minor bugs [1 magic number + 2 in label switch + 1 repeated loop]
+
 2015-06-05 (Version 1.0.3) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
 
   * Added 1 family of distributions for the response: generalized Poisson
   * Added arguments 'prec' and 'thin'
-  * Modified predictive algorithms
+  * Modified predictive algorithms to run faster (start at k)
   * Removed PD file  
 
 2015-01-01 (Version 1.0.2) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
 
-  * Error in example corrected
+  * Corrected error in example 
 
 2014-10-27 (Version 1.0.1) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
 

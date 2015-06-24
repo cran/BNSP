@@ -37,8 +37,7 @@ bnpglm <- function(formula,family,data,offset,sampler="slice",StorageDir,ncomp,s
     if (p > 1){
         xbar<-apply(X,2,mean)
         xsd<-apply(X,2,sd)
-    }
-    else if (p == 1){
+    } else if (p == 1){
         xbar<-mean(X)
         xsd<-sd(X)
     }
@@ -102,17 +101,17 @@ bnpglm <- function(formula,family,data,offset,sampler="slice",StorageDir,ncomp,s
         if (missing(Alpha.xi)) Alpha.xi<-c(1.0,1.0)
         if (!missing(Beta.xi)) if (!length(Beta.xi)==2) stop(paste("For Generalized Poisson mixtures, argument Beta.xi must be of length 2"))
         if (!missing(Beta.xi)) if (sum(Beta.xi < 0) >0) stop(paste("For Generalized Poisson mixtures, vector Beta.xi must have positive elements"))
-        if (missing(Beta.xi)) Beta.xi<-c(0.1,0.1)
+        if (missing(Beta.xi)) Beta.xi<-c(0.1,1.0)
     }
     #Precision
     if (!missing(prec)) if (length(prec)==1) prec<-c(prec,prec)
-    if (missing(prec)) prec <- c(10,10)
+    if (missing(prec)) if (family.indicator<5)prec <- c(10,10)
+    if (missing(prec)) if (family.indicator==5)prec <- c(10,0.02)
     # Predictions
     if (missing(Xpred)){
         npred <- 0
         Xpred <- 1
-    }
-    else{
+    } else{
         npred <- length(Xpred)/p
     }
     if ((!missing(offsetPred)) & (npred > 0)){
@@ -120,8 +119,9 @@ bnpglm <- function(formula,family,data,offset,sampler="slice",StorageDir,ncomp,s
                stop(gettextf("number of prediction offsets is %d, but should equal %d: the number of prediction scenarios",
                    length(offsetPred), npred), domain = NA)
     }
-    if (missing(offsetPred) & (npred > 0)) offsetPred <- rep(1,npred)
+    if (missing(offsetPred) & (npred > 0)) offsetPred <- rep(round(mean(offset)),npred)
     if (missing(offsetPred) & (npred == 0)) offsetPred <- 1.0
+    allEqlI <- 0; if (length(unique(offsetPred)) == 1) allEqlI <- 1
     meanReg <- array(0,npred)
     medianReg <- array(0,npred)
     q1Reg <- array(0,npred)
@@ -161,11 +161,11 @@ bnpglm <- function(formula,family,data,offset,sampler="slice",StorageDir,ncomp,s
             as.double(Alpha.alpha),as.double(Beta.alpha),as.double(Turnc.alpha),
             as.double(xbar), as.double(xsd), as.double(sum(Y)/sum(offset)), as.double(prec),
             as.integer(family.indicator), as.integer(sampler.indicator),
-            as.integer(npred),as.double(Xpred),as.double(offsetPred),as.integer(maxy),
+            as.integer(npred),as.double(Xpred),as.double(offsetPred),as.integer(allEqlI),as.integer(maxy),
             as.double(meanReg),as.double(medianReg),as.double(q1Reg),as.double(q3Reg),as.double(modeReg),
             as.character(StorageDir),as.integer(WF))
     #Output
-    location<-32
+    location<-33
     meanReg <- out[[location+0]][1:npred]
     medianReg <- out[[location+1]][1:npred]
     q1Reg <- out[[location+2]][1:npred]

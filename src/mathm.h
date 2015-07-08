@@ -88,8 +88,8 @@ void MNCondParams1of2(int L1, int L2, gsl_matrix *JSigma, double tol, gsl_matrix
 }
 
 //Computes E(y|w) = mu_{y} + Matrix (w-mu_{w}). y is of length L1 and w of length L2.
-//Inputes are the 2 lengths, mu = E(y,w), W, Matrix, vector to store the conditional mean
-void MNCondParams2of2(int L1, int L2, gsl_vector *mu, gsl_vector *W, gsl_matrix *Matrix, double *params){
+//Inputes are the 2 lengths, mu = E(y,w), W, Matrix, gsl and double vector to store the conditional mean
+void MNCondParams2of2(int L1, int L2, gsl_vector *mu, gsl_vector *W, gsl_matrix *Matrix, gsl_vector *CM, double *params){
     int i;
     gsl_vector *Diff = gsl_vector_alloc(L2);
     gsl_vector *StoreCmean = gsl_vector_alloc(L1);
@@ -99,6 +99,7 @@ void MNCondParams2of2(int L1, int L2, gsl_vector *mu, gsl_vector *W, gsl_matrix 
     gsl_blas_dgemv(CblasNoTrans,1.0,Matrix,Diff,0.0,StoreCmean);
     gsl_vector_view muy = gsl_vector_subvector(mu,0,L1);
     gsl_vector_add(StoreCmean,&muy.vector);
+    gsl_vector_memcpy(CM,StoreCmean);
     for (i = 0; i < L1; i++)
         params[i] = gsl_vector_get(StoreCmean,i);
     gsl_vector_free(Diff);

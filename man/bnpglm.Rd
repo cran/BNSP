@@ -139,7 +139,7 @@ bnpglm(formula,family,data,offset,sampler="slice",StorageDir,
 
 \item{Xpred}{an optional design matrix the rows of which include the covariates \eqn{x} for which the conditional distribution
              of \eqn{Y|x,D} (where \eqn{D} denotes the data) is calculated. These are treated as `new' covariates i.e.
-             they do not contribute to the likelihood.}
+             they do not contribute to the likelihood. The matrix shouldn't include a column of 1's.}
 
 \item{offsetPred}{the offset term associated with the new covariates \code{Xpred}. \code{offsetPred} is a vector of
                   length equal to the rows of \code{Xpred}. If \code{family} is one of \code{poisson} or 
@@ -323,7 +323,7 @@ npred<-length(pred)
 # components and posterior samples. They both use a slice sampler
 # and parameter prec=200 achieves optimal acceptance rate, about 22%.
 fit1 <- bnpglm(cbind(Y,(E-Y))~X, family="binomial", data=simD, ncomp=30, sweeps=150,
-               burn=100, sampler="slice", prec=c(200), Xpred=pred, offsetPred=rep(30,npred))
+               burn=100, sampler="slice", prec1=c(200), Xpred=pred, offsetPred=rep(30,npred))
 \donttest{fit2 <- bnpglm(cbind(Y,(E-Y))~X, family="binomial", data=simD, ncomp=50, sweeps=5000,
                burn=1000, sampler="slice", prec=c(200), Xpred=pred, offsetPred=rep(30,npred))
 plot(with(simD,X),with(simD,Y)/with(simD,E))

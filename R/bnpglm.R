@@ -104,15 +104,20 @@ bnpglm <- function(formula,family,data,offset,sampler="slice",StorageDir,ncomp,s
         if (missing(Beta.xi)) Beta.xi<-c(0.1,1.0)
     }
     #Precision
-    if (!missing(prec)) if (length(prec)==1) prec<-c(prec,prec)
-    if (missing(prec)) if (family.indicator<5)prec <- c(10,10)
-    if (missing(prec)) if (family.indicator==5)prec <- c(10,0.02)
+    if (!missing(prec)) if (length(prec) == 1) prec<-c(prec,prec)
+    if (missing(prec)) if (family.indicator < 5) prec <- c(10,10)
+    if (missing(prec)) if (family.indicator == 5) prec <- c(10,0.02)
     # Predictions
     if (missing(Xpred)){
         npred <- 0
         Xpred <- 1
     } else{
-        npred <- length(Xpred)/p
+        npred <- NROW(Xpred)
+    }
+    if (npred > 0){
+           if (NCOL(Xpred) != p)
+               stop(gettextf("Xpred matrix includes %d covariates, but it should include %d: the number covariates in the model",
+                   NCOL(Xpred), p), domain = NA)
     }
     if ((!missing(offsetPred)) & (npred > 0)){
            if (length(offsetPred) != npred)

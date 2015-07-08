@@ -51,8 +51,9 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                 double *Alphaa1, double *Alphab1, double *TruncAlpha1,
                 double *xbar, double *xsd, double *Ymean, double *prec1,
                 int *family1, int *sampler1,
-                int *npred1, double *Xpred, double *Hpred, int *allEqlI, int *maxy1, double *meanReg, double *medianReg,
-                double *q1Reg, double *q3Reg, double *modeReg, char **WorkingDir, int *WF1)
+                int *npred1, double *Xpred, double *Hpred, int *allEqlI, int *maxy1,
+                double *meanReg, double *medianReg, double *q1Reg, double *q3Reg, double *modeReg,
+                char **WorkingDir, int *WF1)
 {
     gsl_set_error_handler_off();
 
@@ -296,9 +297,9 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     // Step 7: Initialize parameters Xi_h of the response variables
     s = gsl_ran_flat(r,1.0,100000);
     if (family == 1 || family == 2 || family == 5)
-        initGLMOneResLtnt1(s,Y,H,n,p,ncomp,nRespPars,nmembers,compAlloc,Xi,Ymean[0],family);
+        initGLMOneResLtnt1(s,Y,H,n,ncomp,nRespPars,nmembers,compAlloc,Xi,Ymean[0],family);
     if (family == 3 || family == 4)
-        initGLMOneResLtnt2(s,Y,H,n,p,ncomp,nRespPars,nmembers,compAlloc,Xi,family);
+        initGLMOneResLtnt2(s,Y,H,n,ncomp,nRespPars,nmembers,compAlloc,Xi,family);
 
     // Step 8: Inpute latentx from N(0,1)*I
     for (i = 0; i < n; i++){
@@ -633,7 +634,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                 SigmahIview = gsl_matrix_view_array(baseSigmahI,p,p);
                 for (i = 0; i < npred; i++){
                     for (k = 0; k < p; k++)
-                        baseXmM[k] = Xpred[k*n+i]-muh[h][k];
+                        baseXmM[k] = Xpred[k*npred+i]-muh[h][k];
                     XmMview = gsl_vector_view_array(baseXmM,p);
                     if (nmembers[h] > 0)
                         temp2 = logMVNormalpdf3(p,&XmMview.vector,vecZero,&SigmahIview.matrix);
@@ -651,11 +652,13 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                         gsl_blas_dgemv(CblasNoTrans,1.0,SigmaMuHalf,Z,0.0,U1);  // sample from MV normal
                         gsl_vector_add(U1,MuMu);
                         for (k = 0; k < p; k++)
-                            baseXmM[k] = Xpred[k*n+i]-gsl_vector_get(U1,k);
+                            baseXmM[k] = Xpred[k*npred+i]-gsl_vector_get(U1,k);
+                        XmMview = gsl_vector_view_array(baseXmM,p);
                         for (k = 0; k < p; k++) // N(0,1)
 	                        gsl_vector_set(Z,k,gsl_ran_gaussian(r,1));
                         gsl_blas_dgemv(CblasNoTrans,1.0,SigmaNuHalf,Z,0.0,U1);  // sample from MV normal
                         gsl_vector_add(U1,MuNu);
+                        s = gsl_ran_flat(r,1.0,100000);
                         rwish(s,p,Vdf,V,Th);
                         Inverse(p,Th);
                         nuMatrix = gsl_matrix_view_vector(U1,p,1);
@@ -674,7 +677,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                         for (k = 0; k < nRespPars; k++) XiC[k] = Xi[h][k];
                         nuSIxmm = 0.0;
                         for (k = 0; k < p; k++)
-                            nuSIxmm += storenuSI[h][k]*(Xpred[k*n+i]-muh[h][k]);
+                            nuSIxmm += storenuSI[h][k]*(Xpred[k*npred+i]-muh[h][k]);
                         if (family == 1 || family ==2 || family == 5) start = Hpred[i]*XiC[0];
                         else if (family == 3) start = Hpred[i]*XiC[0]/XiC[1];
                         else if (family == 4) start = Hpred[i]*XiC[0]/(XiC[0] + XiC[1]);

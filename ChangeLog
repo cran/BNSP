@@ -1,3 +1,7 @@
+2015-07-08 (Version 1.0.5) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
+
+  * Fixed 2 prediction bugs [n instead of npred in Xpred and XmMview for new cluster]
+
 2015-06-23 (Version 1.0.4) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
   
   * Added another modification for faster predictions for all models (save cut-points)

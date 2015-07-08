@@ -59,8 +59,8 @@ double invlogit(double p){
 
 //Initialize Xi coefficients. For Poisson and Binomial mixtures they are set equal to the mean of the cluster;
 //for empty clusters, they are set randomly to mean + error.
-void initGLMOneResLtnt1(unsigned long int s, int *Y, double *H, int n, int p, int ncomp, int nRespPars,
-                         int *nmembers, int *compAlloc, double Xi[ncomp][nRespPars], double Ymean, int family){
+void initGLMOneResLtnt1(unsigned long int s, int *Y, double *H, int n, int ncomp, int nRespPars,
+                        int *nmembers, int *compAlloc, double Xi[ncomp][nRespPars], double Ymean, int family){
     double sumhY1, sumhH;
     int i, h;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
@@ -90,7 +90,7 @@ void initGLMOneResLtnt1(unsigned long int s, int *Y, double *H, int n, int p, in
 }
 
 //Initialize Xi coefficients for negative binomial and beta binomial mixtures
-void initGLMOneResLtnt2(unsigned long int s, int *Y, double *H, int n, int p, int ncomp, int nRespPars,
+void initGLMOneResLtnt2(unsigned long int s, int *Y, double *H, int n, int ncomp, int nRespPars,
                          int *nmembers, int *compAlloc, double Xi[ncomp][nRespPars], int family){
     double sumhY1, sumhY2, sumhH;
     double Ybarh, Hbarh, Yvarh;
@@ -339,6 +339,32 @@ void calcGLMLimits(int *Y, double *H, int i, double *Xi, double *lower, double *
         else if (family == 5) *upper = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(Y[i],H[i]*Xi[0],Xi[1]));
         if (*upper < -lmt) *upper = -lmt;
         if (*upper > lmt) *upper = lmt;
+}
+
+//Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith sampling unit for both Y* and X*,
+//given responses Y, offsets H, covariates X, sampling unit, rates, and two doubles where lower and upper limits are stored.
+void calcGLMLimitsYX(int *Y, double *H, double *X, int i, double *Xi, double *lower, double *upper, int family){
+        double lmt = 999.99;
+        if (Y[i]==0)
+            lower[0] = -lmt;
+        else{
+            if (family == 1) lower[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i]-1,H[i]*Xi[0]));
+            else if (family == 2) lower[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i]-1,Xi[0],(int) H[i]));
+            else if (family == 3) lower[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i]-1,Xi[1]/(H[i]+Xi[1]),Xi[0]));
+            else if (family == 4) lower[0] = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i]-1,Xi[0],Xi[1]));
+            else if (family == 5) lower[0] = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(Y[i]-1,H[i]*Xi[0],Xi[1]));
+        }
+        if (lower[0] < -lmt) lower[0] = -lmt;
+        if (lower[0] > lmt) lower[0] = lmt;
+        if (family == 1) upper[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i],H[i]*Xi[0]));
+        else if (family == 2) upper[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i],Xi[0],(int) H[i]));
+        else if (family == 3) upper[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i],Xi[1]/(H[i]+Xi[1]),Xi[0]));
+        else if (family == 4) upper[0] = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i],Xi[0],Xi[1]));
+        else if (family == 5) upper[0] = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(Y[i],H[i]*Xi[0],Xi[1]));
+        if (upper[0] < -lmt) upper[0] = -lmt;
+        if (upper[0] > lmt) upper[0] = lmt;
+        if (X[i]==0) {lower[1] = -lmt; upper[1] = 0;}
+        else if (X[i]==1) {lower[1] = 0; upper[1] = lmt;}
 }
 
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith predictive scenario,
@@ -598,8 +624,7 @@ void setShMixed(int n, int nDres, int nCres, int nres, int nconf, int ncomp, int
 //Calculates the covariance matrix of cluster h given vectors of latent variables of length nDres of mean 0,
 //vectors of continuous responses of length nCres of mean x^T beta and
 void setShMixedFG(int n, int nDres, int nCres, int nres, int ncomp, int totNreg, int *cumnreg, int h, int *nmembers,
-                int *compAlloc, double Ystar[n][nDres], double *Y, double *X, double beta[ncomp][totNreg],
-                gsl_matrix *Sh){
+                int *compAlloc, double Ystar[n][nDres], double *Y, double *X, double beta[ncomp][totNreg], gsl_matrix *Sh){
     gsl_matrix_set_zero(Sh);
     if (nmembers[h] > 0){
         int i, j, k;

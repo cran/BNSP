@@ -16,6 +16,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+
 //Bivariate Normal pdf with arguments (dim=2,x,parameters,1,return.value)
 int bivNormalpdf(unsigned dim, const double *x, void *parameters, unsigned fdim, double *fval){
     double *params = parameters;
@@ -434,26 +437,205 @@ double cdf_generalized_poisson_P3(int q, double mu, double f){
     return(result);
 }
 
-//COM_Poisson cdf
+//COM_Poisson cdf without offset
 double cdf_com_poisson_P(int x, double lambda, double nu){
     int j, k, K; //of (32) of COM-Poisson revival paper
+    int MIN; //min(x,k)
     double unnormalized = 0.0;
     double normalized;
     double epsilon = 0.99;//of (32) of COM-Poisson revival paper
-    double Z = 0.0;
+    double Z;
     double R;
-    for (j = 0; j < x+1; j++) unnormalized += exp(j*log(lambda)-nu*gsl_sf_lnfact(j));
     K = 0;
     while(lambda/pow(K+1,nu) > epsilon) K++;
     k = K + 2;
-    for (j = 0; j < k+1; j++) Z += exp(j*log(lambda)-nu*gsl_sf_lnfact(j));
-    R = exp((k+1)*log(lambda)-nu*gsl_sf_lnfact(k+1))/((1-epsilon)*Z);
+    MIN = x;
+    if (k < MIN) MIN = k;
+    for (j = 0; j < MIN+1; j++)
+        unnormalized += exp(j*log(lambda)-nu*gsl_sf_lnfact(j));
+    Z = unnormalized;
+    if (x > MIN)
+        for (j = MIN+1; j < x+1; j++)
+            unnormalized += exp(j*log(lambda)-nu*gsl_sf_lnfact(j));
+    if (k > MIN)
+        for (j = MIN+1; j < k+1; j++)
+            Z += exp(j*log(lambda)-nu*gsl_sf_lnfact(j));
+    R = exp((k+1)*log(lambda)-nu*gsl_sf_lnfact(k+1)-log(1-epsilon)-log(Z));
     while(R > 0.000001){
         k++;
         Z += exp(k*log(lambda)-nu*gsl_sf_lnfact(k));
-        R = exp((k+1)*log(lambda)-nu*gsl_sf_lnfact(k+1))/((1-epsilon)*Z);
+        R = exp((k+1)*log(lambda)-nu*gsl_sf_lnfact(k+1)-log(1-epsilon)-log(Z));
     }
     normalized = unnormalized/Z;
     if (normalized > 1.0) normalized = 1.0;
+    //Rprintf("%s %i %f %f %f \n","com:",x,lambda,nu,normalized);
     return(normalized);
+}
+
+//COM_Poisson cdf with offset
+double cdf_com_poisson_P2(int x, double mu, double nu){
+    double lambda = pow(mu + (nu-1)/(2*nu),nu);
+    int j, k, K; //of (32) of COM-Poisson revival paper
+    int MIN; //min(x,k)
+    double unnormalized = 0.0;
+    double normalized;
+    double epsilon = 0.99;//of (32) of COM-Poisson revival paper
+    double Z;
+    double R;
+    K = 0;
+    while(lambda/pow(K+1,nu) > epsilon) K++;
+    k = K + 2;
+    MIN = x;
+    if (k < MIN) MIN = k;
+    for (j = 0; j < MIN+1; j++)
+        unnormalized += exp(j*log(lambda)-nu*gsl_sf_lnfact(j));
+    Z = unnormalized;
+    if (x > MIN)
+        for (j = MIN+1; j < x+1; j++)
+            unnormalized += exp(j*log(lambda)-nu*gsl_sf_lnfact(j));
+    if (k > MIN)
+        for (j = MIN+1; j < k+1; j++)
+            Z += exp(j*log(lambda)-nu*gsl_sf_lnfact(j));
+    R = exp((k+1)*log(lambda)-nu*gsl_sf_lnfact(k+1)-log(1-epsilon)-log(Z));
+    while(R > 0.000001){
+        k++;
+        Z += exp(k*log(lambda)-nu*gsl_sf_lnfact(k));
+        R = exp((k+1)*log(lambda)-nu*gsl_sf_lnfact(k+1)-log(1-epsilon)-log(Z));
+    }
+    normalized = unnormalized/Z;
+    if (normalized > 1.0) normalized = 1.0;
+    //Rprintf("%s %i %f %f %f \n","com:",x,lambda,nu,normalized);
+    if (gsl_isnan(normalized)) normalized = 0.0;
+    return(normalized);
+}
+
+//Hyper Poisson cdf without mean model(Castillo & Sanchez 2013)
+double cdf_hyper_poisson_P(int y, double lambda, double gamma){
+    int j;
+    double result = 0.0;
+    for (j = 0; j < y+1; j++) result += exp(j*log(lambda) - gsl_sf_lnpoch(gamma,j)-log(gsl_sf_hyperg_1F1(1.0,gamma,lambda)));
+    if (result > 1.0) result = 1.0;
+    return(result);
+}
+
+//Hyper Poisson cdf with mean model(Castillo & Sanchez 2013)
+struct hP_params{
+    double m, g;
+};
+
+double hPmean(double lambda, void *params){
+    struct hP_params *p = (struct hP_params *) params;
+    double mu = p->m;
+    double gamma = p->g;
+    return mu - lambda + (gamma-1) * (gsl_sf_hyperg_1F1(1.0,gamma,lambda)-1)/gsl_sf_hyperg_1F1(1.0,gamma,lambda);
+}
+
+//Given mu and gamma solve for lambda
+double solve_hyper_poisson(double mu, double gamma){
+    double lambda;
+    int status;
+    int iter = 0, max_iter = 100;
+    struct hP_params params = {mu,gamma};
+    const gsl_root_fsolver_type *T;
+    gsl_root_fsolver *s;
+    double r = 0;
+    double x_lo = MIN(mu,MAX(mu+gamma-1,gamma*mu));
+    double x_hi = MAX(mu,MIN(mu+gamma-1,gamma*mu));
+    gsl_function F;
+    F.function = &hPmean;
+    F.params = &params;
+    T = gsl_root_fsolver_bisection;// brent;
+    s = gsl_root_fsolver_alloc(T);
+    gsl_root_fsolver_set (s, &F, x_lo, x_hi);
+    do{
+        iter++;
+        status = gsl_root_fsolver_iterate(s);
+        r = gsl_root_fsolver_root(s);
+        x_lo = gsl_root_fsolver_x_lower(s);
+        x_hi = gsl_root_fsolver_x_upper(s);
+        status = gsl_root_test_interval (x_lo, x_hi, 0, 0.001);
+        lambda = x_hi/2 + x_lo/2;
+      }
+    while (status == GSL_CONTINUE && iter < max_iter);
+    gsl_root_fsolver_free (s);
+    return(lambda);
+}
+
+double cdf_hyper_poisson_P2(int y, double mu, double gamma){
+    double lambda;
+    lambda =  solve_hyper_poisson(mu,gamma);
+    int j;
+    double result = 0.0;
+    for (j = 0; j < y+1; j++) result += exp(j*log(lambda) - gsl_sf_lnpoch(gamma,j) - log(gsl_sf_hyperg_1F1(1.0,gamma,lambda)));
+    //for (j = 0; j < y+1; j++) result += exp(j*log(lambda) - gsl_sf_lngamma(gamma+j) + gsl_sf_lngamma(gamma) -log(gsl_sf_hyperg_1F1(1.0,gamma,lambda)));
+    if (result > 1.0) result = 1.0;
+    return(result);
+}
+
+//Triparametric Poisson cdf without mean model (Avi et al 2004)
+double cdf_tri_parametric_P(int y, double beta, double gamma, double alpha){
+    gsl_sf_result lnr1, lnr2, lnr3, lnr4, lnr5, lnr6, arg1, arg2, arg3, arg4, arg5, arg6;
+    int j;
+    double result = 0.0;
+    gsl_sf_lngamma_complex_e(gamma-alpha,-beta,&lnr1,&arg1);
+    gsl_sf_lngamma_complex_e(gamma-alpha,beta,&lnr2,&arg2);
+    gsl_sf_lngamma_complex_e(alpha,-beta,&lnr5,&arg5);
+    gsl_sf_lngamma_complex_e(alpha,beta,&lnr6,&arg6);
+    double f0 = lnr1.val + lnr2.val - gsl_sf_lngamma(gamma) - gsl_sf_lngamma(gamma-2*alpha);
+    f0 = exp(f0) * gsl_sf_gamma(gamma);
+    for (j = 0; j < y+1; j++){
+        gsl_sf_lngamma_complex_e(alpha+j,-beta,&lnr3,&arg3);
+        gsl_sf_lngamma_complex_e(alpha+j,beta,&lnr4,&arg4);
+        result += exp(lnr3.val + lnr4.val - lnr5.val - lnr6.val - gsl_sf_lngamma(gamma+j) - gsl_sf_lnfact(j));
+    }
+    result *= f0;
+    if (result > 1.0) result = 1.0;
+    return(result);
+}
+
+//Triparametric Poisson cdf with mean model
+double cdf_tri_parametric_P2(int y, double mu, double gamma, double alpha){
+    double beta = sqrt(-alpha*alpha+mu*(gamma-2*alpha-1));
+    gsl_sf_result lnr1, lnr2, lnr3, lnr4, lnr5, lnr6, arg1, arg2, arg3, arg4, arg5, arg6;
+    int j;
+    double result = 0.0;
+    gsl_sf_lngamma_complex_e(gamma-alpha,-beta,&lnr1,&arg1);
+    gsl_sf_lngamma_complex_e(gamma-alpha,beta,&lnr2,&arg2);
+    gsl_sf_lngamma_complex_e(alpha,-beta,&lnr5,&arg5);
+    gsl_sf_lngamma_complex_e(alpha,beta,&lnr6,&arg6);
+    double f0 = lnr1.val + lnr2.val - gsl_sf_lngamma(gamma) - gsl_sf_lngamma(gamma-2*alpha);
+    f0 = exp(f0) * gsl_sf_gamma(gamma);
+    for (j = 0; j < y+1; j++){
+        gsl_sf_lngamma_complex_e(alpha+j,-beta,&lnr3,&arg3);
+        gsl_sf_lngamma_complex_e(alpha+j,beta,&lnr4,&arg4);
+        result += exp(lnr3.val + lnr4.val - lnr5.val - lnr6.val - gsl_sf_lngamma(gamma+j) - gsl_sf_lnfact(j));
+        //Rprintf("%s %f\n","result: ",result);
+    }
+    //Rprintf("%s %f\n","result: ",result);
+    if (f0 > 0) result *= f0;
+    else result = 0.0;
+    //Rprintf("%s %f %f %f %f %f %f %f %f \n","test cpd",
+    //lnr3.val,lnr4.val,lnr5.val,lnr6.val,gsl_sf_lngamma(gamma+y),gsl_sf_lnfact(y),result,f0);
+    if (result > 1.0) result = 1.0;
+    return(result);
+}
+
+
+//Univariate Normal and Binary pdf
+int NormalBpdf(unsigned dim, const double *x, void *parameters, unsigned fdim, double *fval){
+    double *params = parameters;
+    double mu1 = params[0];
+    double beta1 = params[1];
+    double beta2 = params[2];
+    double var1 = params[3];
+    double var2 = params[4];
+    double cut1 = params[5];
+    double cut2 = params[6];
+    double x2 = params[7];
+    double m1 = params[8];
+    double m2 = params[9];
+    fval[0] = exp(-(x[0]-mu1)*(x[0]-mu1)/(2*var1))/sqrt(2*M_PI*var1)*
+              (gsl_cdf_ugaussian_P((cut1-beta1*(x[0]-m1)-beta2*(x2-m2))/sqrt(var2))-
+                                 gsl_cdf_ugaussian_P((cut2-beta1*(x[0]-m1)-beta2*(x2-m2))/sqrt(var2)));
+    return 0;
 }

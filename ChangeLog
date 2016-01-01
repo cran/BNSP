@@ -1,3 +1,7 @@
+2015-12-04 (Version 1.1.0) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
+
+  * Added 3 families of distributions for count responses: COM-Poisson, hyper-Poisson and complex triparametric Person 
+
 2015-07-08 (Version 1.0.5) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
 
   * Fixed 2 prediction bugs [n instead of npred in Xpred and XmMview for new cluster]

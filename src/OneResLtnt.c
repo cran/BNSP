@@ -34,6 +34,9 @@
 #include <gsl/gsl_eigen.h>
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_sf_gamma.h>
+#include <gsl/gsl_sf_hyperg.h>
+#include <gsl/gsl_errno.h>
+#include <gsl/gsl_roots.h>
 #include "matalg.h"
 #include "pdfs.h"
 #include "sampling.h"
@@ -41,6 +44,8 @@
 #include "mathm.h"
 #include "SpecOneRL.h"
 //include "cubature.h"
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                 int *sweeps1, int *burn1, int *thin1, int *ncomp1, int *n1, int *p1,
@@ -52,8 +57,11 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                 double *xbar, double *xsd, double *Ymean, double *prec1,
                 int *family1, int *sampler1,
                 int *npred1, double *Xpred, double *Hpred, int *allEqlI, int *maxy1,
-                double *meanReg, double *medianReg, double *q1Reg, double *q3Reg, double *modeReg,
-                char **WorkingDir, int *WF1)
+                double *meanReg, double *modeReg,
+                double *Q05Reg, double *Q10Reg, double *Q15Reg, double *Q20Reg, double *Q25Reg,
+                double *Q50Reg, double *Q75Reg, double *Q80Reg, double *Q85Reg, double *Q90Reg,
+                double *Q95Reg, double *denReg, double *denVar,
+                char **WorkingDir, int *WF1, int *compA)
 {
     gsl_set_error_handler_off();
 
@@ -70,7 +78,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     int nSamples = (sweeps - burn)/thin;
 
     //Family
-    int family = family1[0]; //1=poisson, 2=binomial, 3=negative binomial, 4=beta binomial, 5=com-Poisson
+    int family = family1[0]; //1=poisson, 2=binomial, 3=negative binomial, 4=beta binomial, 5=generalized poisson, 6=com-poisson, 7=hyper-poisson, 8=ctpd
     int sampler = sampler1[0]; //1=slice, 2=truncated
 
     //Declare variables for loops: h for components, k,j for covariates, i for subjects, sw for sweeps
@@ -83,6 +91,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     int npred = npred1[0]; //number of predictions
     int nRespPars = 1; // number of parameters in response pmf
     if (family > 2) nRespPars = 2;
+    if (family == 8) nRespPars = 3;
 
     //Tolerance level
     double tol = 0.0001; //tolerance level for eigen values when inverting matrices
@@ -139,7 +148,8 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
 
     // Open files
     FILE *out_file1, *out_file2, *out_file3, *out_file4, *out_file5, *out_file6, *out_file7, *out_file8, *out_file9,
-         *out_file10; //, *out_file11;
+         *out_file10, *out_file11, *out_file12, *out_file13, *out_file14, *out_file15, *out_file16, *out_file17,
+         *out_file18, *out_file19, *out_file20, *out_file21, *out_file22;
 
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Th.txt");
     out_file1 = fopen(path_name, "wt");
@@ -161,8 +171,30 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     out_file9 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Updated.txt");
     out_file10 = fopen(path_name, "wt");
-    //snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.PD.txt");
-    //out_file11 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.MeanReg.txt");
+    out_file11 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q05Reg.txt");
+    out_file12 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q10Reg.txt");
+    out_file13 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q15Reg.txt");
+    out_file14 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q20Reg.txt");
+    out_file15 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q25Reg.txt");
+    out_file16 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q50Reg.txt");
+    out_file17 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q75Reg.txt");
+    out_file18 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q80Reg.txt");
+    out_file19 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q85Reg.txt");
+    out_file20 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q90Reg.txt");
+    out_file21 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q95Reg.txt");
+    out_file22 = fopen(path_name, "wt");
 
     // Define quantities of interest
     double Th1[ncomp][p*p]; // to store Th
@@ -224,8 +256,8 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     double baseSigmahI[p*p];// to view Sigmah^{-1}
 
     //Predictions
-    double PredProb[npred][ncomp];
-    int newClusI[npred];
+    double PredProb;
+    int newClusI;
     double denomPred[npred];
     int maxy = maxy1[0];
     int maxy2 = maxy;
@@ -239,10 +271,29 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     double CDFL[ncomp];
     double CDFU[ncomp];
     double normConst[ncomp];
+    for (j = 0; j < ncomp; j++){
+        CDFL[j] = 0.0;
+        CDFU[j] = 0.0;
+        normConst[j] = 0.0;
+    }
     double StoreLower[ncomp][maxy];
     double StoreUpper[ncomp][maxy];
     int ll[ncomp];
     int ul[ncomp];
+    int Iend = 0;
+    double CPDF[npred][ncomp];
+    double TMR[npred]; //mean regression from each iteration
+    double TQ05R[npred]; //05th percentile regression from each iteration
+    double TQ10R[npred]; //10th percentile regression from each iteration
+    double TQ15R[npred]; //15th percentile regression from each iteration
+    double TQ20R[npred]; //20th percentile regression from each iteration
+    double TQ25R[npred]; //25th percentile regression from each iteration
+    double TQ50R[npred]; //50th percentile regression from each iteration
+    double TQ75R[npred]; //75th percentile regression from each iteration
+    double TQ80R[npred]; //80th percentile regression from each iteration
+    double TQ85R[npred]; //85th percentile regression from each iteration
+    double TQ90R[npred]; //90th percentile regression from each iteration
+    double TQ95R[npred]; //95th percentile regression from each iteration
 
     // Sampler initialization
 
@@ -252,7 +303,9 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
             pdjkj[h][i] = (double) 1/ncomp; //(ncomp-h) or (ncomp-h)*(ncomp-h);
 
     s = gsl_ran_flat(r,1.0,100000);
-    allocation(s,n,ncomp,pdjkj,compAlloc);
+    allocation(s,n,ncomp,pdjkj,compAlloc,1);
+    for (i = 0; i < n; i++)
+        compAlloc[i] = compA[i];
 
     // Step 2: Find nmembers
     findNmembers(n,ncomp,compAlloc,nmembers);
@@ -296,7 +349,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
 
     // Step 7: Initialize parameters Xi_h of the response variables
     s = gsl_ran_flat(r,1.0,100000);
-    if (family == 1 || family == 2 || family == 5)
+    if (family == 1 || family == 2 || family == 5 || family == 6 || family == 7 || family == 8)
         initGLMOneResLtnt1(s,Y,H,n,ncomp,nRespPars,nmembers,compAlloc,Xi,Ymean[0],family);
     if (family == 3 || family == 4)
         initGLMOneResLtnt2(s,Y,H,n,ncomp,nRespPars,nmembers,compAlloc,Xi,family);
@@ -305,8 +358,11 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     for (i = 0; i < n; i++){
         for (j = 0; j < nRespPars; j++) XiC[j] = Xi[compAlloc[i]][j];
         calcGLMLimits(Y,H,i,XiC,&lower,&upper,family);
+        lower = -9999; upper=9999;
         s = gsl_ran_flat(r,1.0,100000);
+        //Rprintf("%s %i %i %f %f %f %f %f \n","test:",i,Y[i],H[i],XiC[0],XiC[1],lower,upper);
         sampleTUN(s,i,0.0,1.0,lower,upper,latentx);
+        //Rprintf("%s %f \n","test:",latentx[i]);
     }
 
     //test:
@@ -319,10 +375,18 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     calcGLMLimitsPredGP(Hpred,5,0,XiC,&lower,&upper,&CDFL,&CDFU,&normConst);
     Rprintf("%s %f %f %f %f %f \n","new1:",lower,upper,CDFL,CDFU,normConst);
     calcGLMLimitsPredLGP(Hpred,4,0,XiC,&lower,&CDFL,normConst);
-    Rprintf("%s %f %f %f \n","new2:", lower,CDFL,normConst);
+
+    //gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P2(Y[i]-1,H[i]*Xi[0],Xi[1],Xi[2]));
+    Rprintf("%s %f %f %f \n","new2:",cdf_tri_parametric_P2(0,1,3,0.1),
+                              cdf_tri_parametric_P(1,2,3,0.2),
+                              cdf_tri_parametric_P(1,3,3,0.3));
 */
 
-    //#############################################SAMPLER
+//gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P2(Y[i]-1,H[i]*Xi[0],Xi[1],Xi[2]));
+
+//Rprintf("%s %f \n","new2:",cdf_tri_parametric_P2(137,26.071804*84.860290,1.622364,-140.385474));
+
+//#############################################SAMPLER
     for (sw = 0; sw < sweeps; sw++){
 
         if (sw==0) Rprintf("%i %s \n",sw, "posterior samples...");
@@ -333,7 +397,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
         sumPIh = 0.0; // monitor sum pi_h and stop when it is > 1-minU
         h = 0;
         while ((h < ncomp) && (sumPIh <= (1-minU))){
-
+//Rprintf("%s %i %i \n","V...",sw,h);
             // - 1 - Update V_h ~ Beta(nmembers[h]+1,n-nmembers[1:h]+alpha);
             nmb += nmembers[h];
             Vdp[h] = gsl_ran_beta(r, (double) nmembers[h]+1.0, (double) n-nmb+alpha);
@@ -344,7 +408,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
             else if (h > 0 && h < (ncomp-1))
                 pi[h] = Vdp[h] * pi[h-1] * (1-Vdp[h-1]) / Vdp[h-1];
             else pi[h] = pi[h-1] * (1-Vdp[h-1]) / Vdp[h-1];
-
+//Rprintf("%s %i %i \n","Th...",sw,h);
             // - 3 - Th
             if (nmembers[h] > 0){
                 SetShOneResLtnt(p,n,h,ncomp,X,muh,latentx,nuh,compAlloc,Sh);
@@ -364,7 +428,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
 
             //if (sw==131) Rprintf("%i %i %i %f %f\n",sw,h,nmembers[h],gsl_matrix_get(Sh,0,0),Th1[h][0]);
             //if (sw==131) Rprintf("%i %i %i %i %f %f %lf %lf \n",sw,h,nmembers[h],nmb,Vdp[h],pi[h],sumPIh,1-minU);
-
+//Rprintf("%s %i %i \n","nh...",sw,h);
             // - 4 - nh
             if (nmembers[h] > 0){
                 sumxsq = SSQh(n,h,compAlloc,latentx); //set sample totals
@@ -393,7 +457,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
             gsl_vector_memcpy(nu,U1); //store 1
             for (k = 0; k < p; k++)
                 nuh[h][k] = gsl_vector_get(nu,k); // store 2
-
+//Rprintf("%s %i %i \n","mh...",sw,h);
             // - 5 - mu_h
             if (nmembers[h] > 0){
                 gsl_matrix_memcpy(nTDi,Th); // copy sample from rwish
@@ -419,7 +483,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
             gsl_vector_add (U1,U3);
             for (k = 0; k < p; k++)
                 muh[h][k] = gsl_vector_get(U1,k);
-
+//Rprintf("%s %i %i \n","xih...",sw,h);
             // - 6 - Xi_h
             // Current and proposed parameters
             for (k = 0; k < nRespPars; k++)
@@ -430,6 +494,8 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
 
             XiLC = 0.0;
             XiLP = 0.0;
+
+//Rprintf("%i %i %f %f %f %f %f %f \n",sw,h,XiC[0],XiC[1],XiC[2],XiP[0],XiP[1],XiP[2]);
 
             gsl_matrix_memcpy(Dg2,Th); // copy Th: sample from rwish
             Inverse(p,Dg2);
@@ -456,13 +522,16 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
             for (k = 0; k < p; k++)
                 storenuSI[h][k] = gsl_vector_get(nuSI,k);
 
-//Rprintf("%s\n","MH");
+//Rprintf("%s %i %i\n","mh algo...",sw,h);
             //MH algorithm
             temp3 = 0;
-            for (k = 0; k < nRespPars; k++)
-                if (XiP[k] > 0.00001) temp3 +=1;
+            if (family < 8){
+                for (k = 0; k < nRespPars; k++)
+                    if (XiP[k] > 0.00001) temp3 +=1;
+            }
+            else if (family == 8) temp3 = nRespPars;
 
-//Rprintf("%i %i %f %f %f %f\n",sw,h,XiC[0],XiC[1],XiP[0],XiP[1]);
+//if (sw==54364) Rprintf("%i %i %f %f %f %f %f %f\n",sw,h,XiC[0],XiC[1],XiC[2],XiP[0],XiP[1],XiP[2]);
             if (temp3 == nRespPars){
                 for (i = 0; i < n; i++){
                     if (compAlloc[i]==h && exp(XiLP) > 0){
@@ -473,8 +542,8 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                         calcGLMLimits(Y,H,i,XiP,&cymoP,&cyP,family);
                         XiLC += log(gsl_cdf_ugaussian_P((cyC-nuSIxmm)/sqrt(1-nuSInu)) - gsl_cdf_ugaussian_P((cymoC-nuSIxmm)/sqrt(1-nuSInu)));
                         XiLP += log(gsl_cdf_ugaussian_P((cyP-nuSIxmm)/sqrt(1-nuSInu)) - gsl_cdf_ugaussian_P((cymoP-nuSIxmm)/sqrt(1-nuSInu)));
-                        //Rprintf("%i %i %i %i %f %f %f %f %f %f %f %f %f %f %f \n",
-                        //sw,h,i,Y[i],H[i],XiC[0],XiC[1],cymoC,cyC,XiP[0],XiP[1],cymoP,cyP,XiLC,XiLP);
+                        //Rprintf("%i %i %i %i %f %f %f %f %f %f %f %f %f %f %f %f \n",
+                        //sw,h,i,Y[i],H[i],XiC[0],XiC[1],cymoC,cyC,XiP[0],XiP[1],XiP[2],cymoP,cyP,XiLC,XiLP);
                     }
                 }
                 if (family == 1){
@@ -493,7 +562,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                     DAcp = exp(XiLC)*gsl_ran_beta_pdf(XiC[0],alphaXi[0],betaXi[0])*
                            gsl_ran_beta_pdf(XiP[0],temp,temp2);
                 }
-                else if (family == 3 || family == 4){
+                else if (family == 3 || family == 4 || family == 6 || family == 7){
                     NAcp = exp(XiLP)*gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
                                      gsl_ran_gamma_pdf(XiP[1],alphaXi[1],1/betaXi[1])*
                                      gsl_ran_gamma_pdf(XiC[0],prec[0]*XiP[0]*XiP[0],1/(prec[0]*XiP[0]))*
@@ -510,8 +579,22 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                                      //gsl_ran_gaussian_pdf(XiP[1]-XiC[1],prec[1]);
                     DAcp = exp(XiLC)*gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
                                      gsl_ran_gaussian_pdf(XiC[1]-alphaXi[1],betaXi[1])*
-                                     gsl_ran_gamma_pdf(XiP[0],prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]));//
+                                     gsl_ran_gamma_pdf(XiP[0],prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]));
                                      //gsl_ran_gaussian_pdf(XiP[1]-XiC[1],prec[1]);
+                }
+                else if (family == 8){
+                    NAcp = exp(XiLP)*gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
+                                     gsl_ran_gamma_pdf(XiP[1],alphaXi[1],1/betaXi[1])*
+                                     gsl_ran_gaussian_pdf(XiP[2]-alphaXi[2],betaXi[2])*
+                                     gsl_ran_gamma_pdf(XiC[0],prec[0]*XiP[0]*XiP[0],1/(prec[0]*XiP[0]))*
+                                     gsl_ran_gamma_pdf(XiC[1],prec[1]*XiP[1]*XiP[1],1/(prec[1]*XiP[1]));
+                                     //gsl_ran_gaussian_pdf(XiP[2]-XiC[2],prec[3]);
+                    DAcp = exp(XiLC)*gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
+                                     gsl_ran_gamma_pdf(XiC[1],alphaXi[1],1/betaXi[1])*
+                                     gsl_ran_gaussian_pdf(XiC[2]-alphaXi[2],betaXi[2])*
+                                     gsl_ran_gamma_pdf(XiP[0],prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]))*
+                                     gsl_ran_gamma_pdf(XiP[1],prec[1]*XiC[1]*XiC[1],1/(prec[1]*XiC[1]));
+                                     //gsl_ran_gaussian_pdf(XiP[2]-XiC[2],prec[3]);
                 }
                 temp = NAcp/DAcp;
                 if (temp > 1.0) Acp = 1.0;else Acp = temp;
@@ -525,7 +608,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                 for (k = 0; k < nRespPars; k++) Xi[h][k] = XiC[k];
             for (k = 0; k < nRespPars; k++) XiC[k] = Xi[h][k];
 
-//Rprintf("%s\n","LV");
+//if (sw==54364) Rprintf("%s %i %i \n","impute latent...",sw,h);
             // - 7 - Impute latent y^*
             for (i = 0; i < n; i++){
                 if (compAlloc[i]==h){
@@ -551,7 +634,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                 if (u[i] < minU) minU = u[i];
         }
 
-//Rprintf("%s \n","pdelta...");
+//if (sw==54364) Rprintf("%s %i %i\n","pdelta...",sw,h);
         // - 9 - P(delta_j = k_j)
         for (h = 0; h < nUpdated; h++){
             // View Sigmah^{-1}
@@ -565,7 +648,8 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                     nuSIxmm = 0.0;
                     for (k = 0; k < p; k++)
                         nuSIxmm += storenuSI[h][k]*(X[k*n+i]-muh[h][k]);
-//if (sw==11 && h==6 && i==499) Rprintf("%i %i %i %i %f %f %f  \n",sw,h,i,Y[i],H[i],XiC[0],XiC[1]);
+//Rprintf("%i %i %i %i %f %f %f  \n",sw,h,i,Y[i],H[i],XiC[0],XiC[1]);
+//if (XiC[1]>0.23 || i==0)
                     calcGLMLimits(Y,H,i,XiC,&lower,&upper,family);
 //if (sw==8 && h>35 && h<41)
 //Rprintf("%i %i %i %i %f %f %f %f %f  \n",sw,h,i,Y[i],H[i],XiC[0],XiC[1],lower,upper);
@@ -576,16 +660,16 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                     temp2 = logMVNormalpdf3(p,&XmMview.vector,vecZero,&SigmahIview.matrix);
                     if (sampler == 1) pdjkj[h][i] = exp(log(temp)+temp2);
                     else if (sampler == 2) pdjkj[h][i] = exp(log(temp)+temp2+log(pi[h]));
-//if (sw==11 && h==6 && i==499) Rprintf("%i %i %i %f %f %f %f %f %f %f %f \n",
-//sw,h,i,XiC[0],XiC[1],temp,pdjkj[h][i],lower,upper,nuSIxmm,storenuSInu[h]);
+//if (sw==12 && h==9 && i==499) Rprintf("%i %i %i %f %f %f %f %f %f %f %f \n",
+//                                        sw,h,i,XiC[0],XiC[1],temp,pdjkj[h][i],lower,upper,nuSIxmm,storenuSInu[h]);
                 }
                 else
                     pdjkj[h][i] = 0.0;
-                //if (h == 31)
-                  //  Rprintf("%i %i %i %i %f %f %f %f %f %f %f %f %f %f\n",
-                    //    sw,h,i,Y[i],H[i],XiC[0],XiC[1],upper,lower,temp,temp2,pdjkj[h][i],
-                      //  gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P2(Y[i]-1,H[i]*XiC[0],XiC[1])),
-                        //1000000000*cdf_generalized_poisson_P2(Y[i]-1,H[i]*XiC[0],XiC[1]));
+                //if (sw==2847 && i==149 && h==3)
+                //Rprintf("%i %i %i %i %f %f %f %f %f %f %f %f %f %f %f\n",
+                //sw,h,i,Y[i],H[i],XiC[0],XiC[1],XiC[2],nuSIxmm,storenuSInu[h],upper,lower,temp,temp2,pdjkj[h][i]);
+
+
                 //Rprintf("%i %f ", h, pdjkj[h][i]);
             }
         }
@@ -593,12 +677,12 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
             for (i = 0; i < n; i++)
                 pdjkj[h][i] = 0.0;
 //if (sw==8 && h>35 && h<41)
-//Rprintf("%s \n","alloc...");
+//if (sw==54364) Rprintf("%s %i \n","alloc...",sw);
         // - 10 - Update allocation to
         s = gsl_ran_flat(r,1.0,100000);
-        allocation(s,n,ncomp,pdjkj,compAlloc);
+        allocation(s,n,ncomp,pdjkj,compAlloc,sw);
 //if (sw==8 && h>35 && h<41)
-//Rprintf("%s \n","nmem...");
+//Rprintf("%s %i \n","nmem...",sw);
         // - 11 - Find nmembers
         findNmembers(n,ncomp,compAlloc,nmembers);
 
@@ -615,78 +699,67 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
         s = gsl_ran_flat(r,1.0,100000);
         newalpha = updateAlpha(s,n,ncomp,Alphaa,Alphab,TruncAlpha,nmembers,alpha);
         alpha = newalpha;
-//Rprintf("%s \n","pred...");
+//if (sw==54364) Rprintf("%s %i \n","pred...",sw);
         // - 14 - Predictions
+
         if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0) && (npred > 0)){
-            // posterior weights
-            for (i = 0; i < npred; i++) {newClusI[i] = 0; denomPred[i] = 0.0;}
+
+            newClusI = 0;
+            for (i = 0; i < npred; i++) denomPred[i] = 0.0;
             for (k = 0; k < maxy; k++) for (i = 0; i < npred; i++) StorePD[i][k] = 0.0;
-            for (h = 0; h < ncomp; h++) for (i = 0; i < npred; i++) PredProb[i][h] = 0.0;
-            if (sampler == 1){
-                if (nUpdated < ncomp) upperL = nUpdated+1;
-                else if (nUpdated == ncomp) upperL = nUpdated;
-            }
-            else if (sampler == 2) upperL = nUpdated;
-//Rprintf("%s \n","denom...");
+            for (h = 0; h < ncomp; h++) if (nmembers[h] > 0) upperL = h;
+            upperL += 2; //one to work ok and one for the empty cluster; check for in between zeros
+
             for (h = 0; h < upperL; h++){
-                for (k = 0; k < p*p; k++)
-                    baseSigmahI[k] = SigmahI[h][k];
-                SigmahIview = gsl_matrix_view_array(baseSigmahI,p,p);
-                for (i = 0; i < npred; i++){
-                    for (k = 0; k < p; k++)
-                        baseXmM[k] = Xpred[k*npred+i]-muh[h][k];
-                    XmMview = gsl_vector_view_array(baseXmM,p);
-                    if (nmembers[h] > 0)
-                        temp2 = logMVNormalpdf3(p,&XmMview.vector,vecZero,&SigmahIview.matrix);
-                    else
-                        temp2 = 0.0;
-                    PredProb[i][h] = exp(temp2)*nmembers[h]/(alpha+n);
-                    if (nmembers[h] == 0 && newClusI[i] == 0){
-                        temp2 = logMVNormalpdf3(p,&XmMview.vector,vecZero,&SigmahIview.matrix);
-                        PredProb[i][h] = exp(temp2)*alpha/(alpha+n);
-                        newClusI[i] = 1;
-                    }
-                    if ((h == nUpdated) && (newClusI[i] == 0) && (nUpdated < ncomp)){
-                        for (k = 0; k < p; k++) // N(0,1)
-	                        gsl_vector_set(Z,k,gsl_ran_gaussian(r,1));
-                        gsl_blas_dgemv(CblasNoTrans,1.0,SigmaMuHalf,Z,0.0,U1);  // sample from MV normal
-                        gsl_vector_add(U1,MuMu);
+                if (nmembers[h] > 0 || newClusI == 0){
+                    if (nmembers[h] == 0) newClusI = 1;
+                    for (k = 0; k < p*p; k++)
+                        baseSigmahI[k] = SigmahI[h][k];
+                    SigmahIview = gsl_matrix_view_array(baseSigmahI,p,p);
+                    for (i = 0; i < npred; i++){
                         for (k = 0; k < p; k++)
-                            baseXmM[k] = Xpred[k*npred+i]-gsl_vector_get(U1,k);
+                            baseXmM[k] = Xpred[k*npred+i]-muh[h][k];
                         XmMview = gsl_vector_view_array(baseXmM,p);
-                        for (k = 0; k < p; k++) // N(0,1)
-	                        gsl_vector_set(Z,k,gsl_ran_gaussian(r,1));
-                        gsl_blas_dgemv(CblasNoTrans,1.0,SigmaNuHalf,Z,0.0,U1);  // sample from MV normal
-                        gsl_vector_add(U1,MuNu);
-                        s = gsl_ran_flat(r,1.0,100000);
-                        rwish(s,p,Vdf,V,Th);
-                        Inverse(p,Th);
-                        nuMatrix = gsl_matrix_view_vector(U1,p,1);
-                        gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,&nuMatrix.matrix,&nuMatrix.matrix,1.0,Th);
-                        temp2 = logMVNormalpdf2(p,&XmMview.vector,vecZero,Th);
-                        PredProb[i][h] = exp(temp2)*alpha/(alpha+n);
+                        temp2 = logMVNormalpdf3(p,&XmMview.vector,vecZero,&SigmahIview.matrix);
+                        CPDF[i][h] = exp(temp2);
+                        if (nmembers[h] > 0) PredProb = CPDF[i][h]*nmembers[h];
+                        else if (nmembers[h] == 0) PredProb = CPDF[i][h]*alpha;
+                        denomPred[i] += PredProb;
                     }
-                    denomPred[i] += PredProb[i][h];
                 }
             }
-//Rprintf("%s \n","numerator...");
+
             // posterior predictive distribution
+            Iend = 0;
             for (i = 0; i < npred; i++){
-                for (h = 0; h < ncomp; h++){
-                    if (PredProb[i][h]>0){
-                        for (k = 0; k < nRespPars; k++) XiC[k] = Xi[h][k];
+                for (h = 0; h < ncomp; h++) for (k = 0; k < maxy; k++) Disthi[h][k] = 0.0;
+                newClusI = 0;
+                for (h = 0; h < upperL; h++){
+                    if (nmembers[h] > 0 || newClusI == 0){
+                        if (nmembers[h] == 0) newClusI = 1;
+                        for (k = 0; k < nRespPars; k++)
+                            XiC[k] = Xi[h][k];
                         nuSIxmm = 0.0;
                         for (k = 0; k < p; k++)
                             nuSIxmm += storenuSI[h][k]*(Xpred[k*npred+i]-muh[h][k]);
-                        if (family == 1 || family ==2 || family == 5) start = Hpred[i]*XiC[0];
-                        else if (family == 3) start = Hpred[i]*XiC[0]/XiC[1];
-                        else if (family == 4) start = Hpred[i]*XiC[0]/(XiC[0] + XiC[1]);
-//fprintf(out_file7,"%i %i %i %i %f %f %f  %i \n",sw,h,i,Y[i],Hpred[i],XiC[0],XiC[1],start);
+
+                        //start = Hpred[i]*XiC[0];
+                        //if (family == 3) start = Hpred[i]*XiC[0]/XiC[1];
+                        //if (family == 4) start = Hpred[i]*XiC[0]/(XiC[0] + XiC[1]);
+                        //while (start >= maxy) start = maxy/2;
+
+                        start = 0;
+
                         if (i == 0 || allEqlI[0] == 0){
                             if (family < 5) calcGLMLimitsPred(Hpred,start,i,XiC,&lower,&upper,family);
-                            if (family==5) calcGLMLimitsPredGP(Hpred,start,i,XiC,&lower,&upper,&CDFL[h],&CDFU[h],&normConst[h]);
+                            else if (family==5) calcGLMLimitsPredGP(Hpred,start,i,XiC,&lower,&upper,&CDFL[h],&CDFU[h],&normConst[h]);
+                            else if (family==6) calcGLMLimitsPredCP(Hpred,start,i,XiC,&lower,&upper,&CDFL[h],&CDFU[h],&normConst[h]);
+                            else if (family==7) calcGLMLimitsPredHP(Hpred,start,i,XiC,&lower,&upper,&CDFL[h],&CDFU[h],&normConst[h]);
+                            else if (family==8) calcGLMLimitsPredCTP(Hpred,start,i,XiC,&lower,&upper,&CDFL[h],&CDFU[h],&normConst[h]);
                             StoreLower[h][start] = lower;
                             StoreUpper[h][start] = upper;
+                            if (family>=5) if (gsl_isinf(normConst[h]) || normConst[h]==0.0 || gsl_isnan(CDFL[h]) || gsl_isnan(-CDFL[h])
+                                || gsl_isnan(CDFU[h]) || gsl_isnan(-CDFU[h])) Iend=1;
                         }
                         else{
                             lower = StoreLower[h][start];
@@ -696,48 +769,61 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                                gsl_cdf_ugaussian_P((lower-nuSIxmm)/sqrt(1-storenuSInu[h]));
                         upper2 = upper;
                         cdfy = temp;
-//if (i==31) fprintf(out_file7,"%i %i %i %i %f %f %f %f %f %i %i \n",sw,i,h,start,XiC[0],lower,upper,nuSIxmm,cdfy,ll[h],ul[h]);
-                        Disthi[h][start] = temp * PredProb[i][h]/denomPred[i];
+                        if (nmembers[h] > 0) Disthi[h][start] = temp * CPDF[i][h] * nmembers[h];
+                        else if (nmembers[h] == 0) Disthi[h][start] = temp * CPDF[i][h] * alpha;
                         move = 1;
+
+//if (sw==40064) fprintf(out_file7,"%s %i %i %i %i %i %i %f %f %f %f %f %f %f %f %f %f %f %f \n","start",
+//sw,i,h,start,move,k,XiC[0],XiC[1],XiC[2],lower,upper,CDFL[h],CDFU[h],normConst[h],cdfy,nuSIxmm,storenuSInu[h],temp);
+
                         if (family==2 || family==4) maxy2 = Hpred[i]+1;
                         while(cdfy<PredTrunc && ((start-move)>=0 || (start+move)<maxy2)){
-                            if (start >= move) {
+                            if (start >= move){
                                 k = start - move;
                                 upper = lower;
-                                //if ((i == 0) || (i > 0 && k < ll[h]) || (i > 0 && k >= ll[h])){
                                 if ((i == 0) || (k < ll[h]) || (allEqlI[0] == 0)){
                                     if (family < 5) calcGLMLimitsPredL(Hpred,k,i,XiC,&lower,family);
-                                    if (family == 5) calcGLMLimitsPredLGP(Hpred,k,i,XiC,&lower,&CDFL[h],normConst[h]);
+                                    else if (family == 5) calcGLMLimitsPredLGP(Hpred,k,i,XiC,&lower,&CDFL[h],normConst[h]);
+                                    else if (family == 6) calcGLMLimitsPredLCP(Hpred,k,i,XiC,&lower,&CDFL[h],normConst[h]);
+                                    else if (family == 7) calcGLMLimitsPredLHP(Hpred,k,i,XiC,&lower,&CDFL[h],normConst[h]);
+                                    else if (family == 8) calcGLMLimitsPredLCTP(Hpred,k,i,XiC,&lower,&CDFL[h],normConst[h]);
                                     StoreLower[h][k] = lower;
                                     ll[h] = k;
-                                    //if (i==31 && h==0 && move > 25) fprintf(out_file7,"%s %i %i %i %i %i %i %i\n","testW: ",sw,i,h,start,move,k,ll);
                                 }
                                 else lower = StoreLower[h][k];
-                                //Rprintf("%s %i %i %i %i %i %i %f %f %f \n","test2: ",sw,i,h,start,move,k,lower,StoreLower[h][k],cdfy);
                                 temp = gsl_cdf_ugaussian_P((upper-nuSIxmm)/sqrt(1-storenuSInu[h]))-
                                        gsl_cdf_ugaussian_P((lower-nuSIxmm)/sqrt(1-storenuSInu[h]));
                                 cdfy += temp;
-//if (i==31) fprintf(out_file7,"%s %i %i %i %i %i %i %f %f %f %f %f \n","start-move",sw,i,h,start,move,k,XiC[0],XiC[0],lower,upper,cdfy);
-                                Disthi[h][k] = temp * PredProb[i][h]/denomPred[i];
+                                if (nmembers[h] > 0) Disthi[h][k] = temp * CPDF[i][h] * nmembers[h];
+                                else if (nmembers[h] == 0) Disthi[h][k] = temp * CPDF[i][h] * alpha;
+
+//if (sw==40064) fprintf(out_file7,"%s %i %i %i %i %i %i %f %f %f %f %f %f %f %f %f %f %f %f \n","start-move",
+//sw,i,h,start,move,k,XiC[0],XiC[1],XiC[2],lower,upper,CDFL[h],CDFU[h],normConst[h],cdfy,nuSIxmm,
+//storenuSInu[h],temp);
+
                             }
                             if ((start+move) < maxy2){
                                 k = start + move;
                                 lower2 = upper2;
-                                //if ((i == 0) || (i > 0 && k > ul[h]) || (i > 0 && k <= ul[h])){
                                 if ((i == 0) || (k > ul[h]) || (allEqlI[0] == 0)){
                                     if (family < 5) calcGLMLimitsPredU(Hpred,k,i,XiC,&upper2,family);
-//if (i==31) fprintf(out_file7,"%s %i %i %i %i %i %i %f %f %f %f %f \n","start-move",sw,i,h,start,move,k,XiC[0],XiC[0],lower,upper,cdfy);
-                                    if (family == 5) calcGLMLimitsPredUGP(Hpred,k,i,XiC,&upper2,&CDFU[h],normConst[h]);
+                                    else if (family == 5) calcGLMLimitsPredUGP(Hpred,k,i,XiC,&upper2,&CDFU[h],normConst[h]);
+                                    else if (family == 6) calcGLMLimitsPredUCP(Hpred,k,i,XiC,&upper2,&CDFU[h],normConst[h]);
+                                    else if (family == 7) calcGLMLimitsPredUHP(Hpred,k,i,XiC,&upper2,&CDFU[h],normConst[h]);
+                                    else if (family == 8) calcGLMLimitsPredUCTP(Hpred,k,i,XiC,&upper2,&CDFU[h],normConst[h]);
                                     StoreUpper[h][k] = upper2;
                                     ul[h] = k;
                                 }
                                 else upper2 = StoreUpper[h][k];
-                                //Rprintf("%s %i %i %i %i %f %f \n","test3: ",sw,i,h,start,upper2,StoreUpper[h][k]);
                                 temp = gsl_cdf_ugaussian_P((upper2-nuSIxmm)/sqrt(1-storenuSInu[h]))-
                                        gsl_cdf_ugaussian_P((lower2-nuSIxmm)/sqrt(1-storenuSInu[h]));
                                 cdfy += temp;
-                                Disthi[h][k] = temp * PredProb[i][h]/denomPred[i];
-//if (i==31) fprintf(out_file7,"%s %i %i %i %i %i %i %f %f %f %f %f \n","start+move",sw,i,h,start,move,k,XiC[0],XiC[0],lower2,upper2,cdfy);
+                                if (nmembers[h] > 0) Disthi[h][k] = temp * CPDF[i][h] * nmembers[h];
+                                else if (nmembers[h] == 0) Disthi[h][k] = temp * CPDF[i][h] * alpha;
+//if (sw==40064) fprintf(out_file7,"%s %i %i %i %i %i %i %f %f %f %f %f %f %f %f %f %f %f %f \n","start+move",
+//sw,i,h,start,move,k,XiC[0],XiC[1],XiC[2],lower2,upper2,CDFL[h],CDFU[h],normConst[h],cdfy,
+//nuSIxmm,storenuSInu[h],temp);
+
                             }
                             move++;
                         }
@@ -761,121 +847,224 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                     }
                 }
                 for (k = 0; k < maxy; k++)
-                    for (h = 0; h < ncomp; h++)
-                        if (PredProb[i][h]>0) StorePD[i][k] += Disthi[h][k];
+                   for (h = 0; h < upperL; h++)
+                       StorePD[i][k] += Disthi[h][k]/denomPred[i];
             }
 //if (sw >= 592 && sw < 600) Rprintf("%s %i %i %i %f %f %f %f %f %f %f %f %f %i %i \n","pred trunc2...",sw,i,h,XiC[0],Hpred[i-1],Xpred[i-1],upper,lower,
 //nuSIxmm,sqrt(1-storenuSInu[h]),
 //gsl_cdf_ugaussian_P((upper-nuSIxmm)/sqrt(1-storenuSInu[h]))-gsl_cdf_ugaussian_P((lower-nuSIxmm)/sqrt(1-storenuSInu[h])),
 //cdfy,k,maxy);
             // posterior summaries
-            // Mean
-            for (i = 0; i < npred; i++)
-                for (k = 0; k < maxy; k++)
-                    meanReg[i] += (double) (StorePD[i][k] * k)/(nSamples*Hpred[i]);
-            // Median
-            for (i = 0; i < npred; i++){
-                sumProb = 0.0;
-                k=0;
-                while (sumProb <= 0.5){
-                    sumProb += StorePD[i][k];
-                    k++;
+            if (Iend == 0){
+                // Mean
+                for (i = 0; i < npred; i++) TMR[i] = 0.0;
+
+                for (i = 0; i < npred; i++)
+                    for (k = 0; k < maxy; k++)
+                        TMR[i] += (double) (StorePD[i][k] * k);
+
+                for (i = 0; i < npred; i++)
+                    meanReg[i] += (double) TMR[i]/(nSamples);
+
+                //Quantiles
+                for (i = 0; i < npred; i++){
+                    k=0;
+                    sumProb = StorePD[i][k];
+                    while (sumProb <= 0.05){
+                        k++;
+                        sumProb += StorePD[i][k];
+                    }
+                    TQ05R[i] = k;
+                    Q05Reg[i] += (double) k/nSamples;
+                    while (sumProb <= 0.10){
+                        k++;
+                        sumProb += StorePD[i][k];
+                    }
+                    TQ10R[i] = k;
+                    Q10Reg[i] += (double) k/nSamples;
+                    while (sumProb <= 0.15){
+                        k++;
+                        sumProb += StorePD[i][k];
+                    }
+                    TQ15R[i] = k;
+                    Q15Reg[i] += (double) k/nSamples;
+                    while (sumProb <= 0.20){
+                        k++;
+                        sumProb += StorePD[i][k];
+                    }
+                    TQ20R[i] = k;
+                    Q20Reg[i] += (double) k/nSamples;
+                    while (sumProb <= 0.25){
+                        k++;
+                        sumProb += StorePD[i][k];
+                    }
+                    TQ25R[i] = k;
+                    Q25Reg[i] += (double) k/nSamples;
+                    while (sumProb <= 0.50){
+                        k++;
+                        sumProb += StorePD[i][k];
+                    }
+                    TQ50R[i] = k;
+                    Q50Reg[i] += (double) k/nSamples;
+                    while (sumProb <= 0.75){
+                        k++;
+                        sumProb += StorePD[i][k];
+                    }
+                    TQ75R[i] = k;
+                    Q75Reg[i] += (double) k/nSamples;
+                    while (sumProb <= 0.80){
+                        k++;
+                        sumProb += StorePD[i][k];
+                    }
+                    TQ80R[i] = k;
+                    Q80Reg[i] += (double) k/nSamples;
+                    while (sumProb <= 0.85){
+                        k++;
+                        sumProb += StorePD[i][k];
+                    }
+                    TQ85R[i] = k;
+                    Q85Reg[i] += (double) k/nSamples;
+                    while (sumProb <= 0.90){
+                        k++;
+                        sumProb += StorePD[i][k];
+                    }
+                    TQ90R[i] = k;
+                    Q90Reg[i] += (double) k/nSamples;
+                    while (sumProb <= 0.95){
+                        k++;
+                        sumProb += StorePD[i][k];
+                    }
+                    TQ95R[i] = k;
+                    Q95Reg[i] += (double) k/nSamples;
                 }
-                medianReg[i] += (double) (k-1)/(nSamples*Hpred[i]);
-            }
-            // Q1
-            for (i = 0; i < npred; i++){
-                sumProb = 0.0;
-                k=0;
-                while (sumProb <= 0.25){
-                    sumProb += StorePD[i][k];
-                    k++;
+                // Mode
+                for (i = 0; i < npred; i++){
+                    mode = gsl_stats_max_index(StorePD[i],1,maxy);
+                    modeReg[i] += (double) (mode)/nSamples;
                 }
-                q1Reg[i] += (double) (k-1)/(nSamples*Hpred[i]);
-            }
-            // Q3
-            for (i = 0; i < npred; i++){
-                sumProb = 0.0;
-                k=0;
-                while (sumProb <= 0.75){
-                    sumProb += StorePD[i][k];
-                    k++;
+                //Mean and Var of the probabilities
+                for (i = 0; i < npred; i++){
+                    for (k = 0; k < maxy; k++){
+                        denReg[k+maxy*i] += (double) StorePD[i][k]/nSamples;
+                        denVar[k+maxy*i] += (double) StorePD[i][k]*StorePD[i][k]/nSamples;
+                        //if (k<10) Rprintf("%s %i %i %f %f \n","pred,num,den,store",i,k,denReg[k+maxy*i], StorePD[i][k]);
+                    }
                 }
-                q3Reg[i] += (double) (k-1)/(nSamples*Hpred[i]);
-            }
-            // Mode
-            for (i = 0; i < npred; i++){
-                mode = gsl_stats_max_index(StorePD[i],1,maxy);
-                modeReg[i] += (double) (mode)/(nSamples*Hpred[i]);
             }
         }
-
         // - 15 - Write to files
-        if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0) && (WF == 1)){
+        if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0) && (WF == 1) && (Iend==0)){
 
             for (h = 0; h < ncomp; h++){
                 for (j = 0; j < (p*p); j++)
                     fprintf(out_file1, "%f ", Th1[h][j]);
-                fprintf (out_file1, "\n");
+                fprintf(out_file1, "\n");
             }
 
             for (h = 0; h < ncomp; h++){
                 for (j = 0; j < (p*p); j++)
                     fprintf(out_file2, "%f ", Sigmah[h][j]);
-                fprintf (out_file2, "\n");
+                fprintf(out_file2, "\n");
             }
 
             for (h = 0; h < ncomp; h++){
                 for (j = 0; j < (p*p); j++)
                     fprintf(out_file3, "%f ", SigmahI[h][j]);
-                fprintf (out_file3, "\n");
+                fprintf(out_file3, "\n");
             }
 
             for (h = 0; h < ncomp; h++){
                 for (j = 0; j < p; j++)
                     fprintf(out_file4, "%f ", nuh[h][j]);
-                fprintf (out_file4, "\n");
+                fprintf(out_file4, "\n");
             }
 
             for (h = 0; h < ncomp; h++){
                 for (j = 0; j < p; j++)
                     fprintf(out_file5, "%f ", muh[h][j]);
-                fprintf (out_file5, "\n");
+                fprintf(out_file5, "\n");
             }
 
             for (h = 0; h < ncomp; h++){
                 for (j = 0; j < nRespPars; j++)
                     fprintf(out_file6, "%f ", Xi[h][j]);
-                fprintf (out_file6, "\n");
+                fprintf(out_file6, "\n");
             }
 
             fprintf(out_file7, "%f \n", alpha);
 
             for (i = 0; i < n; i++)
                 fprintf(out_file8, "%i ", compAlloc[i]);
-            fprintf (out_file8, "\n");
+            fprintf(out_file8, "\n");
 
             for (h = 0; h < ncomp; h++)
                 fprintf(out_file9, "%i ", nmembers[h]);
-            fprintf (out_file9, "\n");
+            fprintf(out_file9, "\n");
 
             fprintf(out_file10, "%i \n", nUpdated);
 
-            //for (i = 0; i < npred; i++){
-            //    for (k = 0; k < maxy; k++)
-            //        fprintf(out_file11, "%f ", StorePD[i][k]);
-            //    fprintf (out_file11, "\n");
-            //}
+            for (i = 0; i < npred; i++)
+                fprintf(out_file11, "%f ", TMR[i]);
+            fprintf(out_file11, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file12, "%f ", TQ05R[i]);
+            fprintf(out_file12, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file13, "%f ", TQ10R[i]);
+            fprintf(out_file13, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file14, "%f ", TQ15R[i]);
+            fprintf(out_file14, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file15, "%f ", TQ20R[i]);
+            fprintf(out_file15, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file16, "%f ", TQ25R[i]);
+            fprintf(out_file16, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file17, "%f ", TQ50R[i]);
+            fprintf(out_file17, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file18, "%f ", TQ75R[i]);
+            fprintf(out_file18, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file19, "%f ", TQ80R[i]);
+            fprintf(out_file19, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file20, "%f ", TQ85R[i]);
+            fprintf(out_file20, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file21, "%f ", TQ90R[i]);
+            fprintf(out_file21, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file22, "%f ", TQ95R[i]);
+            fprintf(out_file22, "\n");
+
         }
+        if (Iend == 1) sw -= 1;
         if (sw==(sweeps-1) && (!((sw+1) % 500)==0)) Rprintf("%i %s \n",sw+1, "posterior samples...");
     }//end of sw
+
     //Free up random number
     gsl_rng_free (r);
 
     //Close files
     fclose(out_file1); fclose(out_file2); fclose(out_file3); fclose(out_file4); fclose(out_file5);
     fclose(out_file6); fclose(out_file7); fclose(out_file8); fclose(out_file9); fclose(out_file10);
-    //fclose(out_file11);
+    fclose(out_file11); fclose(out_file12); fclose(out_file13); fclose(out_file14); fclose(out_file15);
+    fclose(out_file16); fclose(out_file17); fclose(out_file18); fclose(out_file19); fclose(out_file20);
+    fclose(out_file21); fclose(out_file22);
 
     //Free up gsl matrices
     gsl_matrix_free(V);gsl_matrix_free(Vinv);

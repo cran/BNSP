@@ -13,8 +13,8 @@
 \tabular{ll}{
 Package: \tab BNSP\cr
 Type: \tab Package\cr
-Version: \tab 1.0.5\cr
-Date: \tab 2015-07-08\cr
+Version: \tab 1.1.0\cr
+Date: \tab 2015-12-04\cr
 License: \tab GPL (>=2)\cr}
 
 This program is free software; you can redistribute it and/or
@@ -40,5 +40,5 @@ Maintainer: Georgios Papageorgiou <gpapageo@gmail.com>}
 \section{Acknowledgments}{This work was partly supported by the Medical Research Council grant number G09018401.}
 
 \references{
-Papageorgiou, G., Richardson, S. and Best, N. (2014). Bayesian nonparametric models for spatially indexed data of mixed type.
-Accepted: Journal of the Royal Statistical Society - Series B.}
+Papageorgiou, G., Richardson, S. and Best, N. (2015). Bayesian nonparametric models for spatially indexed data of mixed type.
+Journal of the Royal Statistical Society: Series B (Statistical Methodology), 77:973-999.}

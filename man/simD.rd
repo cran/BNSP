@@ -6,8 +6,7 @@
 
 \title{Simulated dataset}
 
-\description{Just a simulated dataset to illustrate the model. The success probability and the covariate have a 
-             non-linear relationship.}
+\description{Just a simulated dataset to illustrate the model. The success probability and the covariate have a non-linear relationship.}
 
 \usage{data(simD)}
 

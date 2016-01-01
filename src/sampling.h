@@ -80,17 +80,21 @@ void sampleTMN(unsigned long int s, int p, double *L, double *U, gsl_vector *y, 
         gsl_blas_ddot(&Sigmai.vector,V1,&res1);
         cm[i+p] = gsl_matrix_get(Sigma,i,i) - res1 + res2*res2/gsl_matrix_get(V,i,i);
         temp = L[i]-0.01; // temp replaces y[i] to avoid using gsl get and set
-        if ((L[i] < cm[i]) && (U[i] < cm[i])){
-            while ((trunc(pow(10,10)*(temp - L[i])) < 0) || (trunc(pow(10,10)*(temp - U[i])) > 0))
-                temp = cm[i]-gsl_ran_gaussian_tail(r,-U[i]+cm[i],sqrt(cm[i+p]));
-        }
-        else if ((L[i] > cm[i]) && (U[i] > cm[i])){
-            while ((trunc(pow(10,10)*(temp - L[i])) < 0) || (trunc(pow(10,10)*(temp - U[i])) > 0))
-                temp = cm[i]+gsl_ran_gaussian_tail(r,L[i]-cm[i],sqrt(cm[i+p]));
-        }
-        else{
-            while ((trunc(pow(10,10)*(temp - L[i])) < 0) || (trunc(pow(10,10)*(temp - U[i])) > 0))
-                temp = cm[i]+gsl_ran_gaussian(r,sqrt(cm[i+p]));
+
+        if (abs(L[i] - U[i]) < 0.0001) temp = L[i]/2 + U[i]/2;
+        else {
+            if ((L[i] < cm[i]) && (U[i] < cm[i])){
+                while ((trunc(pow(10,10)*(temp - L[i])) < 0) || (trunc(pow(10,10)*(temp - U[i])) > 0))
+                    temp = cm[i]-gsl_ran_gaussian_tail(r,-U[i]+cm[i],sqrt(cm[i+p]));
+            }
+            else if ((L[i] > cm[i]) && (U[i] > cm[i])){
+                while ((trunc(pow(10,10)*(temp - L[i])) < 0) || (trunc(pow(10,10)*(temp - U[i])) > 0))
+                    temp = cm[i]+gsl_ran_gaussian_tail(r,L[i]-cm[i],sqrt(cm[i+p]));
+            }
+            else{
+                while ((trunc(pow(10,10)*(temp - L[i])) < 0) || (trunc(pow(10,10)*(temp - U[i])) > 0))
+                    temp = cm[i]+gsl_ran_gaussian(r,sqrt(cm[i+p]));
+            }
         }
         gsl_vector_set(y,i,temp);
     }
@@ -171,22 +175,16 @@ void rwish(unsigned long int s, int p, double n, gsl_matrix *scale, gsl_matrix *
 double updateAlpha(unsigned long int s, int n, int ncomp, double a, double b, double TruncAlpha, int *nmembers, double alpha){
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
     gsl_rng_set(r,s);
-
     int h;
     double eta, pieta, unifRV, newalpha, K;
-
+    newalpha = 0.0;
     eta = gsl_ran_beta(r,alpha+1.0,(double) n);
-
     K = 0.0;
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) K++;
-
     pieta = (a+K-1.0)/(a+K-1.0+n*(b-log(eta)));
-
     unifRV = gsl_ran_flat(r,0.0,1.0);
-
     newalpha = 0.0;
-
     while (newalpha < TruncAlpha){
         if (unifRV < pieta)
             newalpha = gsl_ran_gamma(r,a+K,(1.0/(b-log(eta))));
@@ -194,7 +192,6 @@ double updateAlpha(unsigned long int s, int n, int ncomp, double a, double b, do
             newalpha = gsl_ran_gamma(r,a+K-1.0,(1.0/(b-log(eta))));
     }
     gsl_rng_free(r);
-
     return(newalpha);
 }
 
@@ -346,8 +343,74 @@ void propose(unsigned long int s, double *XiC, double *XiP, int nRespPars, doubl
             XiP[k] = gsl_ran_gamma(r,prec[k]*XiC[k]*XiC[k],1/(prec[k]*XiC[k]));
     else if (family == 5){
         XiP[0] = gsl_ran_gamma(r,prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]));
-        XiP[1] = XiC[1] + gsl_ran_gaussian(r,prec[1]);
-        while(XiP[1] < 0.5) XiP[1] = XiC[1] + gsl_ran_gaussian(r,prec[1]);
+        XiP[1] = XiC[1] + gsl_ran_gaussian(r,1/prec[1]);
+        while(XiP[1] < 0.5 || XiP[1] < (1-XiP[0]/4)) XiP[1] = XiC[1] + gsl_ran_gaussian(r,1/prec[1]);
+    }
+    else if (family == 6){
+        for (k = 0; k < nRespPars; k++)
+            XiP[k] = gsl_ran_gamma(r,prec[k]*XiC[k]*XiC[k],1/(prec[k]*XiC[k]));
+        while((XiP[1] < 0.3) || (XiP[1] < 1/(1+2*XiP[0]))) XiP[1] = gsl_ran_gamma(r,prec[1]*XiC[1]*XiC[1],1/(prec[1]*XiC[1]));
+    }
+    else if (family == 7){
+        for (k = 0; k < nRespPars; k++)
+            XiP[k] = gsl_ran_gamma(r,prec[k]*XiC[k]*XiC[k],1/(prec[k]*XiC[k]));
+        while(XiP[1] < 0.1) XiP[1] = gsl_ran_gamma(r,prec[1]*XiC[1]*XiC[1],1/(prec[1]*XiC[1]));
+    }
+    else if (family == 8){
+        //Rprintf("%s %f %f %f ","cur:",XiC[0],XiC[1],XiC[2]);
+        do {
+            for (k = 0; k < (nRespPars-1); k++)
+                XiP[k] = gsl_ran_gamma(r,prec[k]*XiC[k]*XiC[k],1/(prec[k]*XiC[k]));
+            XiP[2] = XiC[2] + gsl_ran_gaussian(r,1/prec[2]);
+            if (XiC[2] <= (XiP[1]/2-1)) while(XiP[2] > (XiP[1]/2-1)) XiP[2] = XiC[2] + gsl_ran_gaussian(r,1/prec[2]);
+            else if (XiC[2] > (XiP[1]/2-1)) XiP[2] = XiC[2] - gsl_ran_gaussian_tail(r,-(XiP[1]/2-1)+XiC[2],1/prec[2]);
+        } while ((XiP[0]*(XiP[1]-2*XiP[2]-1)-XiP[2]*XiP[2]) < 0);
+        //Rprintf("%s %f %f %f %f %f %f %f\n","prp:",XiP[0],XiP[1],XiP[2],XiC[2],prec[0],prec[1],prec[2]);
+        //Rprintf("%s %f ","prp2:",XiP[2]);
+    }
+    gsl_rng_free(r);
+}
+
+//obtained proposed values for the One Res Ltnt model. prec is the precision around the current estimate
+void propose2(unsigned long int s, double *XiC, double *XiP, int nRespPars, double *prec, int family){
+    int k;
+    double alpha, beta;
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+    if (family == 1)
+        XiP[0] = gsl_ran_gamma(r,prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0])); //has mean XiC[0] and variance=1/prec
+    else if (family == 2){
+        beta = XiC[0] - 1 + XiC[0]*(1-XiC[0])*(1-XiC[0])*prec[0];
+        alpha = beta * XiC[0]/(1-XiC[0]);
+        XiP[0] = gsl_ran_beta(r,alpha,beta); // has mean XiC[0] and variance=1/prec
+    }
+    else if (family == 3 || family == 4)
+        for (k = 0; k < nRespPars; k++)
+            XiP[k] = gsl_ran_gamma(r,prec[k]*XiC[k]*XiC[k],1/(prec[k]*XiC[k]));
+    else if (family == 5){
+        XiP[0] = XiC[0] + gsl_ran_gaussian(r,1/prec[0]);
+        XiP[1] = XiC[1] + gsl_ran_gaussian(r,1/prec[1]);
+        XiP[2] = XiC[2] + gsl_ran_gaussian(r,1/prec[2]);
+        while(XiP[2] < 0.5) XiP[2] = XiC[2] + gsl_ran_gaussian(r,1/prec[2]);
+    }
+    else if (family == 6){
+        for (k = 0; k < nRespPars; k++)
+            XiP[k] = gsl_ran_gamma(r,prec[k]*XiC[k]*XiC[k],1/(prec[k]*XiC[k]));
+        while(XiP[1] < 0.3) XiP[1] = gsl_ran_gamma(r,prec[1]*XiC[1]*XiC[1],1/(prec[1]*XiC[1]));
+    }
+    else if (family == 7){
+        for (k = 0; k < nRespPars; k++)
+            XiP[k] = gsl_ran_gamma(r,prec[k]*XiC[k]*XiC[k],1/(prec[k]*XiC[k]));
+        while(XiP[1] < 0.1) XiP[1] = gsl_ran_gamma(r,prec[1]*XiC[1]*XiC[1],1/(prec[1]*XiC[1]));
+    }
+    else if (family == 8){
+        //Rprintf("%s %f %f %f ","cur:",XiC[0],XiC[1],XiC[2]);
+        for (k = 0; k < (nRespPars-1); k++)
+            XiP[k] = gsl_ran_gamma(r,prec[k]*XiC[k]*XiC[k],1/(prec[k]*XiC[k]));
+        XiP[2] = XiC[2] + gsl_ran_gaussian(r,1/prec[2]);
+        //Rprintf("%s %f %f %f ","prp:",XiP[0],XiP[1],XiP[2]);
+        while(XiP[2] > (XiP[1]/2-1)) XiP[2] = XiC[2] + gsl_ran_gaussian(r,1/prec[2]);
+        //Rprintf("%s %f ","prp2:",XiP[2]);
     }
     gsl_rng_free(r);
 }

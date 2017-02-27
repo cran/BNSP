@@ -172,7 +172,7 @@ double logMVNormalpdf(int dim, gsl_vector *x, gsl_vector *mu, gsl_matrix *S, dou
     gsl_matrix_free(D); gsl_matrix_free(VD); gsl_matrix_free(Sinv);
     gsl_vector_free(Prod1);
 
-    return(-0.5*QF-0.5*log(det)-(double)(dim/2.0)*log(2*M_PI));
+    return(-0.5*QF-0.5*log(det)-((double)dim/2.0)*log(2*M_PI));
 }
 
 //Multivariate Normal pdf with arguments (dim,x,mean,Sigma) f_p(x|mu,Sigma)
@@ -197,7 +197,7 @@ double logMVNormalpdf2(int dim, gsl_vector *x, gsl_vector *mu, gsl_matrix *S){
 
     gsl_vector_free(copyX); gsl_matrix_free(copyS); gsl_matrix_free(Sinv);
     gsl_vector_free(Prod1); gsl_permutation_free(p);
-    return(-0.5*QF-0.5*log(det)-(double)(dim/2.0)*log(2*M_PI));
+    return(-0.5*QF-0.5*log(det)-((double)dim/2.0)*log(2*M_PI));
 }
 
 //Multivariate Normal pdf with arguments (dim,x,mean,Sigma^{-1}) f_p(x|mu,Sigma^{-1})
@@ -219,7 +219,7 @@ double logMVNormalpdf3(int dim, gsl_vector *x, gsl_vector *mu, gsl_matrix *S){
 
     gsl_vector_free(copyX); gsl_matrix_free(copyS); //gsl_matrix_free(Sinv);
     gsl_vector_free(Prod1); gsl_permutation_free(p);
-    return(-0.5*QF+0.5*log(det)-(double)(dim/2.0)*log(2*M_PI));
+    return(-0.5*QF+0.5*log(det)-((double)dim/2.0)*log(2*M_PI));
 }
 
 //Joint posterior pdf of D_h and Sigma^*_h: log of
@@ -263,12 +263,70 @@ double logPostPdfDSigma(gsl_matrix *D, gsl_matrix *Sigma, gsl_matrix *Eh, gsl_ma
     trace = 0.0;
     for (i=0; i < dim; i++) trace += gsl_matrix_get(VD,i,i);
 
-    result = ((eta/2.0)-1.0)*log(detD) + ((eta-dim-1-nmembers)/2.0)*log(detSigma) - 0.5*trace;
+    result = ((eta/2.0)-1.0)*log(detD) + ((double)(eta-dim-1-nmembers)/2.0)*log(detSigma) - 0.5*trace;
 
     gsl_matrix_free(CopySigma); gsl_matrix_free(HinvEh);
     gsl_matrix_free(EigenD); gsl_vector_free(eval); gsl_matrix_free(evec); gsl_eigen_symmv_free(w);
     gsl_matrix_free(VD); gsl_matrix_free(VDVT);
 
+    return(result);
+}
+
+//Joint posterior pdf of D and R based in IW prior: log of
+//|D|^(num1/2) |E|^(-num2/2) |K|^(num3/2) etr(-0.5*E^{-1}*M) 
+double logPropPdfDR(gsl_matrix *D, gsl_matrix *E, gsl_matrix *M, gsl_matrix *K, int p, double num1, double num2, double num3){
+    int i;
+    double temp, detD, detE, detK, trace, result;
+    gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc(p);
+    gsl_matrix *CopyE = gsl_matrix_alloc(p,p);
+    gsl_vector *eval = gsl_vector_alloc(p);
+    gsl_matrix *evec = gsl_matrix_alloc(p,p);
+    gsl_matrix *EigenE = gsl_matrix_calloc(p,p);
+    gsl_matrix *VD = gsl_matrix_alloc(p,p);
+    gsl_matrix *VDVT = gsl_matrix_alloc(p,p);
+
+    detD = 1.0;
+    if (num1 > 0) 
+        for (i = 0; i < p; i++) 
+	    detD *= gsl_matrix_get(D,i,i);
+    
+    gsl_matrix_memcpy(CopyE,E);
+    gsl_eigen_symmv(CopyE,eval,evec,w);
+
+    detE = 1.0;
+    for (i=0; i < p; i++){
+        temp = gsl_vector_get(eval,i);
+        detE *= temp;
+        gsl_matrix_set(EigenE,i,i,1/temp);
+    }
+    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,evec,EigenE,0.0,VD);
+    gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,VD,evec,0.0,VDVT);
+    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,VDVT,M,0.0,VD);
+
+    trace = 0.0;
+    for (i = 0; i < p; i++) 
+        trace += gsl_matrix_get(VD,i,i);
+
+    detK = 1.0;
+    if (num3 > 0){
+        gsl_eigen_symmv_workspace * w2 = gsl_eigen_symmv_alloc(p);
+        gsl_matrix *CopyK = gsl_matrix_alloc(p,p);
+        gsl_vector *eval2 = gsl_vector_alloc(p);
+        gsl_matrix *evec2 = gsl_matrix_alloc(p,p);
+        gsl_matrix_memcpy(CopyK,K);
+        gsl_eigen_symmv(CopyK,eval2,evec2,w2);    
+
+        for (i=0; i < p; i++)          
+            detK *= gsl_vector_get(eval2,i);
+        
+        gsl_eigen_symmv_free(w2); gsl_matrix_free(CopyK); gsl_vector_free(eval2); gsl_matrix_free(evec2);   
+    }
+    
+    result = (num1/2.0)*log(detD) + (num3/2.0)*log(detK) - (num2/2.0)*log(detE) - 0.5*trace;
+
+    gsl_eigen_symmv_free(w); gsl_matrix_free(CopyE); gsl_vector_free(eval); gsl_matrix_free(evec);
+    gsl_matrix_free(EigenE); gsl_matrix_free(VD); gsl_matrix_free(VDVT);        
+    
     return(result);
 }
 
@@ -330,7 +388,7 @@ double logtrnsR(gsl_matrix *Ehc, gsl_matrix *Ehp, int nres, int nconf, double nu
     prod = 0.0;
     for (i=0; i < nres; i++) prod += log(gsl_matrix_get(Ehc,i,i)/gsl_matrix_get(Ehp,i,i));
 
-    result = (-nu+(dim+1.0)/2.0)*(log(detEhp)-log(detEhc)) + (nu/2.0)*trace + ((dim-1.0)/2.0)*prod;
+    result = (-nu+((double)dim+1.0)/2.0)*(log(detEhp)-log(detEhc)) + (nu/2.0)*trace + ((dim-1.0)/2.0)*prod;
 
     gsl_matrix_free(EigenDc); gsl_matrix_free(EigenDp);
     gsl_vector_free(evalc); gsl_matrix_free(evecc); gsl_eigen_symmv_free(wc);
@@ -504,8 +562,9 @@ double cdf_com_poisson_P2(int x, double mu, double nu){
     }
     normalized = unnormalized/Z;
     if (normalized > 1.0) normalized = 1.0;
-    //Rprintf("%s %i %f %f %f \n","com:",x,lambda,nu,normalized);
+    if (gsl_isinf(unnormalized)) normalized = 1.0;
     if (gsl_isnan(normalized)) normalized = 0.0;
+    //Rprintf("%s %i %f %f %f %f %f \n","com:",x,lambda,nu,unnormalized,Z,normalized);
     return(normalized);
 }
 
@@ -538,7 +597,6 @@ double solve_hyper_poisson(double mu, double gamma){
     struct hP_params params = {mu,gamma};
     const gsl_root_fsolver_type *T;
     gsl_root_fsolver *s;
-    double r = 0;
     double x_lo = MIN(mu,MAX(mu+gamma-1,gamma*mu));
     double x_hi = MAX(mu,MIN(mu+gamma-1,gamma*mu));
     gsl_function F;
@@ -550,7 +608,7 @@ double solve_hyper_poisson(double mu, double gamma){
     do{
         iter++;
         status = gsl_root_fsolver_iterate(s);
-        r = gsl_root_fsolver_root(s);
+        gsl_root_fsolver_root(s);
         x_lo = gsl_root_fsolver_x_lower(s);
         x_hi = gsl_root_fsolver_x_upper(s);
         status = gsl_root_test_interval (x_lo, x_hi, 0, 0.001);

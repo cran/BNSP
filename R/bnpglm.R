@@ -166,7 +166,7 @@ bnpglm <- function(formula,family,data,offset,sampler="slice",StorageDir,ncomp,s
     Q95Reg <- array(0,npred)
     # Family specific predictions
     if (family.indicator==1 | family.indicator==3 | family.indicator>4){
-        maxy <- max(Y)+1000 # maxy <- max(Y)+max(10,floor(0.1*max(Y)))
+        maxy <- max(Y)+max(100,floor(0.1*max(Y)))
     } else if (family.indicator==2 | family.indicator==4){
         maxy <- max(offsetPred)+1
     }

@@ -1,5 +1,4 @@
-useDynLib(BNSP)
-
+useDynLib(BNSP, .registration=TRUE)
 import(stats)
 
 export(bnpglm,dnorm.pois)

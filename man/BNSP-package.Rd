@@ -7,7 +7,7 @@
 
 \title{Bayesian non- and semi-parametric model fitting}
 
-\description{Markov chain Monte Carlo algorithms for non- and semi-parametric models}
+\description{MCMC for Dirichlet process mixtures}
 
 \details{
 \tabular{ll}{

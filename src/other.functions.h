@@ -30,7 +30,7 @@ void allocation(unsigned long int s, int n, int ncomp, double Prob[ncomp][n], in
         for (h = 0; h < ncomp; h++)
             compProbi[h] = Prob[h][i];
 
-        //if (sw>2500){
+        //if (sw>3 && i==3){
         //    Rprintf("%s %i %i \n","comp prob: ", i,sw);
         //    for (h = 0; h < ncomp; h++) Rprintf("%f ",compProbi[h]);
         //    Rprintf("\n");
@@ -40,14 +40,16 @@ void allocation(unsigned long int s, int n, int ncomp, double Prob[ncomp][n], in
         komp = 0;
         while(vecAlloc[komp]==0) komp++;
         compAlloc[i] = komp;
+
         //double temp;
         //if (komp >= ncomp) {
-        //    temp = 0.0;
-        //    Rprintf("%i\n", i);
-        //    for (h = 0; h < ncomp; h++) Rprintf("%f ",compProbi[h]);
-        //    for (h = 0; h < ncomp; h++) temp += compProbi[h];
-        //    Rprintf("%s %f ","total: ",temp*100);
-        //    Rprintf("\n");
+            //temp = 0.0;
+            //Rprintf("%i\n", i);
+            //for (h = 0; h < ncomp; h++) Rprintf("%f ",compProbi[h]);
+            //for (h = 0; h < ncomp; h++) temp += compProbi[h];
+            //Rprintf("%s %f ","total: ",temp*100);
+            //if (temp==0.0) Rprintf("%s %i %i","zero sw i: ",sw,i);
+            //Rprintf("\n");
         //}
 
     }
@@ -340,7 +342,7 @@ void calcLimits(double *X, int *Y, double *E, int n, int nreg, int nres, int i, 
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith sampling unit,
 //given responses Y, offsets H, sampling unit, rates, and two doubles where lower and upper limits are stored.
 void calcGLMLimits(int *Y, double *H, int i, double *Xi, double *lower, double *upper, int family){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     if (Y[i]==0)
         *lower = -lmt;
     else{
@@ -399,7 +401,7 @@ void calcGLMLimits2(int *Y, double *H, int i, double *Xi, double *lower, double 
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith sampling unit for both Y* and X*,
 //given responses Y, offsets H, covariates X, sampling unit, rates, and two doubles where lower and upper limits are stored.
 void calcGLMLimitsYX(int *Y, double *H, double *X, int i, double *Xi, double *lower, double *upper, int family){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     if (Y[i]==0)
         lower[0] = -lmt;
     else{
@@ -1380,13 +1382,13 @@ void labelSwitchingB(unsigned long int s, int n, int nconf, int totNreg, int nre
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = (double) 1/maxZ;
+    equalProb = 1.0/((double)maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += (double) 1/maxZ;
+        equalProb += 1.0/((double)maxZ);
     }
     labelC = komp;
 
@@ -1457,13 +1459,13 @@ void SpatialLabelSwitchingB(unsigned long int s, int n, int nconf, int totNreg, 
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = (double) 1/maxZ;
+    equalProb = 1/((double)maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += (double) 1/maxZ;
+        equalProb += 1/((double)maxZ);
     }
     labelC = komp;
 
@@ -1538,13 +1540,13 @@ void SpatialLabelSwitchingBFG(unsigned long int s, int n, int totNreg, int nres,
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = (double) 1/maxZ;
+    equalProb = 1/((double)maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += (double) 1/maxZ;
+        equalProb += 1/((double)maxZ);
     }
     labelC = komp;
 
@@ -1706,13 +1708,13 @@ void labelSwitchingBHannahNoSpace(unsigned long int s, int n, int nreg, int nres
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = (double) 1/maxZ;
+    equalProb = 1/((double)maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += (double) 1/maxZ;
+        equalProb += 1/((double)maxZ);
     }
     labelC = komp;
 
@@ -1882,13 +1884,13 @@ void labelSwitchingBHannahSpace(unsigned long int s, int n, int nreg, int nres, 
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = (double) 1/maxZ;
+    equalProb = 1/((double)maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += (double) 1/maxZ;
+        equalProb += 1/((double)maxZ);
     }
     labelC = komp;
 
@@ -1994,12 +1996,19 @@ return(sumssq);
 void print_matrix(gsl_matrix *A)
 {
     int i, j;
-
     for (i = 0; i < A->size1; i++) {
-        for (j = 0; j < A->size2; j++) {
+        for (j = 0; j < A->size2; j++)
             Rprintf("%g\t", gsl_matrix_get(A, i, j));
-        }
         Rprintf("\n");
     }
+    Rprintf("\n");
+}
+
+//Print gsl matrix
+void print_vector(gsl_vector *V)
+{
+    int i;
+    for (i = 0; i < V->size; i++) 
+        Rprintf("%g\t", V->data[i * V->stride]);
     Rprintf("\n");
 }

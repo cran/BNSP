@@ -489,12 +489,11 @@ npred<-length(pred)
 # components and posterior samples. They both use a slice sampler
 # and parameter prec=200 achieves optimal acceptance rate, about 22%.
 fit1 <- bnpglm(cbind(Y,(E-Y))~X, family="binomial", data=simD, ncomp=30, sweeps=150,
-               burn=100, sampler="slice", prec1=c(200), Xpred=pred, offsetPred=rep(30,npred))
+               burn=100, sampler="slice", prec=c(200), Xpred=pred, offsetPred=rep(30,npred))
 \donttest{fit2 <- bnpglm(cbind(Y,(E-Y))~X, family="binomial", data=simD, ncomp=50, sweeps=5000,
                burn=1000, sampler="slice", prec=c(200), Xpred=pred, offsetPred=rep(30,npred))
 plot(with(simD,X),with(simD,Y)/with(simD,E))
-lines(pred,fit2$medianReg,col=3,lwd=2)}
-}
+lines(pred,fit2$medianReg,col=3,lwd=2)}}
 
 \keyword{nonparametric}
 \keyword{cluster}

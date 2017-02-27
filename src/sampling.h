@@ -292,7 +292,7 @@ double updatespatialphiu(unsigned long int s, int n, double lu, double alphaphi,
 
     BS1 = BS[0]; BS2 = BS[1];
 
-    phisq = gsl_ran_gamma(r, (double) alphaphi+n*nClusters/2.0, 1.0/(betaphi+0.5*(BS1+lu*BS2)));
+    phisq = gsl_ran_gamma(r, alphaphi+n*nClusters/2.0, 1.0/(betaphi+0.5*(BS1+lu*BS2)));
     phiu = sqrt(phisq);
 
     gsl_rng_free(r);
@@ -335,6 +335,7 @@ void propose(unsigned long int s, double *XiC, double *XiP, int nRespPars, doubl
         XiP[0] = gsl_ran_gamma(r,prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0])); //has mean XiC[0] and variance=1/prec
     else if (family == 2){
         beta = XiC[0] - 1 + XiC[0]*(1-XiC[0])*(1-XiC[0])*prec[0];
+        if (beta < 0.001) beta = 0.001;
         alpha = beta * XiC[0]/(1-XiC[0]);
         XiP[0] = gsl_ran_beta(r,alpha,beta); // has mean XiC[0] and variance=1/prec
     }

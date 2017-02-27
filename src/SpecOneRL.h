@@ -255,13 +255,13 @@ void labelSwtchB(unsigned long int s, int n, int p, int ncomp, int nRespPars, do
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = (double) 1/maxZ;
+    equalProb = 1/((double)maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += (double) 1/maxZ;
+        equalProb += 1/((double)maxZ);
     }
     labelC = komp;
 
@@ -433,13 +433,13 @@ void labelSwtchBFx(unsigned long int s, int n, int p, int ncomp, double Th[ncomp
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = (double) 1/maxZ;
+    equalProb = 1/((double)maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += (double) 1/maxZ;
+        equalProb += 1/((double)maxZ);
     }
     labelC = komp;
 
@@ -544,6 +544,7 @@ void labelSwtchANEW(unsigned long int s, int n, int totran, int p, int ncomp, in
     decisionA = gsl_ran_flat(r,0.0,1.0);
 
     if (switchA > decisionA){
+        //Rprintf("%s %i %i \n","labA",labelA,labelB);
         for (j = 0; j < (totran*totran); j++) covtemp[j] = Sigmah[labelA][j];
         for (j = 0; j < (totran*totran); j++) Sigmah[labelA][j] = Sigmah[labelB][j];
         for (j = 0; j < (totran*totran); j++) Sigmah[labelB][j] = covtemp[j];
@@ -611,13 +612,13 @@ void labelSwtchBNEW(unsigned long int s, int n, int totran, int p, int ncomp, in
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = (double) 1/maxZ;
+    equalProb = 1/((double)maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += (double) 1/maxZ;
+        equalProb += 1/((double)maxZ);
     }
     labelC = komp;
 
@@ -629,6 +630,7 @@ void labelSwtchBNEW(unsigned long int s, int n, int totran, int p, int ncomp, in
     if (switchB > 1.0) switchB = 1.0;
     decisionB = gsl_ran_flat(r,0.0,1.0);
     if (switchB > decisionB){
+        //Rprintf("%s %i \n","labB",labelC);
         for (j = 0; j < (totran*totran); j++) covtemp[j] = Sigmah[labelC][j];
         for (j = 0; j < (totran*totran); j++) Sigmah[labelC][j] = Sigmah[labelC+1][j];
         for (j = 0; j < (totran*totran); j++) Sigmah[labelC+1][j] = covtemp[j];

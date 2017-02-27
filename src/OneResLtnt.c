@@ -267,7 +267,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     int mode;
     double cdfy; // cdf of response to truncate predictions before maxy
     int start, move;
-    double PredTrunc = 0.99999;
+    double PredTrunc = 0.9999;
     double CDFL[ncomp];
     double CDFU[ncomp];
     double normConst[ncomp];

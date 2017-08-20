@@ -1,6 +1,14 @@
-useDynLib(BNSP, .registration=TRUE)
-import(stats)
+useDynLib(BNSP,.registration = TRUE)
+
+import(stats,ggplot2,plot3D,threejs,coda)
+
+importFrom("grDevices", "rainbow")
+importFrom("graphics", "par")
+importFrom("utils", "read.table")
+importFrom("gridExtra","grid.arrange")
 
 export(bnpglm,dnorm.pois)
-
 S3method(print, bnp)
+
+export(mvrm,sm,mvrm2mcmc)
+S3method(plot,mvrm)

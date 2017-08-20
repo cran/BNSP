@@ -591,7 +591,7 @@ double hPmean(double lambda, void *params){
 
 //Given mu and gamma solve for lambda
 double solve_hyper_poisson(double mu, double gamma){
-    double lambda;
+    double lambda, r;
     int status;
     int iter = 0, max_iter = 100;
     struct hP_params params = {mu,gamma};
@@ -608,7 +608,7 @@ double solve_hyper_poisson(double mu, double gamma){
     do{
         iter++;
         status = gsl_root_fsolver_iterate(s);
-        gsl_root_fsolver_root(s);
+        r = gsl_root_fsolver_root(s);
         x_lo = gsl_root_fsolver_x_lower(s);
         x_hi = gsl_root_fsolver_x_upper(s);
         status = gsl_root_test_interval (x_lo, x_hi, 0, 0.001);

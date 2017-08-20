@@ -1,3 +1,13 @@
+cut.pois<-function(y,rate,E){
+    qnorm(ppois(y,E*rate))
+}
+
+dnorm.pois<-function(x,y,mu,Sigma,rate,E){
+    dnorm(x,mean=mu[1],sd=sqrt(Sigma[1,1]))*(
+    pnorm(cut.pois(y,rate,E),mean=(mu[2]+Sigma[1,2]*(x-mu[1])/Sigma[1,1]),sd=sqrt(Sigma[2,2]-Sigma[1,2]^2/Sigma[1,1]))-
+    pnorm(cut.pois(y-1,rate,E),mean=(mu[2]+Sigma[1,2]*(x-mu[1])/Sigma[1,1]),sd=sqrt(Sigma[2,2]-Sigma[1,2]^2/Sigma[1,1])))
+}
+
 bnpglm <- function(formula,family,data,offset,sampler="slice",StorageDir,ncomp,sweeps,burn,thin=1,seed,prec,
                    V,Vdf,Mu.nu,Sigma.nu,Mu.mu,Sigma.mu,Alpha.xi,Beta.xi,Alpha.alpha,Beta.alpha,Turnc.alpha,
                    Xpred,offsetPred,...){
@@ -50,7 +60,7 @@ bnpglm <- function(formula,family,data,offset,sampler="slice",StorageDir,ncomp,s
                stop(gettextf("number of offsets is %d should equal %d (number of observations)",
                    length(offset), NROW(Y)), domain = NA)
         }
-        if (missing(offset)) offset<-rep(1,n)
+        if (is.null(offset)) offset<-rep(1,n)
     } else if (family.indicator==2 | family.indicator==4){
         Y1 <- model.response(mf, "any")
         if (NCOL(Y1)==1){
@@ -250,4 +260,9 @@ bnpglm <- function(formula,family,data,offset,sampler="slice",StorageDir,ncomp,s
     Q90Reg=Q90Reg,Q95Reg=Q95Reg,denReg=denReg,denVar=denVar)
     class(fit) <- 'bnp'
     return(fit)
+}
+
+print.bnp<-function(x,digits=max(3,getOption('digits')-3), ...){
+   #Print formula
+   cat('\nCall: ',deparse(x$call),'\n\n')
 }

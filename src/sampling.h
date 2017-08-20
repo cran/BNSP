@@ -382,6 +382,7 @@ void propose2(unsigned long int s, double *XiC, double *XiP, int nRespPars, doub
         XiP[0] = gsl_ran_gamma(r,prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0])); //has mean XiC[0] and variance=1/prec
     else if (family == 2){
         beta = XiC[0] - 1 + XiC[0]*(1-XiC[0])*(1-XiC[0])*prec[0];
+        if (beta < 0.001) beta = 0.001;
         alpha = beta * XiC[0]/(1-XiC[0]);
         XiP[0] = gsl_ran_beta(r,alpha,beta); // has mean XiC[0] and variance=1/prec
     }

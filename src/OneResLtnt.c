@@ -301,7 +301,6 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     for (i = 0; i < n; i++)
         for (h = 0; h < ncomp; h++)
             pdjkj[h][i] = (double) 1/ncomp; //(ncomp-h) or (ncomp-h)*(ncomp-h);
-
     s = gsl_ran_flat(r,1.0,100000);
     allocation(s,n,ncomp,pdjkj,compAlloc,1);
     for (i = 0; i < n; i++)
@@ -709,7 +708,8 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
             for (k = 0; k < maxy; k++) for (i = 0; i < npred; i++) StorePD[i][k] = 0.0;
             for (h = 0; h < ncomp; h++) if (nmembers[h] > 0) upperL = h;
             upperL += 2; //one to work ok and one for the empty cluster; check for in between zeros
-
+            if (upperL > ncomp) upperL=ncomp;
+             
             for (h = 0; h < upperL; h++){
                 if (nmembers[h] > 0 || newClusI == 0){
                     if (nmembers[h] == 0) newClusI = 1;

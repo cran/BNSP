@@ -7,14 +7,15 @@
 
 \title{Bayesian non- and semi-parametric model fitting}
 
-\description{MCMC for Dirichlet process mixtures}
+\description{Markov chain Monte Carlo algorithms for non- and semi-parametric models. Dirichlet process mixture models and spike-slab 
+variable selection in mean/variance regression models.}
 
 \details{
 \tabular{ll}{
 Package: \tab BNSP\cr
 Type: \tab Package\cr
-Version: \tab 1.1.0\cr
-Date: \tab 2015-12-04\cr
+Version: \tab 2.0.0\cr
+Date: \tab 2017-08-16\cr
 License: \tab GPL (>=2)\cr}
 
 This program is free software; you can redistribute it and/or

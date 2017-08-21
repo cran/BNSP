@@ -164,16 +164,12 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     double sigma2zP[n];  
     double LPV[n];
     double LPVP[n]; 
-    double LPVJ[n];
-    double LPVPJ[n];
-    double sigma2zJ[n];
-    double sigma2zPJ[n];
     double alphaPD[LD];
     double BaseSubAlpha[MVLD[0]];
     double sqResC[n];
     double sqResP[n];
     double Acp, unifRV, QFC, QFP, detR,
-           logMVNormC, logMVNormP, SPC, SPP, temp, sigma2P;
+           logMVNormC, logMVNormP, SPC, SPP, sigma2P;
     double cetahat, Sprime, SDprime, elPrime, elDPrime, Q2, cetaP;
     
     //For selecting block size gamma_B or delta_B
@@ -307,7 +303,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     // - 5 - c_eta
     ceta = 1;
     cetahat = ceta; //starting value is the current value
-    SPC = SP(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
+    SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
     elPrime = 99.9;
     while(elPrime > 0.000000001 || -elPrime > 0.000000001){
         Sprime = -Q2/pow(cetahat+1,2);
@@ -334,7 +330,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
             blockSize += 1;
             nBlocks = ceil((double)vecLG[j]/blockSize);
             gsl_ran_shuffle(r,indexG[j],vecLG[j],sizeof(int));
-	        SPC = SP(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
+	        SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
 	        for (block = 0; block < nBlocks; block++){
                 s = gsl_ran_flat(r,1.0,100000);
 	            proposeBlockInd(s,vecGamma[j],vecLG[j],block,blockSize,indexG[j],cmu[j],dmu[j],vecGammaP[j]); 
@@ -344,7 +340,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
                 for (k = 0; k < vecLG[j]; k++)
                     NPJ += vecGammaP[j][k];
 	            NgammaP = Ngamma - vecNgamma[j] + NPJ; 
-	            SPP = SP(n,1,tol,yTilde,gammaP,NgammaP,LG,ceta,X,LPV,&Q2);
+	            SPP = SPcalc(n,1,tol,yTilde,gammaP,NgammaP,LG,ceta,X,LPV,&Q2);
                 Acp = exp((-SPP+SPC)/(2*sigma2))*pow(ceta+1,0.5*(vecNgamma[j]-NPJ));
                 unifRV = gsl_ran_flat(r,0.0,1.0);            
 	            if (Acp > unifRV){
@@ -423,7 +419,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
                 for (i = 0; i < n; i++)
                     detR += LPV[i] - LPVP[i];
                 detR *= 0.5;
-	            SPP = SP(n,1,tol,yTildeP,gamma,Ngamma,LG,ceta,X,LPVP,&Q2);     
+	            SPP = SPcalc(n,1,tol,yTildeP,gamma,Ngamma,LG,ceta,X,LPVP,&Q2);     
 	            //probability of reverse direction
 	            postMeanVarEta(n,1,tol,gamma,Ngamma,LG,sigma2,ceta,LPVP,X,yTildeP,&subMeanEta.vector,&subVarEta.matrix,sw);
                 cSqRes(n,1,gamma,Ngamma,LG,X,&subMeanEta.vector,Y,sqResP);	    	                             
@@ -503,7 +499,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
 	        if (g > GUL) g = GUL;
         }     
         cetahat = 1;//starting value for NR
-        SPC = SP(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
+        SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
         elPrime = 99.9;
         while(elPrime > 0.000000001 || -elPrime > 0.000000001){
             Sprime = -Q2/pow(cetahat+1,2);
@@ -514,7 +510,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
         }
         cetaP = cetahat + gsl_ran_gaussian(r,sqrt(-g/elDPrime));
 	    while(cetaP < 0) cetaP = cetahat + gsl_ran_gaussian(r,sqrt(-g/elDPrime));
-	    SPP = SP(n,1,tol,yTilde,gamma,Ngamma,LG,cetaP,X,LPV,&Q2);
+	    SPP = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,cetaP,X,LPV,&Q2);
 	    Acp = exp(-0.5*(Ngamma+1)*(log(cetaP+1)-log(ceta+1))+(-SPP+SPC)/(2*sigma2)-(alphaeta+1)*(log(cetaP)-log(ceta))
               + betaeta*(1/ceta-1/cetaP))*
                 gsl_ran_gaussian_pdf(ceta-cetahat,sqrt(-g/elDPrime))/

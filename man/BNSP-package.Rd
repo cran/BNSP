@@ -15,7 +15,7 @@ variable selection in mean/variance regression models.}
 Package: \tab BNSP\cr
 Type: \tab Package\cr
 Version: \tab 2.0.0\cr
-Date: \tab 2017-08-16\cr
+Date: \tab 2017-08-21\cr
 License: \tab GPL (>=2)\cr}
 
 This program is free software; you can redistribute it and/or

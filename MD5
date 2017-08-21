@@ -1,10 +1,10 @@
 511edf0fc12039e36ed9bca82de9dd34 *ChangeLog
-d0aeff8cbc95e4b42522d85deeb27d20 *DESCRIPTION
+a62da5e8435a02f2b451145d97126216 *DESCRIPTION
 7c411494b525596e1ab18a995bd34048 *NAMESPACE
 589c23cb5f48b2d5fc569f59c4c7cd95 *R/bnpglm.R
 7117f11bf544ec8b2edaf0f259ebef70 *R/mvrm.R
 51963ed1482880dc991a7a47487539b6 *data/simD.rda
-629bbcd8fc851f14968d978011128019 *man/BNSP-package.Rd
+3b3ceabd94fb35f18c12966ee317de42 *man/BNSP-package.Rd
 a937cfbc5e70dc220202e6578abf99c6 *man/bnpglm.Rd
 263a156e47ac18db7929786a2ccb293b *man/mvrm.Rd
 0998a7bc6ccd00e831cf6a3d872d5934 *man/mvrm2mcmc.Rd
@@ -18,8 +18,8 @@ b3d22c1f68e8d549da5761e9e7636b18 *man/plot.mvrm.Rd
 1d14607bf7703056613baf388c3acaa5 *src/SpecOneRL.h
 58eeb43d50034144b374226a5bc18c5a *src/matalg.h
 735515bc7db2dd752323e1ca64c9e57d *src/mathm.h
-4dbfe33c2f8c41ea2cc61d2792c42ca1 *src/mvrmGAM.c
+62f2390e7aa17f1ec9982ecc1e8e2b1a *src/mvrmGAM.c
 06ead030773c0278c1cb46cdd92ccd15 *src/other.functions.h
 94a976d694949fc574d22653d1c5afc5 *src/pdfs.h
 c93acbc0019b9d4a2c19a2cfb4c2f4ff *src/sampling.h
-4fd2f6a0a7ae2f623ce3c4c27047534c *src/spec.BCM.h
+30d792ebad27c02640182093d65027fc *src/spec.BCM.h

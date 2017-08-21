@@ -38,8 +38,8 @@ void setBaseZtg(int T, int d, int *gamma, int Ngamma, int LG, double *AllBases, 
 }
 
 //The likelihood of theta with eta integrated out, S.
-double SP(int T, int d, double tol, double *thetaTilde, int *gamma, int Ngamma, int LG, double ceta, double *AllBases, 
-          double *LPV, double * qf2){
+double SPcalc(int T, int d, double tol, double *thetaTilde, int *gamma, int Ngamma, int LG, double ceta, double *AllBases, 
+              double *LPV, double * qf2){
     double vizZt[(T*d)*(Ngamma+1)];
     double S, qf1;
     gsl_matrix *ZTZ = gsl_matrix_alloc(LG+1,LG+1);
@@ -299,7 +299,7 @@ double SPh(int T, int d, int H, int h, double tol, double *thetaTilde, int LG, i
     double vizZt[(T*nmembers)*(Ngamma+1)];
     double vizThetaTild[T*nmembers];
     double S, qf1;
-    int i, t, k, move;
+    int i, t, move;
     gsl_matrix *ZTZ = gsl_matrix_alloc(LG+1,LG+1);
     gsl_matrix *ZTZinv = gsl_matrix_alloc(LG+1,LG+1);
     gsl_vector *ZtTtT = gsl_vector_alloc(LG+1);

@@ -1,8 +1,8 @@
 sm<-function (...,nknots=10,knots=NULL,bs="rd"){
+    pf <- parent.frame()
     vars<-as.list(substitute(list(...)))[-1] 
     d<-length(vars)
     if (d > 2) stop("Up to bivariate covariates supported")
-    pf <- parent.frame()
     term<-NULL
     for (i in 1:d){ 
 	    term[i]<-deparse(vars[[i]],backtick=TRUE,width.cutoff=500)
@@ -64,10 +64,11 @@ sm<-function (...,nknots=10,knots=NULL,bs="rd"){
     X<-data.frame(X)
     colnames(X)[1:d]<-term[1:d]
     colnames(X)[-c(1:d)]<-paste(label,1:(NCOL(X)-d),sep=".")
-    return(X)    
+    XK<-list(X=X,knots=knots)
+    return(XK)    
 }
 
-DM<-function(formula,data,mm,ns){
+DM<-function(formula,data,mm,ns,knots=NULL){
     specials <- c('sm')    
     trms<-terms.formula(formula,specials=specials)
     attr(trms,"intercept")<-1
@@ -93,7 +94,10 @@ DM<-function(formula,data,mm,ns){
 			trms3<-delete.response(trms)
 	    }
         if (!is.null(trms3)) 
-            for (i in 1:dim(attr(trms3,"factors"))[2]) X<-cbind(X,with(data,eval(trms3[i][[2]])))
+            for (i in 1:dim(attr(trms3,"factors"))[2]){ 
+                XK<-with(data,eval(trms3[i][[2]]))
+                X<-cbind(X,XK$X)
+			}
     }else if (attr(trms,"response") && mm){ 
         X<-model.matrix(trms,data=data)    
 	}else{ 
@@ -127,7 +131,7 @@ mvrm <- function(formula,formula.v=~1,data,sweeps,burn,thin=1,seed,StorageDir,
     if (missing(data)) stop("provide data argument") 
     data <- as.data.frame(data)        
     # Design matrices, response, indicators
-    XY<-DM(formula,data,1,5)
+    XY<-DM(formula,data,1,5,NULL)
     Y<-XY[,1]    
     n<-length(Y)
     X<-XY[,-1]
@@ -151,7 +155,7 @@ mvrm <- function(formula,formula.v=~1,data,sweeps,burn,thin=1,seed,StorageDir,
     vecLG<-table(gX)
     cusumVecLG<-c(0,cumsum(vecLG))
     #    
-    Z<-DM(formula.v,data,0,n) 
+    Z<-DM(formula.v,data,0,n,NULL) 
     attr(Z,"assign")<-NULL       
     main<-colnames(Z)[-c(1,grep(specials,colnames(Z)))]
     mainApp<-sapply(main,grep,colnames(Z)[-1],simplify=FALSE)
@@ -308,11 +312,12 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 	B<-sub("\\(","",A)
 	C<-sub("\\)","",B)
 	sl<-strsplit(C,",")
-	match1<-unlist(lapply(sl[[1]],match,colnames(mvrmObj$data)))
+	sl<-sub(" ","",sl[[1]])
+	match1<-unlist(lapply(sl,match,colnames(mvrmObj$data)))
     match1<-match1[!is.na(match1)]
 	label<-colnames(mvrmObj$data)[match1]
 	count<-length(label)
-	label2<-main[unlist(lapply(sl[[1]],grep,main))]
+	label2<-main[unlist(lapply(sl,grep,main))]
 	MEAN<-0
     if (model=="mean" || model=="both"){ #check if chosen label is in the mean model
         if (!sum(label2 %in% mainM)==length(label2)) stop("chosen term doesn't appear in the mean model")
@@ -320,7 +325,6 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
         TEST<-1
         trms<-terms.formula(mvrmObj$formula,specials=specials)
         termLabels<-attr(trms,"term.labels")
-        idTermM<-(-99)
         for (i in 1:length(termLabels)){
             test<-termLabels[i]
             A<-sub(specials,"",test)
@@ -387,25 +391,55 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 	        if (is.D) DsM<-DsM[do.call(order,as.data.frame(DsM[,NCOL(DsM):1])),]        
 		}
 	    if (count==2){    
-	        DsM<-unique(mvrmObj$X[,ML])
-            adjG<-min(grid^2,NROW(DsM))  #NEEDS FIX
-            DsM<-DsM[do.call(order,as.data.frame(DsM[,label2])),]                       
-            #if (!is.D) DsM<-DsM[order(DsM[,label2[1]]),]	        
-	        DsM<-DsM[seq(1,NROW(DsM),length.out=adjG),]		        
+	        if (sum(is.D)){
+	            DsM<-unique(mvrmObj$X[,ML])
+                adjG<-min(grid^2,NROW(DsM))            
+                DsM<-DsM[do.call(order,as.data.frame(DsM[,label2])),]                       
+                #if (!is.D) DsM<-DsM[order(DsM[,label2[1]]),]	        
+	            DsM<-DsM[seq(1,NROW(DsM),length.out=adjG),]		        	        
+			}
 	        #if (is.D) DsM<-DsM[do.call(order,as.data.frame(DsM[,NCOL(DsM):1])),]        	        	        	       
-	        #adjG<-grid; if (is.D[1]) adjG<-length(unique(mvrmObj$data[,label[1]]))	        
+	        #adjG<-grid; if (is.D[1]) adjG<-length(unique(mvrmObj$data[,label[1]]))	        	        
 	        #newR1<-seq(min(mvrmObj$X[,label2[1]]),max(mvrmObj$X[,label2[1]]),length.out=adjG)
             #if (is.D[1]) newR1<-factor(newR1)
             #adjG<-grid; if (is.D[2]) adjG<-length(unique(mvrmObj$data[,label[2]]))
             #newR2<-seq(min(mvrmObj$X[,label2[2]]),max(mvrmObj$X[,label2[2]]),length.out=adjG)
             #if (is.D[2]) newR2<-factor(newR2)
             #newData<-data.frame(expand.grid(newR1,newR2))
-            #colnames(newData)<-label2
+            #colnames(newData)<-label2            
             #trms<-terms.formula(mvrmObj$formula,specials=specials)
             #trms3<-drop.terms(trms, dropx = -idTermM)
-            #DsM<-DM(trms3,newData,0,NROW(newData))             
+            #DsM<-DM(trms3,newData,0,NROW(newData)) 
+            #DM(formula(paste("~",plotLabel)),newData,0,225)                        
             #DsM<-DM(mvrmObj$formula,newData,0,NROW(newData))             
-            #DsM<-DsM[,ML]            
+            #DsM<-DsM[,ML]
+            #DsM<-unique(mvrmObj$X[,ML])
+            #adjG<-min(grid^2,NROW(DsM))            	        
+	        #DsM<-DsM[seq(1,NROW(DsM),length.out=adjG),]		        	        
+	        #if (is.D) DsM<-DsM[do.call(order,as.data.frame(DsM[,NCOL(DsM):1])),]        	        	        	       
+	        #adjG<-grid; if (is.D[1]) adjG<-length(unique(mvrmObj$data[,label[1]]))	        	        
+	        #newR1<-seq(min(mvrmObj$X[,label2[1]]),max(mvrmObj$X[,label2[1]]),length.out=adjG)	        	        
+            #if (is.D[1]) newR1<-factor(newR1)
+            #adjG<-grid; if (is.D[2]) adjG<-length(unique(mvrmObj$data[,label[2]]))
+            #newR2<-seq(min(mvrmObj$X[,label2[2]]),max(mvrmObj$X[,label2[2]]),length.out=adjG)            
+            #if (is.D[2]) newR2<-factor(newR2)
+            if (sum(is.D)==0){
+                newR1<-seq(min(mvrmObj$data[,label2[1]]),max(mvrmObj$data[,label2[1]]),length.out=grid)
+                newR2<-seq(min(mvrmObj$data[,label2[2]]),max(mvrmObj$data[,label2[2]]),length.out=grid)
+                newData<-data.frame(expand.grid(newR1,newR2))
+                colnames(newData)<-label2                        
+                trms<-terms.formula(mvrmObj$formula,specials=specials)
+                trms3<-drop.terms(trms, dropx = -idTermM)            
+                XK<-with(mvrmObj$data,eval(trms3[1][[2]]))
+                #D<-matrix(XK$knots,ncol=2)
+                Dstar<-XK$knots
+                #DsM<-DM(trms3,newData,0,NROW(newData)) 
+                #print(formula(paste("~",sub(")",",knots=D)",plotLabel))))
+                #print(formula(parse(paste("~",sub(")",",knots=D)",plotLabel)))))
+                DsM<-DM(formula(paste("~",sub(")",",knots=knots)",plotLabel))),data=newData,0,NROW(newData),knots=Dstar)                   
+                #DsM<-DM(mvrmObj$formula,newData,0,NROW(newData))             
+                #DsM<-DsM[,ML]    
+		    }                    
         }
         fitM<-matrix(0,nrow=mvrmObj$nSamples,ncol=NROW(DsM))
 		etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.beta.txt",sep="")) 
@@ -435,8 +469,8 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 	    if (count==1 && is.D){
 	        df<-data.frame(x=rep(levels(mvrmObj$data[,label]),each=mvrmObj$nSamples),y=c(fitM))
             plotElM<-c(geom_boxplot(),list(xlab(label),ylab("")))
-            ggM<-ggplot(df,aes_string(x,y))
-	        plotM<-ggM + plotElM + plotOptions
+            ggM<-ggplot(data=df,aes(x=x,y=y))
+	        plotM<-ggM + plotElM + ggtitle("mean") + plotOptions
 	    }
 	    if (count==2 && sum(is.D)==1){
 		    centreM<-apply(fitM,2,centre)
@@ -464,9 +498,11 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 	    }
 	    if (count==2 && sum(is.D)==0){
 		    centreM<-apply(fitM,2,centre)		    
-		    if (static){
-		        if (!is.D[1]) newR1<-newR1+mean(mvrmObj$data[,label[1]])
-		        if (!is.D[2]) newR2<-newR2+mean(mvrmObj$data[,label[2]])
+		    #newR1<-seq(min(mvrmObj$X[,label2[1]]),max(mvrmObj$X[,label2[1]]),length.out=adjG)
+		    #newR2<-seq(min(mvrmObj$X[,label2[2]]),max(mvrmObj$X[,label2[2]]),length.out=adjG)
+		    newR1<-newR1+mean(mvrmObj$data[,label[1]])
+		    newR2<-newR2+mean(mvrmObj$data[,label[2]])
+		    if (static){		        
 		        defaultList<-list(x=as.numeric(newR1),y=as.numeric(newR2),z=matrix(centreM,length(newR1),length(newR2)),colvar=matrix(centreM,length(newR1),length(newR2)))
                 along="xy"; if (is.D[1]) along="y"; if (is.D[2]) along="x"
                 space=0.6; if (sum(is.D)) space<-0.8                                                        
@@ -480,9 +516,7 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
                     do.call("ribbon3D",allOptions[!duplicated(names(allOptions))])
 				}
 		    }
-            if (!static){
-                if (!is.D[1]) newR1<-newR1+mean(mvrmObj$data[,label[1]])
-		        if (!is.D[2]) newR2<-newR2+mean(mvrmObj$data[,label[2]])
+            if (!static){             
                 newData<-data.frame(expand.grid(as.numeric(newR1),as.numeric(newR2)))
                 a<-cbind(newData,centreM)
                 if (is.null(plotOptions$col)) col=rainbow(16,2/3)
@@ -502,15 +536,17 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
             DsV<-unique(mvrmObj$Z[,VL])
             adjG<-min(grid,NROW(DsV))          
             if (!is.D) DsV<-DsV[order(DsV[,label2[1]]),]	        
-	        DsV<-DsV[seq(1,NROW(DsV),length.out=adjG),]
-	        if (is.D) DsV<-DsV[do.call(order,as.data.frame(DsV[,NCOL(DsV):1])),]	       
+	        if (!is.D) DsV<-DsV[seq(1,NROW(DsV),length.out=adjG),]
+	        #if (is.D) DsV<-DsV[do.call(order,as.data.frame(DsV[,NCOL(DsV):1])),]	       
 		}
 		if (count==2){
-	        DsV<-unique(mvrmObj$Z[,VL])
-            adjG<-min(grid^2,NROW(DsV))  #NEEDS FIX
-            DsV<-DsV[do.call(order,as.data.frame(DsV[,label2])),]                       
-            #if (!is.D) DsM<-DsM[order(DsM[,label2[1]]),]	        
-	        DsV<-DsV[seq(1,NROW(DsV),length.out=adjG),]		        
+	        if (sum(is.D)){
+	            DsV<-unique(mvrmObj$Z[,VL])
+                adjG<-min(grid^2,NROW(DsV))  
+                DsV<-DsV[do.call(order,as.data.frame(DsV[,label2])),]                       
+                #if (!is.D) DsM<-DsM[order(DsM[,label2[1]]),]	        
+	            DsV<-DsV[seq(1,NROW(DsV),length.out=adjG),]
+			}		        
 	        #adjG<-grid; if (is.D[1]) adjG<-length(unique(mvrmObj$data[,label[1]]))	
 	        #newR1<-seq(min(mvrmObj$Z[,label2[1]]),max(mvrmObj$Z[,label2[1]]),length.out=adjG)
             #if (is.D[1]) newR1<-factor(newR1)
@@ -523,7 +559,19 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
             #trms3<-drop.terms(trms, dropx = -idTermS)
             #DsV<-DM(trms3,newData,0,NROW(newData))    
             #DsV<-DM(mvrmObj$formula.v,newData,0,NROW(newData))
-            #DsV<-DsV[,VL]            
+            #DsV<-DsV[,VL] 
+            if (sum(is.D)==0){
+                newR1<-seq(min(mvrmObj$data[,label2[1]]),max(mvrmObj$data[,label2[1]]),length.out=grid)
+                newR2<-seq(min(mvrmObj$data[,label2[2]]),max(mvrmObj$data[,label2[2]]),length.out=grid)
+                newData<-data.frame(expand.grid(newR1,newR2))
+                colnames(newData)<-label2                        
+                trms<-terms.formula(mvrmObj$formula.v,specials=specials)
+                trms3<-drop.terms(trms, dropx = -idTermS)          
+                XK<-with(mvrmObj$data,eval(trms3[1][[2]]))                
+                Dstar<-XK$knots
+                DsV<-DM(formula(paste("~",sub(")",",knots=knots)",plotLabel))),data=newData,0,NROW(newData),knots=Dstar)    
+                DsV<-DsV[,-1]
+		    }                                
         }
         fitV<-matrix(0,nrow=mvrmObj$nSamples,ncol=NROW(DsV))
 		alphaFN <- file.path(paste(mvrmObj$DIR,"BNSP.alpha.txt",sep="")) 
@@ -558,8 +606,8 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 		if (count==1 && is.D){
 	        df<-data.frame(x=rep(levels(mvrmObj$data[,label]),each=mvrmObj$nSamples),y=c(fitV))
             plotElV<-c(geom_boxplot(),list(xlab(label),ylab("")))
-            ggV<-ggplot(df,aes_string(x,y))
-	        plotV<-ggV + plotElV + plotOptions
+            ggV<-ggplot(data=df,aes(x=x,y=y))
+	        plotV<-ggV + plotElV + ggtitle("st dev") + plotOptions
 	    }
 	    if (count==2 && sum(is.D)==1){		    				    		    	 	   		    
 		    centreV<-apply(fitV,2,centre)
@@ -583,9 +631,15 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 	    }
 		if (count==2 && sum(is.D)==0){
 		    centreV<-apply(fitV,2,centre)
-		    if (static){		        
-				if (!is.D[1]) newR1<-newR1+mean(mvrmObj$data[,label[1]])
-		        if (!is.D[2]) newR2<-newR2+mean(mvrmObj$data[,label[2]])
+		    #newR1<-seq(min(mvrmObj$Z[,label2[1]]),max(mvrmObj$Z[,label2[1]]),length.out=adjG)
+			#newR1<-newR1+mean(mvrmObj$data[,label[1]])
+		    #newR2<-seq(min(mvrmObj$Z[,label2[2]]),max(mvrmObj$Z[,label2[2]]),length.out=adjG)
+		    #newR2<-newR2+mean(mvrmObj$data[,label[2]])
+		    
+		    newR1<-newR1+mean(mvrmObj$data[,label[1]])
+		    newR2<-newR2+mean(mvrmObj$data[,label[2]])
+		    
+		    if (static){		        				
 				defaultList<-list(x=as.numeric(newR1),y=as.numeric(newR2),z=matrix(centreV,length(newR1),length(newR2)),colvar=matrix(centreV,length(newR1),length(newR2)))
                 along="xy"; if (is.D[1]) along="y"; if (is.D[2]) along="x"
                 space=0.6; if (sum(is.D)) space<-0.8
@@ -599,9 +653,7 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
                     do.call("ribbon3D",allOptions[!duplicated(names(allOptions))])
 				}
 		    }
-            if (!static){
-                if (!is.D[1]) newR1=newR1+mean(mvrmObj$data[,label[1]])
-		        if (!is.D[2]) newR2=newR2+mean(mvrmObj$data[,label[2]])
+            if (!static){                
                 newData<-data.frame(expand.grid(as.numeric(newR1),as.numeric(newR2)))
                 a<-cbind(newData,centreV)
                 if (is.null(plotOptions$col)) col=rainbow(16,2/3)

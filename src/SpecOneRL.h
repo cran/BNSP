@@ -45,9 +45,10 @@ void SetShOneResLtntYX(int p, int n, int NDV, int h, int ncomp, double *X, doubl
     for (i = 0; i < n; i++){
         if (compAlloc[i]==h){
             baseSh[0] = latentYX[i][0];
-            baseSh[1] = latentYX[i][1] - muh[h][0];
-            for (k = 1; k < p; k++)
-                baseSh[k+1] = X[k*n+i]-muh[h][k];
+            for (k = 0; k < (NDV-1); k++)
+                baseSh[k+1] = latentYX[i][k+1] - muh[h][k];
+            for (k = (NDV-1); k < p; k++)
+                baseSh[k+1] = X[k*n+i] - muh[h][k];
             StoreX = gsl_matrix_view_array(baseSh,p+1,1);
             gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,&StoreX.matrix,&StoreX.matrix,1.0,Sh);
         }
@@ -114,13 +115,13 @@ void SetSampleTotMuYX(int p, int NDV, int n, int h, int ncomp, double *sampleTot
         sampleTot[k] = 0.0;
     for (i = 0; i < n; i++){
         if (compAlloc[i]==h){
-            sampleTot[0] += latentYX[i][1] - latentYX[i][0]*nuh[h][0];
-            for (k = 1; k < p; k++)
-                sampleTot[k] += X[k*n+i] - latentYX[i][0]*nuh[h][k];
+            for (k = 0; k < (NDV-1); k++)
+                sampleTot[k] += latentYX[i][k+1] - nuh[h][k]*latentYX[i][0];
+            for (k = (NDV-1); k < p; k++)
+                sampleTot[k] += X[k*n+i] - nuh[h][k]*latentYX[i][0];
         }
     }
 }
-
 
 //Set sum_{ki=h} z_i^*. Arguments are: # of variables, sample size, component, # of comps,
 //variable to be calculated, allocations, covariate design mat, vec of latent vars.

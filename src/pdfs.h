@@ -49,6 +49,34 @@ int bivNormalpdf(unsigned dim, const double *x, void *parameters, unsigned fdim,
     return 0;
 }
 
+//params are means, diag elems of Sigma^{-1}, off diag elems of Sigma^{-1}, log|Sigma^-1| 
+int MultiNormalPDF(unsigned dim, const double *x, void *parameters, unsigned fdim, double *fval){
+    double *params = parameters;
+    int ncovs = dim*(dim-1)/2; 
+    int i, j, k;
+    double mu[dim];
+    double vars[dim];
+    double covs[ncovs];
+    double logdet, Q, logval;
+    for (i = 0; i < dim; i++) 
+        mu[i] = params[i];    
+    for (i = 0; i < dim; i++) 
+        vars[i] = params[dim+i];
+    for (i = 0; i < ncovs; i++) 
+        covs[i] = params[2*dim+i];
+    logdet = params[2*dim+ncovs]; 
+    Q = 0.0;
+    for (i = 0; i < dim; i++)
+        Q += vars[i]*(x[i]-mu[i])*(x[i]-mu[i]);
+    k = 0;
+    for (i = 0; i < (dim-1); i++)
+        for (j = i+1; j < dim; j++)
+            Q += 2*covs[k++]*(x[i]-mu[i])*(x[j]-mu[j]);
+    logval = -(dim*log(2*M_PI)+logdet+Q)/2; 
+    fval[0] = exp(logval);
+    return 0;
+}
+
 //Generalized bivariate Normal pdf with arguments (dim=2,x,parameters,1,return.value)
 int gBivNormalpdf(unsigned dim, const double *x, void *parameters, unsigned fdim, double *fval){
     double tol = 0.001; //tolerance level for the smallest eigenvalue.
@@ -412,6 +440,21 @@ double cdf_beta_binomial_P(int n, int q, double a, double b){
     return(result);
 }
 
+double cdf_beta_binomial_P2(int n, int q, double a, double b){
+    double result, prob;
+    int j = 0;
+    double Tot = 0.0;    
+    prob = exp(gsl_sf_lnbeta(a,n+b) - gsl_sf_lnbeta(a,b));
+    Tot = prob;
+    for (j = 0; j < q; j++){
+        prob *= ((j+a)*(n-j)/((j+1)*(n-j-1+b)));
+        Tot += prob;            
+	}
+	result = Tot;        
+    if (result > 1.0) result=1.0;
+    return(result);
+}
+
 //A Generalized-Poisson cdf
 double cdf_generalized_poisson_P1(int q, double lambda1, double lambda2){
     int j = 0;
@@ -454,39 +497,61 @@ double cdf_generalized_poisson_P2(int q, double mu, double f){
 }
 
 //A Generalized-Poisson cdf that can include offset and doesn't always calculate norm const
-double cdf_generalized_poisson_P3(int q, double mu, double f){
-    double normConst = 0.0;
-    double result;
+double cdf_generalized_poisson_P3(int q, double mu, double f, double *normConst){
+    *normConst = 1.0;
+    double result, prob;
     int j = 0;
     double B = -mu/(f-1); //for making sure that pmf is always >=0, (2.3) of Consul and Famoye 1992
-    double Tot = 0.0;
+    double Tot = 0.0;    
     if (f == 1.0){
         Tot = gsl_cdf_poisson_P(q,mu);
         result = Tot;
     }
-    else if (f > 1.0){
-        for (j = 0; j < q+1; j++)
-            Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
-        result = Tot;
+    else if (f > 1.0){        
+        prob = exp(-mu/f);
+        Tot = prob;
+        for (j = 1; j < q+1; j++){
+            prob *= exp((j-1)*log(mu+(f-1)*j)-(j-2)*log(mu+(f-1)*(j-1))-log(f)+(1-f)/f-log(j));
+            Tot +=prob;            
+		}
+        result = Tot;        
     }
     else if ((mu < 1.0 && f < 0.97) || (mu < 2.0 && f < 0.80) || (mu < 3.0 && f < 0.65) || (mu < 4.0 && f < 0.60) ||
         (mu < 5.0 && f < 0.55))
     {
+		prob = exp(-mu/f);
+        Tot = prob;
+        j = 1;
         while (j < q+1 && j < B){
-            if ((mu+(f-1)*j)>0) Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            //if ((mu+(f-1)*j)>0){ 
+            prob *= exp((j-1)*log(mu+(f-1)*j)-(j-2)*log(mu+(f-1)*(j-1))-log(f)+(1-f)/f-log(j));
+            Tot +=prob;
+            //Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+			//}
             j++;
-        }
-        normConst = Tot;
+        }        
+        *normConst = Tot;
         while (j < B){
-            if ((mu+(f-1)*j)>0) normConst += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            //if ((mu+(f-1)*j)>0){ 
+            //normConst += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            prob *= exp((j-1)*log(mu+(f-1)*j)-(j-2)*log(mu+(f-1)*(j-1))-log(f)+(1-f)/f-log(j));
+            *normConst +=prob;
+			//}
             j++;
         }
-        result = Tot/normConst;
+        result = Tot / *normConst;
+        //Rprintf("%f %f %i %i %f \n",Tot/normConst2,Tot2/normConst,j,q+1,B);
     }
     else
     {
+        prob = exp(-mu/f);
+        Tot = prob;
+        j = 1;
         while (j < q+1 && j < B){
-            if ((mu+(f-1)*j)>0) Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            //if ((mu+(f-1)*j)>0) 
+            //Tot += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
+            prob *= exp((j-1)*log(mu+(f-1)*j)-(j-2)*log(mu+(f-1)*(j-1))-log(f)+(1-f)/f-log(j));
+            Tot +=prob;
             j++;
         }
         result = Tot;

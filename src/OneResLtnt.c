@@ -9,12 +9,15 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * GNU General Public License for more details. 
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
+ 
+// NOTES: 1. MAKE LATENT = 0 IF COMPALLOC > NCOMP, 2. MAKE U = 0 IF COMPALLOC > NCOMP
+// CHECK CASE OF NO CONTINUOUS COVARIATES  
 
 #define GSL_RANGE_CHECK_OFF
 #define HAVE_INLINE
@@ -35,7 +38,7 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_sf_gamma.h>
 #include <gsl/gsl_sf_hyperg.h>
-#include <gsl/gsl_errno.h>
+#include <gsl/gsl_errno.h>  
 #include <gsl/gsl_roots.h>
 #include "matalg.h"
 #include "pdfs.h"
@@ -43,25 +46,24 @@
 #include "other.functions.h"
 #include "mathm.h"
 #include "SpecOneRL.h"
-//include "cubature.h"
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#include "bnsp.h"
+#include "cubature.h"
+#define MAX(x, y) (((x) > (y)) ? (x) : (y)) 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 void OneResLtnt(int *seed1, double *X, int *Y, double *H,
-                int *sweeps1, int *burn1, int *thin1, int *ncomp1, int *n1, int *p1,
-                double *Vprior, double *Vdf1,
-                double *munu, double *sigmanu,
+                int *sweeps1, int *burn1, int *thin1, int *ncomp1, 
+                int *n1, int *p1, int *NBC1, 
+                double *Vprior, double *eta1,
                 double *mumu, double *sigmamu,
                 double *alphaXi, double *betaXi,
                 double *Alphaa1, double *Alphab1, double *TruncAlpha1,
-                double *xbar, double *xsd, double *Ymean, double *prec1,
+                double *xbar, double *xsd, double *Ymean,
                 int *family1, int *sampler1,
-                int *npred1, double *Xpred, double *Hpred, int *allEqlI, int *maxy1,
-                double *meanReg, double *modeReg,
-                double *Q05Reg, double *Q10Reg, double *Q15Reg, double *Q20Reg, double *Q25Reg,
-                double *Q50Reg, double *Q75Reg, double *Q80Reg, double *Q85Reg, double *Q90Reg,
-                double *Q95Reg, double *denReg, double *denVar,
-                char **WorkingDir, int *WF1, int *compA)
+                int *npred1, double *Xpred, double *Hpred, int *maxy1, int *c,
+                double *meanReg, double *medianReg, double *q1Reg, double *q3Reg, double *modeReg,
+                double *denReg, double *denVar,
+                char **WorkingDir, int *WF1)
 {
     gsl_set_error_handler_off();
 
@@ -78,49 +80,43 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     int nSamples = (sweeps - burn)/thin;
 
     //Family
-    int family = family1[0]; //1=poisson, 2=binomial, 3=negative binomial, 4=beta binomial, 5=generalized poisson, 6=com-poisson, 7=hyper-poisson, 8=ctpd
+    int family = family1[0]; //1=poisson, 2=binomial, 3=negative binomial, 4=beta binomial, 5=Generalized Poisson, 6=COM-Poisson
     int sampler = sampler1[0]; //1=slice, 2=truncated
 
     //Declare variables for loops: h for components, k,j for covariates, i for subjects, sw for sweeps
-    int h, i, j, k, sw;
+    int h, i, j, k, l, sw;
 
     // Dimensions
-    int n = n1[0]; // number of observations
-    int p = p1[0]; // number of covariates
+    int n = n1[0]; //number of observations
+    int p = p1[0]; //number of covariates
+    int NDC = NBC1[0]; //number of discrete covariates
+    int NDV = NDC + 1; //number of discrete variables    
+    int NCC = p - NDC; //number of continuous covariates
+    int totran = p + 1; // number of random variables
     int ncomp = ncomp1[0]; //number of clusters/components
     int npred = npred1[0]; //number of predictions
     int nRespPars = 1; // number of parameters in response pmf
     if (family > 2) nRespPars = 2;
     if (family == 8) nRespPars = 3;
+    int XiLoop = 1;
+    if (family==5) XiLoop = 2;
+    int move, NCCPi, NDCPi, NDVPi; 
 
     //Tolerance level
-    double tol = 0.0001; //tolerance level for eigen values when inverting matrices
-
+    double tol = 0.00001; //tolerance level for eigen values when inverting matrices
+    double tol2 = 12.0; //tolerance for integral limits
+     
     // Prior parameters
-    // - 1 - Th: V, V^{-1}, df
-    gsl_matrix *V = gsl_matrix_alloc(p,p);
-	gsl_matrix *Vinv = gsl_matrix_alloc(p,p);
-	for (j = 0; j < p; j++)
-        for (k = 0; k < p; k++)
-            gsl_matrix_set(V,j,k,Vprior[j*p+k]);
+    // - 1 - Sigman^*: V, V^{-1}, df: Eh ~ Wishart(eta,V)
+    gsl_matrix *V = gsl_matrix_alloc(totran,totran); //scale matrix of prior of E_h
+    gsl_matrix *Vinv = gsl_matrix_alloc(totran,totran); //inverse scale matrix of prior of E_h
+    for (j = 0; j < totran; j++)
+        for (k = 0; k < totran; k++)
+            gsl_matrix_set(V,j,k,Vprior[j*totran+k]);
     gsl_matrix_memcpy(Vinv,V);
-    Inverse(p,Vinv);
-    double Vdf = Vdf1[0];
-    // - 2 - Nuh: mu_nu and Sigma_nu
-    gsl_vector *MuNu = gsl_vector_alloc(p);
-    gsl_matrix *SigmaNuInv = gsl_matrix_alloc(p,p);
-    gsl_matrix *SigmaNuHalf = gsl_matrix_alloc(p,p);
-    gsl_vector *SIMnu = gsl_vector_calloc(p);
-    for (j = 0; j < p; j++)
-        gsl_vector_set(MuNu,j,munu[j]);
-    for (j = 0; j < p; j++)
-        for (k = 0; k < p; k++)
-            gsl_matrix_set(SigmaNuInv,j,k,sigmanu[j*p+k]);
-    Inverse(p,SigmaNuInv);
-    gsl_matrix_memcpy(SigmaNuHalf,SigmaNuInv);
-    gHalfInv(p,tol,SigmaNuHalf);
-    gsl_blas_dgemv(CblasNoTrans,1.0,SigmaNuInv,MuNu,0.0,SIMnu); // Sigma_nu^{-1} Mu_nu
-    // - 3 - Muh: mean  and Sigma_nu
+    Inverse(totran,Vinv);
+    double eta = eta1[0];
+    // - 2 - Muh: mean  and Sigma_nu
     gsl_vector *MuMu = gsl_vector_alloc(p);
     gsl_matrix *SigmaMuInv = gsl_matrix_alloc(p,p);
     gsl_matrix *SigmaMuHalf = gsl_matrix_calloc(p,p);
@@ -134,9 +130,8 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     gsl_matrix_memcpy(SigmaMuHalf,SigmaMuInv);
     gHalfInv(p,tol,SigmaMuHalf);
     gsl_blas_dgemv(CblasNoTrans,1.0,SigmaMuInv,MuMu,0.0,SIMmu); // Sigma_mu^{-1} Mu_mu
-    // - 4 - A. gamma ~ Gamma(alpha,beta) for poisson. B. gamma ~ Beta(alpha,beta) for binomial
-    // Directly use arguments of the function
-    // - 5 - concentration parameter alpha ~ Gamma(a,b) I[alpha>c]
+    // - 3 - alphaXi & betaXi: directly use arguments of the function
+    // - 4 - concentration parameter alpha ~ Gamma(a,b) I[alpha>c]
     double Alphaa = Alphaa1[0];
     double Alphab = Alphab1[0];
     double TruncAlpha = TruncAlpha1[0];
@@ -148,147 +143,169 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
 
     // Open files
     FILE *out_file1, *out_file2, *out_file3, *out_file4, *out_file5, *out_file6, *out_file7, *out_file8, *out_file9,
-         *out_file10, *out_file11, *out_file12, *out_file13, *out_file14, *out_file15, *out_file16, *out_file17,
-         *out_file18, *out_file19, *out_file20, *out_file21, *out_file22;
+         *out_file10, *out_file11, *out_file12, *out_file13, *out_file14, *out_file15, *out_file16, *out_file17, 
+         *out_file18, *out_file19;
 
-    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Th.txt");
-    out_file1 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Sigmah.txt");
-    out_file2 = fopen(path_name, "wt");
-    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.SigmahI.txt");
-    out_file3 = fopen(path_name, "wt");
-    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.nuh.txt");
-    out_file4 = fopen(path_name, "wt");
+    out_file1 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.muh.txt");
-    out_file5 = fopen(path_name, "wt");
+    out_file2 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.xih.txt");
-    out_file6 = fopen(path_name, "wt");
+    out_file3 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.alpha.txt");
-    out_file7 = fopen(path_name, "wt");
+    out_file4 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.compAlloc.txt");
-    out_file8 = fopen(path_name, "wt");
+    out_file5 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.nmembers.txt");
-    out_file9 = fopen(path_name, "wt");
+    out_file6 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Updated.txt");
-    out_file10 = fopen(path_name, "wt");
+    out_file7 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.MeanReg.txt");
-    out_file11 = fopen(path_name, "wt");
+    out_file8 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.MedianReg.txt");
+    out_file9 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q05Reg.txt");
-    out_file12 = fopen(path_name, "wt");
+    out_file10 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q10Reg.txt");
-    out_file13 = fopen(path_name, "wt");
+    out_file11 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q15Reg.txt");
-    out_file14 = fopen(path_name, "wt");
+    out_file12 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q20Reg.txt");
-    out_file15 = fopen(path_name, "wt");
+    out_file13 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q25Reg.txt");
-    out_file16 = fopen(path_name, "wt");
-    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q50Reg.txt");
-    out_file17 = fopen(path_name, "wt");
+    out_file14 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q75Reg.txt");
-    out_file18 = fopen(path_name, "wt");
+    out_file15 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q80Reg.txt");
-    out_file19 = fopen(path_name, "wt");
+    out_file16 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q85Reg.txt");
-    out_file20 = fopen(path_name, "wt");
+    out_file17 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q90Reg.txt");
-    out_file21 = fopen(path_name, "wt");
+    out_file18 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Q95Reg.txt");
-    out_file22 = fopen(path_name, "wt");
+    out_file19 = fopen(path_name, "wt");
 
     // Define quantities of interest
-    double Th1[ncomp][p*p]; // to store Th
-    double Sigmah[ncomp][p*p]; // to store \Sigma_{h}
-    double SigmahI[ncomp][p*p]; // to store \Sigma_{h}^{-1}
-    double nuh[ncomp][p]; // to store nu
-    double muh[ncomp][p]; // mu_h
+    double Sigmah[ncomp][totran*totran]; //Sigma^*_h
+    double muh[ncomp][p]; //mu_h
     double Xi[ncomp][nRespPars]; // response pmf parameters
     double alpha; //concentration parameter
     int compAlloc[n]; // allocation
     int nmembers[ncomp]; // number of cluster members
-    double pdjkj[ncomp][n]; // matrix to store P(delta_j = k_j)
+    double pdih[ncomp][n]; // matrix to store P(delta_j = k_j)
 
     // Define other quantities
     double pi[ncomp]; //stick breaking probabilities
     double Vdp[ncomp]; //V[i] ~ Beta(1,alpha)
     double newalpha; //store concentration parameter
-    int nmb;
+    int nmb; //number of members
     double u[n]; // for implementing a slice sampler - Walker 2006
     double minU, sumPIh;
-    int nUpdated, upperL;
-    double latentx[n]; // continuous latext variables underlying discrete ones
+    int nUpdated;
+    double latentYX[n][NDV]; // continuous latext variables underlying discrete ones
+    double Dh[ncomp][totran*totran]; //to store diagonal matrices D_h
+    double Eh[ncomp][totran*totran]; //to store E_h^{(t)}
     double XiC[nRespPars];
     double XiP[nRespPars];
     double XiLC, XiLP, cyC, cyP, cymoC, cymoP, Acp, NAcp, DAcp; //MH  step
+    double nuh[ncomp][p]; // to store nu
     double nuSInu, nuSIxmm; //nu^T S^-1 nu and nu^T SI (x-mu)
     double storenuSInu[ncomp]; // to store nu^T Sigma^(-1) nu
     double storenuSI[ncomp][p]; // to store nu^T Sigma^(-1)
-    double totprodhs[p];  // total of clusters: (x-mu)*x1
-    double sumxsq; // sum of cluster latentx[i]^2
-    double toths[p];  // total of clusters: x-mu-y1^* * nu
+    double toths[p];  // total of clusters
     double temp, temp2;
     int temp3;
-    double lower, upper, lower2, upper2;
-    double prec[nRespPars];
-    for (j = 0; j < nRespPars; j++) prec[j] = prec1[j];
+    double lower[NDV];
+    double upper[NDV];
+    double lowerX[NDC];
+    double upperX[NDC];
+    double Lower, Upper;    
+    int dimP = NDV*(NDV+3)/2+1;//params of conditional distribution of latent | continuous variables +1 for det
+    double params[dimP]; 
+    double StoreParams[ncomp][dimP];
+    double val, err; //value and error from cubature function call
+    int nocuba; //if limits are two far from zero, integral = 0 and nocubature is needed
+    double logPostPdfDSigmaP, logPostPdfDSigmaT, logTransR; //MH CV mat step
+    double logAcp, unifRV; //Any MH step
+    double lmt = 9999.99;
 
     // Declare and allocate gsl vectors and matrices
-    gsl_matrix *Th = gsl_matrix_alloc(p, p);
-    gsl_matrix *Sh = gsl_matrix_alloc(p,p);
-    gsl_vector *nu = gsl_vector_alloc(p);
+    gsl_matrix *Sh = gsl_matrix_alloc(totran,totran);
     gsl_vector *nuSI = gsl_vector_alloc(p);
     gsl_matrix *Dg1 = gsl_matrix_alloc(p,p);
-    gsl_matrix *Dg2 = gsl_matrix_alloc(p,p);
     gsl_matrix *Dg3 = gsl_matrix_alloc(p,p);
     gsl_matrix *nTDi = gsl_matrix_alloc(p, p);
-    gsl_vector *vecZero = gsl_vector_calloc(p);
+    gsl_vector *vecZero = gsl_vector_calloc(totran);
+    gsl_vector *vecZero2 = gsl_vector_calloc(NCC);
     gsl_vector *Z = gsl_vector_alloc(p); //sampling standard normal
     gsl_vector *U1 = gsl_vector_alloc(p); // matrices to carry out blas multiplications
     gsl_vector *U2 = gsl_vector_alloc(p); //
     gsl_vector *U3 = gsl_vector_alloc(p); //
+    gsl_vector *yxstar = gsl_vector_alloc(NDV); //next to impute latent var in initialization
+    gsl_vector *CondMean = gsl_vector_calloc(NDV);
+    gsl_vector *CondMean2 = gsl_vector_calloc(NDC);
+    gsl_matrix *PartMean = gsl_matrix_alloc(NDV,NCC); //to become the mean of y^*|(cotinious var)
+    gsl_matrix *PartMean2 = gsl_matrix_alloc(NDC,NCC); //to become the mean of x^*|(cotinious covs)
+    gsl_matrix *CondCov = gsl_matrix_alloc(NDV,NDV); //cov mat of y^*|(cotinious var)
+    gsl_matrix *CondCov2 = gsl_matrix_alloc(NDC,NDC); //cov mat of x^*|(cotinious var)
+    gsl_matrix *Ehp = gsl_matrix_alloc(totran,totran);//proposed random Wishart matrices
+    gsl_matrix *Dhp = gsl_matrix_alloc(totran,totran);//D_h^(p) from above decomposition
+    gsl_matrix *SigmaShp = gsl_matrix_alloc(totran,totran);  //Sigma_h^*^(p) from above decomposition
+    gsl_matrix *SigmaSH = gsl_matrix_alloc(totran,totran);  //Sigma_h^* after updating step
+    gsl_matrix *Th = gsl_matrix_alloc(p,p);  //Cop Th
 
     // GSL Matrix and vector views
-    gsl_matrix_view nuMatrix, SigmahIview;
-    gsl_vector_view totprodhv, tothv, XmMview;
-
+    gsl_matrix_view Dg2, nu, Eht, Dht, SigmaSht, SigmaSht2, SigmaSht3, ThCopy;
+    gsl_vector_view nu2, tothv, XmMview, Ci, MUSTAR;
+    
+    //Make adaptive
+    int batchL = 50; //batch length
+    double WB; //which batch
+      //Sigma
+    double acceptSigma = 0.0;    
+    double SLL = totran+2;
+    double SUL = 2*n;
+    double DFEhp = SLL+50;  
+      //Xi
+    double acceptXi[nRespPars];
+    for (j = 0; j < nRespPars; j++) 
+        acceptXi[j] = 0.0;    
+    double XLL = 0.01;
+    double XUL = 200;
+    double prec[nRespPars];
+    for (j = 0; j < nRespPars; j++) 
+        prec[j] = 1.0;        
     //Bases for vector and matrix views
-    double baseXmM[p]; // to view x-muh
-    double baseSigmahI[p*p];// to view Sigmah^{-1}
+    double baseXmM[NCC]; // to view x-muh
+    double baseXmM2[NCC]; // to view x-muh
+    double baseSigmaSh[totran*totran]; //to view one row of SigmaSh at a time
+    double baseDh[totran*totran]; //to view one row of Dh at a time
+    double baseEh[totran*totran]; //to view one row of Eh at a time
+    double baseC[totran - NDV]; // to view all continuous variables
+    double baseMUS[totran]; // to view means of all variables
 
     //Predictions
-    double PredProb;
-    int newClusI;
-    double denomPred[npred];
     int maxy = maxy1[0];
-    int maxy2 = maxy;
-    double Disthi[ncomp][maxy];
+    double CPDF[npred][ncomp];
+    double denomPred[npred];
     double StorePD[npred][maxy];
     double sumProb;
     int mode;
-    double cdfy; // cdf of response to truncate predictions before maxy
-    int start, move;
-    double PredTrunc = 0.9999;
-    double CDFL[ncomp];
-    double CDFU[ncomp];
-    double normConst[ncomp];
-    for (j = 0; j < ncomp; j++){
-        CDFL[j] = 0.0;
-        CDFU[j] = 0.0;
-        normConst[j] = 0.0;
-    }
-    double StoreLower[ncomp][maxy];
+    double cdfy[npred]; // cdf of response to truncate predictions before maxy
+    int start;
+    double PredTrunc = 0.99999;
+    double normConst;
     double StoreUpper[ncomp][maxy];
-    int ll[ncomp];
-    int ul[ncomp];
-    int Iend = 0;
-    double CPDF[npred][ncomp];
+    double mu, f, B;
+    double saveCdf[ncomp];
+    int Iend = 0; // end sweep indicator
     double TMR[npred]; //mean regression from each iteration
+    double TMdR[npred]; //median regression from each iteration
     double TQ05R[npred]; //05th percentile regression from each iteration
     double TQ10R[npred]; //10th percentile regression from each iteration
     double TQ15R[npred]; //15th percentile regression from each iteration
     double TQ20R[npred]; //20th percentile regression from each iteration
     double TQ25R[npred]; //25th percentile regression from each iteration
-    double TQ50R[npred]; //50th percentile regression from each iteration
     double TQ75R[npred]; //75th percentile regression from each iteration
     double TQ80R[npred]; //80th percentile regression from each iteration
     double TQ85R[npred]; //85th percentile regression from each iteration
@@ -300,17 +317,18 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     // Step 1: Initial allocation to the ncomp components
     for (i = 0; i < n; i++)
         for (h = 0; h < ncomp; h++)
-            pdjkj[h][i] = (double) 1/ncomp; //(ncomp-h) or (ncomp-h)*(ncomp-h);
+            pdih[h][i] = (double) 1/ncomp; //(ncomp-h) or (ncomp-h)*(ncomp-h);
     s = gsl_ran_flat(r,1.0,100000);
-    allocation(s,n,ncomp,pdjkj,compAlloc,1);
-    for (i = 0; i < n; i++)
-        compAlloc[i] = compA[i];
+    allocation(s,n,ncomp,pdih,compAlloc,1);
 
     // Step 2: Find nmembers
     findNmembers(n,ncomp,compAlloc,nmembers);
+    int active;
+    active = 0;
+    for (h = 0; h < ncomp; h++) if (nmembers[h] > 0) active += 1;
 
     // Step 3: Initialize alpha of the DP
-    alpha = 2.0;
+    alpha = Alphaa*Alphab;
 
     // Step 4: Initialize V_h ~ Beta(nmembers[h]+1,n-nmembers[1:h]+alpha);
     if (sampler == 1){
@@ -326,25 +344,23 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
         }
     }
 
-    // Step 4: Update the u_i's from unif(0,pi_k_i)
-    if (sampler == 1)
+    // Step 5: Update the u_i's from unif(0,pi_k_i)
+    if (sampler == 1){
         for (i = 0; i < n; i++)
             u[i] = gsl_ran_flat(r,0.0,pi[compAlloc[i]]);
-    else
+        minU = 1.0;
+        for (i = 0; i < n; i++)
+            if (u[i] < minU) minU = u[i];
+	}
+    else{ 
         for (i = 0; i < n; i++)
             u[i] = 0.0;
-    minU = 1.0;
-    for (i = 0; i < n; i++)
-        if (u[i] < minU) minU = u[i];
+        minU = -1.0;
+    }
 
-    // Step 5: mu_h: initialize covariate cluster means
+    // Step 6: mu_h: initialize covariate cluster means
     s = gsl_ran_flat(r,1.0,100000);
     initMuh(s,X,n,p,ncomp,xbar,xsd,compAlloc,nmembers,muh);
-
-    // Step 6: Correlation vectors unu_h are set to zero
-    for (h = 0; h < ncomp; h++)
-        for (k = 0; k < p; k++)
-            nuh[h][k] = 0.0;
 
     // Step 7: Initialize parameters Xi_h of the response variables
     s = gsl_ran_flat(r,1.0,100000);
@@ -353,728 +369,762 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     if (family == 3 || family == 4)
         initGLMOneResLtnt2(s,Y,H,n,ncomp,nRespPars,nmembers,compAlloc,Xi,family);
 
-    // Step 8: Inpute latentx from N(0,1)*I
-    for (i = 0; i < n; i++){
-        for (j = 0; j < nRespPars; j++) XiC[j] = Xi[compAlloc[i]][j];
-        calcGLMLimits(Y,H,i,XiC,&lower,&upper,family);
-        lower = -9999; upper=9999;
-        s = gsl_ran_flat(r,1.0,100000);
-        //Rprintf("%s %i %i %f %f %f %f %f \n","test:",i,Y[i],H[i],XiC[0],XiC[1],lower,upper);
-        sampleTUN(s,i,0.0,1.0,lower,upper,latentx);
-        //Rprintf("%s %f \n","test:",latentx[i]);
-    }
+    // Step 8: Inpute latentYX from truncated normal
+    gsl_matrix_set_identity(CondCov);
+    for (h = 0; h < ncomp; h++){
+        for (j = 0; j < nRespPars; j++) XiC[j] = Xi[h][j];
+        for (i = 0; i < n; i++){
+            if (compAlloc[i] == h){  
+                calcGLMLimitsYX(Y,H,X,i,NDC,n,XiC,lower,upper,family);
+                gsl_vector_set_zero(yxstar);
+                s = gsl_ran_flat(r,1.0,100000);
+                sampleTMN(s,NDV,lower,upper,yxstar,CondMean,CondCov,tol);
+                for (k = 0; k < NDV; k++)
+                    latentYX[i][k] = gsl_vector_get(yxstar,k);
+            } 
+        } 
+    }      
 
-    //test:
-/*
-    Hpred[0]=1; XiC[0] = 2.9; XiC[1] = 0.64;
-    calcGLMLimitsPredL(Hpred,5,0,XiC,&lower,5);
-    Rprintf("%s %f \n","original:", lower);
-    calcGLMLimitsPredL(Hpred,4,0,XiC,&lower,5);
-    Rprintf("%s %f \n","original2:", lower);
-    calcGLMLimitsPredGP(Hpred,5,0,XiC,&lower,&upper,&CDFL,&CDFU,&normConst);
-    Rprintf("%s %f %f %f %f %f \n","new1:",lower,upper,CDFL,CDFU,normConst);
-    calcGLMLimitsPredLGP(Hpred,4,0,XiC,&lower,&CDFL,normConst);
-
-    //gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P2(Y[i]-1,H[i]*Xi[0],Xi[1],Xi[2]));
-    Rprintf("%s %f %f %f \n","new2:",cdf_tri_parametric_P2(0,1,3,0.1),
-                              cdf_tri_parametric_P(1,2,3,0.2),
-                              cdf_tri_parametric_P(1,3,3,0.3));
-*/
-
-//gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P2(Y[i]-1,H[i]*Xi[0],Xi[1],Xi[2]));
-
-//Rprintf("%s %f \n","new2:",cdf_tri_parametric_P2(137,26.071804*84.860290,1.622364,-140.385474));
-
-//#############################################SAMPLER
-    for (sw = 0; sw < sweeps; sw++){
+    //Step 9: Initialize E_h, D_h, Sigma_h^* for all h to identity
+    initEDS(ncomp,totran,Sigmah,Eh,Dh);
+    
+    //Rprintf("%f %f %f %f \n",
+    //cdf_beta_binomial_P2(10,1,1,1), 
+    //cdf_beta_binomial_P2(10,0,1,1)+
+    //exp(gsl_sf_lnchoose(10,1) + gsl_sf_lnbeta(1+1,10-1+1) - gsl_sf_lnbeta(1,1)),
+    //cdf_beta_binomial_P2(10,4,1,10),
+    //cdf_beta_binomial_P2(10,3,1,10)+exp(gsl_sf_lnchoose(10,4) + gsl_sf_lnbeta(4+1,10-4+10) - gsl_sf_lnbeta(1,10)));
+    
+     //Rprintf("%s %f %f \n", "oops:", cdf_generalized_poisson_P3(0,4.7,0.006,&temp),exp(-4.7/0.006));  
+    
+    //for (sw = 0; sw < -2; sw++) puts("this");      
+    //#############################################SAMPLER 
+    for (sw = 0; sw < sweeps; sw++){ 
 
         if (sw==0) Rprintf("%i %s \n",sw, "posterior samples...");
         if (((sw+1) % 500)==0) Rprintf("%i %s \n",sw+1, "posterior samples...");
-
+        
+        modf(sw/batchL,&WB);
+        
         //Generate all cluster parameters
         nmb = 0; // counts nmembers up to cluster h
         sumPIh = 0.0; // monitor sum pi_h and stop when it is > 1-minU
         h = 0;
-        while ((h < ncomp) && (sumPIh <= (1-minU))){
-//Rprintf("%s %i %i \n","V...",sw,h);
+        while ((h < ncomp) && (sumPIh < (1-minU))){
+
             // - 1 - Update V_h ~ Beta(nmembers[h]+1,n-nmembers[1:h]+alpha);
+            //puts("1");
             nmb += nmembers[h];
             Vdp[h] = gsl_ran_beta(r, (double) nmembers[h]+1.0, (double) n-nmb+alpha);
 
             // - 2 - Update pi_h = V[h] prod_{j < h} 1-V[j]
+            //puts("2");
             if (h == 0)
                 pi[h] = Vdp[h];
             else if (h > 0 && h < (ncomp-1))
                 pi[h] = Vdp[h] * pi[h-1] * (1-Vdp[h-1]) / Vdp[h-1];
             else pi[h] = pi[h-1] * (1-Vdp[h-1]) / Vdp[h-1];
-//Rprintf("%s %i %i \n","Th...",sw,h);
-            // - 3 - Th
-            if (nmembers[h] > 0){
-                SetShOneResLtnt(p,n,h,ncomp,X,muh,latentx,nuh,compAlloc,Sh);
-                gsl_matrix_add(Sh,Vinv);
-                Inverse(p,Sh);
-                s = gsl_ran_flat(r,1.0,100000);
-                rwish(s,p,Vdf+nmembers[h],Sh,Th);
+            
+            // - 3 - Update Sigma_h^*, D_h and E_h
+            //puts("3");
+            if ((sw % batchL)==0 && WB > 0 && h==0){ 
+	            if (acceptSigma > 0.25 && DFEhp > SLL) DFEhp -= MIN(0.01,1/sqrt(WB)) * DFEhp; 
+	            if (acceptSigma <= 0.25 && DFEhp < SUL) DFEhp += MIN(0.01,1/sqrt(WB)) * DFEhp;
+		        acceptSigma = 0.0;   
+	        }	     
+            SetShOneResLtntYX(p,n,NDV,h,ncomp,X,muh,latentYX,compAlloc,Sh);
+            for (k = 0; k < totran*totran; k++){
+                baseEh[k] = Eh[h][k];
+                baseDh[k] = Dh[h][k]; 
+                baseSigmaSh[k] = Sigmah[h][k];
             }
-            else{
-                s = gsl_ran_flat(r,1.0,100000);
-                rwish(s,p,Vdf,V,Th);
-            }
-
-            for (j = 0; j < p; j++)
-                for (k = 0; k < p; k++)
-                    Th1[h][j*p+k] = gsl_matrix_get(Th,j,k);
-
-            //if (sw==131) Rprintf("%i %i %i %f %f\n",sw,h,nmembers[h],gsl_matrix_get(Sh,0,0),Th1[h][0]);
-            //if (sw==131) Rprintf("%i %i %i %i %f %f %lf %lf \n",sw,h,nmembers[h],nmb,Vdp[h],pi[h],sumPIh,1-minU);
-//Rprintf("%s %i %i \n","nh...",sw,h);
-            // - 4 - nh
-            if (nmembers[h] > 0){
-                sumxsq = SSQh(n,h,compAlloc,latentx); //set sample totals
-                gsl_matrix_memcpy(nTDi,Th); // copy sample from rwish
-                gsl_matrix_scale (nTDi,sumxsq); // scale by sum y_i*^2
-                gsl_matrix_add(nTDi,SigmaNuInv); // add prior mat
-                gHalfInv(p,tol,nTDi); // nTDi^{-1/2}
-            }
+            Eht = gsl_matrix_view_array(baseEh,totran,totran);
+            Dht = gsl_matrix_view_array(baseDh,totran,totran);
+            SigmaSht = gsl_matrix_view_array(baseSigmaSh,totran,totran);            
+            gsl_matrix_scale(&Eht.matrix, (double) 1/DFEhp); //proposal
+            s = gsl_ran_flat(r,1.0,100000);
+            rwish(s,totran,DFEhp,&Eht.matrix,Ehp);
+            gsl_matrix_scale(&Eht.matrix, (double) DFEhp);
+            decomposeEtoDS(NDV,totran-NDV,Ehp,Dhp,SigmaShp);
+            logPostPdfDSigmaP = logPostPdfDSigma(Dhp,SigmaShp,Ehp,Vinv,Sh,NDV,totran-NDV,nmembers[h],eta);
+            logPostPdfDSigmaT = logPostPdfDSigma(&Dht.matrix,&SigmaSht.matrix,&Eht.matrix,Vinv,Sh,NDV,totran-NDV,nmembers[h],eta);
+            logTransR = logtrnsR(&Eht.matrix,Ehp,NDV,totran-NDV,DFEhp);
+            logAcp = logPostPdfDSigmaP - logPostPdfDSigmaT + logTransR;
+            Acp = exp(logAcp);
+            if (Acp > 1.0) Acp = 1.0;
+            unifRV = gsl_ran_flat(r,0.0,1.0);
+            if (Acp > unifRV){
+                if (nmembers[h] > 0) acceptSigma += 1/((double)(batchL*active));
+                for (k = 0; k < totran; k++){
+                    for (i = 0; i < totran; i++){
+                        Sigmah[h][k*totran+i] = gsl_matrix_get(SigmaShp,k,i);
+                        Eh[h][k*totran+i] = gsl_matrix_get(Ehp,k,i);
+                        Dh[h][k*totran+i] = gsl_matrix_get(Dhp,k,i);
+                    }
+                }
+            }//else they remain as from previous iteration
+            if (Acp > unifRV)
+                gsl_matrix_memcpy(SigmaSH,SigmaShp);
             else
-                gsl_matrix_memcpy(nTDi,SigmaNuHalf); // if n_h = 0, use prior cov mat
-            for (k = 0; k < p; k++) // N(0,1)
-	            gsl_vector_set(Z,k,gsl_ran_gaussian(r,1));
-            gsl_blas_dgemv(CblasNoTrans,1.0,nTDi,Z,0.0,U1); // sample from MV normal
-            if (nmembers[h] > 0){
-                gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,nTDi,nTDi,0.0,Dg1); // obtains nTDi^{-1}
-                SetSampleTotNu(p,n,h,ncomp,totprodhs,compAlloc,X,muh,latentx); //set sample totals
-                totprodhv = gsl_vector_view_array(totprodhs,p); //view sample totals
-                gsl_blas_dgemv(CblasNoTrans,1.0,Th,&totprodhv.vector,0.0,U2); // part of mean
-                gsl_vector_add(U2,SIMnu); // add prior contribution
-                gsl_blas_dgemv(CblasNoTrans,1.0,Dg1,U2,0.0,U3); // mean
-            }
-            else
-                gsl_vector_memcpy(U3,MuNu);
-            gsl_vector_add(U1,U3); //posterior sample
-            //gsl_vector_set_all(U1,0.0);//PRMM
-            gsl_vector_memcpy(nu,U1); //store 1
+                gsl_matrix_memcpy(SigmaSH,&SigmaSht.matrix);//current covariance matrix - for next step
+
+            // - 4 - mu_h (assumes Sigma_{11} = 1 i.e. one count or one binomial response and continuous or binary covariates)           
+            //puts("4");
+            nu = gsl_matrix_submatrix(SigmaSH,1,0,p,1); //Sigma_{21} 
             for (k = 0; k < p; k++)
-                nuh[h][k] = gsl_vector_get(nu,k); // store 2
-//Rprintf("%s %i %i \n","mh...",sw,h);
-            // - 5 - mu_h
+                nuh[h][k] = gsl_matrix_get(&nu.matrix,k,0); 
+            ThCopy = gsl_matrix_submatrix(SigmaSH,1,1,p,p); //Sigma_{22}
+            gsl_matrix_memcpy(Th,&ThCopy.matrix);
+            gsl_blas_dgemm(CblasNoTrans,CblasTrans,-1.0,&nu.matrix,&nu.matrix,1.0,Th);
+            ginv(p,tol,Th); // W_h^{-1}            
             if (nmembers[h] > 0){
-                gsl_matrix_memcpy(nTDi,Th); // copy sample from rwish
-                gsl_matrix_scale (nTDi,nmembers[h]); // scale by n_h
-                gsl_matrix_add(nTDi,SigmaMuInv); // add inv of prior cov mat
-                gHalfInv(p,tol,nTDi); // nTDi^{-1/2}
+                gsl_matrix_memcpy(nTDi,Th); 
+                gsl_matrix_scale(nTDi,nmembers[h]);
+                gsl_matrix_add(nTDi,SigmaMuInv); 
+                gHalfInv(p,tol,nTDi); // (n_h W_h^-1 + D^-1)^{-1/2}
             }
             else
-                gsl_matrix_memcpy(nTDi,SigmaMuHalf); // if n_h = 0, use prior cov mat
+                gsl_matrix_memcpy(nTDi,SigmaMuHalf); //D^{1/2}                 
             for (k = 0; k < p; k++) // N(0,1)
 	            gsl_vector_set(Z,k,gsl_ran_gaussian(r,1));
-            gsl_blas_dgemv(CblasNoTrans,1.0,nTDi,Z,0.0,U1);  // sample from MV normal
+            gsl_blas_dgemv(CblasNoTrans,1.0,nTDi,Z,0.0,U1); // sample from MV normal; next add mean
             if (nmembers[h] > 0){
-                SetSampleTotMu(p,n,h,ncomp,toths,compAlloc,X,nuh,latentx);
+                SetSampleTotMuYX(p,NDV,n,h,ncomp,toths,compAlloc,X,nuh,latentYX);
                 tothv = gsl_vector_view_array(toths,p);
-                gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,nTDi,nTDi,0.0,Dg1); // obtains nTDi^{-1}
-                gsl_blas_dgemv(CblasNoTrans,1.0,Th,&tothv.vector,0.0,U2); // T toth
+                gsl_blas_dgemv(CblasNoTrans,1.0,Th,&tothv.vector,0.0,U2);
                 gsl_vector_add(U2,SIMmu);
-                gsl_blas_dgemv(CblasNoTrans,1.0,Dg1,U2,0.0,U3); // (nT+D^{-1})^{-1} (T toth + D^{-1} xbar)
+                gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,nTDi,nTDi,0.0,Dg1);                                 
+                gsl_blas_dgemv(CblasNoTrans,1.0,Dg1,U2,0.0,U3);
             }
             else
                 gsl_vector_memcpy(U3,MuMu);
-            gsl_vector_add (U1,U3);
+            gsl_vector_add(U1,U3);
             for (k = 0; k < p; k++)
                 muh[h][k] = gsl_vector_get(U1,k);
-//Rprintf("%s %i %i \n","xih...",sw,h);
-            // - 6 - Xi_h
-            // Current and proposed parameters
-            for (k = 0; k < nRespPars; k++)
+
+            // - 5 - Xi_h
+            //puts("5");   
+            if ((sw % batchL)==0 && WB > 0 && h==0){  	             
+	            for (k = 0; k < nRespPars; k++){
+	                if (acceptXi[k] > 0.25 && prec[k] > XLL) 	                 
+	                    prec[k] -= MIN(0.01,1/sqrt(WB)) * prec[k]; 
+	                if (acceptXi[k] <= 0.25 && prec[k] < XUL) 
+	                    prec[k] += MIN(0.01,1/sqrt(WB)) * prec[k];
+				}
+		        for (k = 0; k < nRespPars; k++) 
+		            acceptXi[k] = 0.0;   
+	        }	                   
+	        for (j = 0; j < XiLoop; j++){
+                for (k = 0; k < nRespPars; k++)
+                    XiC[k] = Xi[h][k];
+                s = gsl_ran_flat(r,1.0,100000);                  
+                propose(s,XiC,XiP,nRespPars,j,prec,family);           
+                //puts("after"); 
+                //if (family == 5) XiP[XiLoop-j-1] = XiC[XiLoop-j-1];
+                temp3 = 0;
+                for (k = 0; k < nRespPars; k++)
+                    if (XiP[k] > 0.00001) temp3 +=1;                                      
+                Dg2 = gsl_matrix_submatrix(SigmaSH,1,1,p,p);
+                gsl_matrix_memcpy(Dg3,&Dg2.matrix);
+                ginv(p,tol,Dg3); //Sigma_{xx}^{-1}
+                nu2 = gsl_matrix_subcolumn(SigmaSH,0,1,p);
+                gsl_blas_dgemv(CblasNoTrans,1.0,Dg3,&nu2.vector,0.0,nuSI);
+                gsl_blas_ddot(nuSI,&nu2.vector,&nuSInu);
+                if (nuSInu >= 1.0) nuSInu = 0.9999999999;
+                storenuSInu[h] = nuSInu;
+                for (k = 0; k < p; k++)
+                    storenuSI[h][k] = gsl_vector_get(nuSI,k);
+                //MH algorithm            
+                XiLC = 0.0;  
+                XiLP = 0.0;
+                if (temp3 == nRespPars){
+                    for (i = 0; i < n; i++){
+                        if (compAlloc[i]==h && exp(XiLP) > 0){                        
+                            nuSIxmm = 0.0;
+                            for (k = 0; k < (NDV-1); k++)
+                                nuSIxmm += storenuSI[h][k]*(latentYX[i][k+1]-muh[h][k]);                        
+                            for (k = (NDV-1); k < p; k++)
+                                nuSIxmm += storenuSI[h][k]*(X[k*n+i]-muh[h][k]);                                                   
+                            calcGLMLimits(Y[i],H[i],XiC,&cymoC,&cyC,family);
+                            calcGLMLimits(Y[i],H[i],XiP,&cymoP,&cyP,family);                            
+                            XiLC += log(gsl_cdf_ugaussian_P((cyC-nuSIxmm)/sqrt(1-nuSInu)) - gsl_cdf_ugaussian_P((cymoC-nuSIxmm)/sqrt(1-nuSInu)));
+                            XiLP += log(gsl_cdf_ugaussian_P((cyP-nuSIxmm)/sqrt(1-nuSInu)) - gsl_cdf_ugaussian_P((cymoP-nuSIxmm)/sqrt(1-nuSInu)));                       
+                        }
+                    }
+                    if (family == 1){
+                        NAcp = exp(XiLP)*gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
+                               gsl_ran_gamma_pdf(XiC[0],prec[0]*XiP[0]*XiP[0],1/(prec[0]*XiP[0]));
+                        DAcp = exp(XiLC)*gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
+                               gsl_ran_gamma_pdf(XiP[0],prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]));
+                    }
+                    else if (family == 2){
+                        temp2 = XiP[0] - 1 + XiP[0]*(1-XiP[0])*(1-XiP[0])*prec[0];
+                        temp = temp2 * XiP[0]/(1-XiP[0]);
+                        NAcp = exp(XiLP)*gsl_ran_beta_pdf(XiP[0],alphaXi[0],betaXi[0])*
+                               gsl_ran_beta_pdf(XiC[0],temp,temp2);
+                        temp2 = XiC[0] - 1 + XiC[0]*(1-XiC[0])*(1-XiC[0])*prec[0];
+                        temp = temp2 * XiC[0]/(1-XiC[0]);
+                        DAcp = exp(XiLC)*gsl_ran_beta_pdf(XiC[0],alphaXi[0],betaXi[0])*
+                               gsl_ran_beta_pdf(XiP[0],temp,temp2);
+                    }
+                    else if (family == 3 || family == 4 || family == 6 || family == 7){
+                        NAcp = exp(XiLP)*gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
+                                         gsl_ran_gamma_pdf(XiP[1],alphaXi[1],1/betaXi[1])*
+                                         gsl_ran_gamma_pdf(XiC[0],prec[0]*XiP[0]*XiP[0],1/(prec[0]*XiP[0]))*
+                                         gsl_ran_gamma_pdf(XiC[1],prec[1]*XiP[1]*XiP[1],1/(prec[1]*XiP[1]));
+                        DAcp = exp(XiLC)*gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
+                                         gsl_ran_gamma_pdf(XiC[1],alphaXi[1],1/betaXi[1])*
+                                         gsl_ran_gamma_pdf(XiP[0],prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]))*
+                                         gsl_ran_gamma_pdf(XiP[1],prec[1]*XiC[1]*XiC[1],1/(prec[1]*XiC[1]));
+                    }
+                    else if (family == 5){
+                        temp = 1;
+                        if (j==0) temp = gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
+                                         gsl_ran_gamma_pdf(XiC[0],prec[0]*XiP[0]*XiP[0],1/(prec[0]*XiP[0]));
+                        if (j==1) temp = gsl_ran_gaussian_pdf(XiP[1]-alphaXi[1],betaXi[1]);//random walk: gsl_ran_gaussian_pdf(XiP[1]-XiC[1],prec[1]);
+                        NAcp = exp(XiLP)*temp;
+                        temp = 1;
+                        if (j==0) temp = gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
+                                         gsl_ran_gamma_pdf(XiP[0],prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]));
+                        if (j==1) temp = gsl_ran_gaussian_pdf(XiC[1]-alphaXi[1],betaXi[1]);//gsl_ran_gaussian_pdf(XiP[1]-XiC[1],prec[1]);
+                        DAcp = exp(XiLC)*temp;
+                    }
+                    else if (family == 8){
+                        NAcp = exp(XiLP)*gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
+                                         gsl_ran_gamma_pdf(XiP[1],alphaXi[1],1/betaXi[1])*
+                                         gsl_ran_gaussian_pdf(XiP[2]-alphaXi[2],betaXi[2])*
+                                         gsl_ran_gamma_pdf(XiC[0],prec[0]*XiP[0]*XiP[0],1/(prec[0]*XiP[0]))*
+                                         gsl_ran_gamma_pdf(XiC[1],prec[1]*XiP[1]*XiP[1],1/(prec[1]*XiP[1]));
+                                         //gsl_ran_gaussian_pdf(XiP[2]-XiC[2],prec[3]);
+                        DAcp = exp(XiLC)*gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
+                                         gsl_ran_gamma_pdf(XiC[1],alphaXi[1],1/betaXi[1])*
+                                         gsl_ran_gaussian_pdf(XiC[2]-alphaXi[2],betaXi[2])*
+                                         gsl_ran_gamma_pdf(XiP[0],prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]))*
+                                         gsl_ran_gamma_pdf(XiP[1],prec[1]*XiC[1]*XiC[1],1/(prec[1]*XiC[1]));
+                                         //gsl_ran_gaussian_pdf(XiP[2]-XiC[2],prec[3]);
+                    }
+                    Acp = NAcp/DAcp; 
+                    //Rprintf("%i %i %i %i %i %f %f %f %f %f %i %f %f %i\n",sw,h,nmembers[h],j,XiLoop,XiC[0],XiC[1],XiP[0],XiP[1],Acp,nRespPars,prec[0],prec[1],family);
+                    if (Acp > 1.0) Acp = 1.0;
+                    unifRV = gsl_ran_flat(r,0.0,1.0);  
+                    if (Acp > unifRV){
+                        if (family < 5){ 
+                            if (nmembers[h] > 0) 
+                                for (k = 0; k < nRespPars; k++) 
+                                    acceptXi[k] += 1/((double)(batchL*active));
+                        }
+                        if (family == 5){
+                            if (nmembers[h] > 0) 
+                                acceptXi[j] += 1/((double)(batchL*active));
+                        } 
+                        for (k = 0; k < nRespPars; k++) 
+                            Xi[h][k] = XiP[k];
+                    }  
+                    else   
+                        for (k = 0; k < nRespPars; k++) 
+                            Xi[h][k] = XiC[k];
+                }
+                else
+                    for (k = 0; k < nRespPars; k++) 
+                        Xi[h][k] = XiC[k];
+            }                         
+            for (k = 0; k < nRespPars; k++) 
                 XiC[k] = Xi[h][k];
 
-            s = gsl_ran_flat(r,1.0,100000);
-            propose(s,XiC,XiP,nRespPars,prec,family);
-
-            XiLC = 0.0;
-            XiLP = 0.0;
-
-//Rprintf("%i %i %f %f %f %f %f %f \n",sw,h,XiC[0],XiC[1],XiC[2],XiP[0],XiP[1],XiP[2]);
-
-            gsl_matrix_memcpy(Dg2,Th); // copy Th: sample from rwish
-            Inverse(p,Dg2);
-            nuMatrix = gsl_matrix_view_vector(nu,p,1);
-            gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,&nuMatrix.matrix,&nuMatrix.matrix,1.0,Dg2); // Sigma_h
-            gsl_matrix_memcpy(Dg3,Dg2);
-            Inverse(p,Dg3); // Dg3 = Sigma^{-1}
-
-            // Store Dg2 in Sigmah and Dg3 in SigmahI
-            for (j = 0; j < p; j++){
-                for (k = 0; k < p; k++){
-                    Sigmah[h][j*p+k] = gsl_matrix_get(Dg2,j,k);
-                    SigmahI[h][j*p+k] = gsl_matrix_get(Dg3,j,k);
-                }
-            }
-
-            // Calculate nu^T Sigma^{-1} and nu^T Sigma^{-1} nu
-            gsl_blas_dgemv(CblasNoTrans,1.0,Dg3,nu,0.0,nuSI);
-            gsl_blas_ddot(nuSI,nu,&nuSInu);
-            if (nuSInu >= 1.0) nuSInu = 0.9999999999;
-
-            // Store for use in p(dj=kj)
-            storenuSInu[h] = nuSInu;
-            for (k = 0; k < p; k++)
-                storenuSI[h][k] = gsl_vector_get(nuSI,k);
-
-//Rprintf("%s %i %i\n","mh algo...",sw,h);
-            //MH algorithm
-            temp3 = 0;
-            if (family < 8){
-                for (k = 0; k < nRespPars; k++)
-                    if (XiP[k] > 0.00001) temp3 +=1;
-            }
-            else if (family == 8) temp3 = nRespPars;
-
-//if (sw==54364) Rprintf("%i %i %f %f %f %f %f %f\n",sw,h,XiC[0],XiC[1],XiC[2],XiP[0],XiP[1],XiP[2]);
-            if (temp3 == nRespPars){
-                for (i = 0; i < n; i++){
-                    if (compAlloc[i]==h && exp(XiLP) > 0){
-                        nuSIxmm = 0.0;
-                        for (k = 0; k < p; k++)
-                            nuSIxmm += storenuSI[h][k]*(X[k*n+i]-muh[h][k]);
-                        calcGLMLimits(Y,H,i,XiC,&cymoC,&cyC,family);
-                        calcGLMLimits(Y,H,i,XiP,&cymoP,&cyP,family);
-                        XiLC += log(gsl_cdf_ugaussian_P((cyC-nuSIxmm)/sqrt(1-nuSInu)) - gsl_cdf_ugaussian_P((cymoC-nuSIxmm)/sqrt(1-nuSInu)));
-                        XiLP += log(gsl_cdf_ugaussian_P((cyP-nuSIxmm)/sqrt(1-nuSInu)) - gsl_cdf_ugaussian_P((cymoP-nuSIxmm)/sqrt(1-nuSInu)));
-                        //Rprintf("%i %i %i %i %f %f %f %f %f %f %f %f %f %f %f %f \n",
-                        //sw,h,i,Y[i],H[i],XiC[0],XiC[1],cymoC,cyC,XiP[0],XiP[1],XiP[2],cymoP,cyP,XiLC,XiLP);
-                    }
-                }
-                if (family == 1){
-                    NAcp = exp(XiLP)*gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
-                           gsl_ran_gamma_pdf(XiC[0],prec[0]*XiP[0]*XiP[0],1/(prec[0]*XiP[0]));
-                    DAcp = exp(XiLC)*gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
-                           gsl_ran_gamma_pdf(XiP[0],prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]));
-                }
-                else if (family == 2){
-                    temp2 = XiP[0] - 1 + XiP[0]*(1-XiP[0])*(1-XiP[0])*prec[0];
-                    temp = temp2 * XiP[0]/(1-XiP[0]);
-                    NAcp = exp(XiLP)*gsl_ran_beta_pdf(XiP[0],alphaXi[0],betaXi[0])*
-                           gsl_ran_beta_pdf(XiC[0],temp,temp2);
-                    temp2 = XiC[0] - 1 + XiC[0]*(1-XiC[0])*(1-XiC[0])*prec[0];
-                    temp = temp2 * XiC[0]/(1-XiC[0]);
-                    DAcp = exp(XiLC)*gsl_ran_beta_pdf(XiC[0],alphaXi[0],betaXi[0])*
-                           gsl_ran_beta_pdf(XiP[0],temp,temp2);
-                }
-                else if (family == 3 || family == 4 || family == 6 || family == 7){
-                    NAcp = exp(XiLP)*gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
-                                     gsl_ran_gamma_pdf(XiP[1],alphaXi[1],1/betaXi[1])*
-                                     gsl_ran_gamma_pdf(XiC[0],prec[0]*XiP[0]*XiP[0],1/(prec[0]*XiP[0]))*
-                                     gsl_ran_gamma_pdf(XiC[1],prec[1]*XiP[1]*XiP[1],1/(prec[1]*XiP[1]));
-                    DAcp = exp(XiLC)*gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
-                                     gsl_ran_gamma_pdf(XiC[1],alphaXi[1],1/betaXi[1])*
-                                     gsl_ran_gamma_pdf(XiP[0],prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]))*
-                                     gsl_ran_gamma_pdf(XiP[1],prec[1]*XiC[1]*XiC[1],1/(prec[1]*XiC[1]));
-                }
-                else if (family == 5){
-                    NAcp = exp(XiLP)*gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
-                                     gsl_ran_gaussian_pdf(XiP[1]-alphaXi[1],betaXi[1])*
-                                     gsl_ran_gamma_pdf(XiC[0],prec[0]*XiP[0]*XiP[0],1/(prec[0]*XiP[0]));//random walk for other parameter
-                                     //gsl_ran_gaussian_pdf(XiP[1]-XiC[1],prec[1]);
-                    DAcp = exp(XiLC)*gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
-                                     gsl_ran_gaussian_pdf(XiC[1]-alphaXi[1],betaXi[1])*
-                                     gsl_ran_gamma_pdf(XiP[0],prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]));
-                                     //gsl_ran_gaussian_pdf(XiP[1]-XiC[1],prec[1]);
-                }
-                else if (family == 8){
-                    NAcp = exp(XiLP)*gsl_ran_gamma_pdf(XiP[0],alphaXi[0],1/betaXi[0])*
-                                     gsl_ran_gamma_pdf(XiP[1],alphaXi[1],1/betaXi[1])*
-                                     gsl_ran_gaussian_pdf(XiP[2]-alphaXi[2],betaXi[2])*
-                                     gsl_ran_gamma_pdf(XiC[0],prec[0]*XiP[0]*XiP[0],1/(prec[0]*XiP[0]))*
-                                     gsl_ran_gamma_pdf(XiC[1],prec[1]*XiP[1]*XiP[1],1/(prec[1]*XiP[1]));
-                                     //gsl_ran_gaussian_pdf(XiP[2]-XiC[2],prec[3]);
-                    DAcp = exp(XiLC)*gsl_ran_gamma_pdf(XiC[0],alphaXi[0],1/betaXi[0])*
-                                     gsl_ran_gamma_pdf(XiC[1],alphaXi[1],1/betaXi[1])*
-                                     gsl_ran_gaussian_pdf(XiC[2]-alphaXi[2],betaXi[2])*
-                                     gsl_ran_gamma_pdf(XiP[0],prec[0]*XiC[0]*XiC[0],1/(prec[0]*XiC[0]))*
-                                     gsl_ran_gamma_pdf(XiP[1],prec[1]*XiC[1]*XiC[1],1/(prec[1]*XiC[1]));
-                                     //gsl_ran_gaussian_pdf(XiP[2]-XiC[2],prec[3]);
-                }
-                temp = NAcp/DAcp;
-                if (temp > 1.0) Acp = 1.0;else Acp = temp;
-                temp = gsl_ran_flat(r,0.0,1.0);
-                if (Acp > temp)
-                    for (k = 0; k < nRespPars; k++) Xi[h][k] = XiP[k];
-                else
-                    for (k = 0; k < nRespPars; k++) Xi[h][k] = XiC[k];
-            }
-            else
-                for (k = 0; k < nRespPars; k++) Xi[h][k] = XiC[k];
-            for (k = 0; k < nRespPars; k++) XiC[k] = Xi[h][k];
-
-//if (sw==54364) Rprintf("%s %i %i \n","impute latent...",sw,h);
-            // - 7 - Impute latent y^*
+            // - 6 - Impute latent y^* 
+            //puts("6");
+            MNCondParams1of2(NDV,NCC,SigmaSH,tol,PartMean,CondCov,params); 
             for (i = 0; i < n; i++){
-                if (compAlloc[i]==h){
-                    nuSIxmm = 0.0;
+                if (compAlloc[i]==h){                     
+                    calcGLMLimitsYX(Y,H,X,i,NDC,n,XiC,lower,upper,family);                     
+                    
+                    baseMUS[0] = 0.0;
                     for (k = 0; k < p; k++)
-                        nuSIxmm += storenuSI[h][k]*(X[k*n+i]-muh[h][k]);
-                    calcGLMLimits(Y,H,i,XiC,&lower,&upper,family);
+                        baseMUS[k+1] = muh[h][k];
+                    MUSTAR = gsl_vector_view_array(baseMUS,totran);                 
+                    for (k = 0; k < (totran-NDV); k++) 
+                        baseC[k] = X[NDC*n+i];                    
+                    Ci = gsl_vector_view_array(baseC,NCC);                                        
+                    MNCondParams2of2(NDV,NCC,&MUSTAR.vector,&Ci.vector,PartMean,CondMean,params);                                        
+                    for (k = 0; k < NDV; k++)
+                        gsl_vector_set(yxstar,k,latentYX[i][k]);
                     s = gsl_ran_flat(r,1.0,100000);
-                    sampleTUN(s,i,nuSIxmm,sqrt(1-nuSInu),lower,upper,latentx);
-                }
+                    sampleTMN(s,NDV,lower,upper,yxstar,CondMean,CondCov,tol);
+                    for (k = 0; k < NDV; k++)
+                        latentYX[i][k] = gsl_vector_get(yxstar,k);                    
+                } 
             }
-            sumPIh += pi[h];
+            // Moving on to next cluster
+            sumPIh += pi[h];  
+            //if (sw ==337) Rprintf("%i %i %i %f %f \n",sw,nUpdated,h,sumPIh,minU);          
             h++;
         }// h loop
-        nUpdated = h;
-
-        // - 8 - Update the u_i's from unif(0,pi_k_i)
-        if (sampler == 1){
-            for (i = 0; i < n; i++)
-                u[i] = gsl_ran_flat(r,0.0,pi[compAlloc[i]]);
+        nUpdated = h;        
+        
+        // - check -
+        for (i = 0; i < n; i++){
+            if (compAlloc[i] >= ncomp){
+                for (k = 0; k < NDV; k++)
+                    latentYX[i][k] = 0.0;
+                }
+        }
+ 
+        // - 7 - Update the u_i's from unif(0,pi_k_i)
+        //puts("7");
+        if (sampler == 1){ 
+            for (i = 0; i < n; i++){
+                if (compAlloc[i] < ncomp) u[i] = gsl_ran_flat(r,0.0,pi[compAlloc[i]]);
+                else u[i] = 0.0;                
+            }
             minU = 1.0;
             for (i = 0; i < n; i++)
                 if (u[i] < minU) minU = u[i];
-        }
-
-//if (sw==54364) Rprintf("%s %i %i\n","pdelta...",sw,h);
-        // - 9 - P(delta_j = k_j)
-        for (h = 0; h < nUpdated; h++){
-            // View Sigmah^{-1}
-            for (k = 0; k < p*p; k++)
-                baseSigmahI[k] = SigmahI[h][k];
-            SigmahIview = gsl_matrix_view_array(baseSigmahI,p,p);
-            for (k = 0; k < nRespPars; k++) XiC[k] = Xi[h][k];
-//Rprintf("%i %i %f %f  \n",sw,h,XiC[0],XiC[1]);
-            for (i = 0; i < n; i++){
-                if (pi[h] > u[i]){
-                    nuSIxmm = 0.0;
+        }  
+ 
+        // - 8 - P(delta_j = k_j) // needs fixing
+        //Rprintf("%s %i \n","pdelta",sw); 
+        for (h = 0; h < nUpdated; h++){			
+            for (k = 0; k < nRespPars; k++) XiC[k] = Xi[h][k];                            
+            for (k = 0; k < totran*totran; k++) baseSigmaSh[k] = Sigmah[h][k];                        
+            SigmaSht = gsl_matrix_view_array(baseSigmaSh,totran,totran);                        
+            SigmaSht2 = gsl_matrix_submatrix(&SigmaSht.matrix,NDV,NDV,NCC,NCC);                                                           
+            MNCondParams1of2b(NDV,NCC,&SigmaSht.matrix,tol,PartMean,&SigmaSht2.matrix,params);//inverses Sht2                                        
+            for (i = 0; i < n; i++){                
+                if (pi[h] > u[i]){                                                                                                  
+                    baseMUS[0] = 0.0;  
                     for (k = 0; k < p; k++)
-                        nuSIxmm += storenuSI[h][k]*(X[k*n+i]-muh[h][k]);
-//Rprintf("%i %i %i %i %f %f %f  \n",sw,h,i,Y[i],H[i],XiC[0],XiC[1]);
-//if (XiC[1]>0.23 || i==0)
-                    calcGLMLimits(Y,H,i,XiC,&lower,&upper,family);
-//if (sw==8 && h>35 && h<41)
-//Rprintf("%i %i %i %i %f %f %f %f %f  \n",sw,h,i,Y[i],H[i],XiC[0],XiC[1],lower,upper);
-                    temp = gsl_cdf_ugaussian_P((upper-nuSIxmm)/sqrt(1-storenuSInu[h])) - gsl_cdf_ugaussian_P((lower-nuSIxmm)/sqrt(1-storenuSInu[h]));
-                    for (k = 0; k < p; k++)
-                        baseXmM[k] = X[k*n+i]-muh[h][k];
-                    XmMview = gsl_vector_view_array(baseXmM,p);
-                    temp2 = logMVNormalpdf3(p,&XmMview.vector,vecZero,&SigmahIview.matrix);
-                    if (sampler == 1) pdjkj[h][i] = exp(log(temp)+temp2);
-                    else if (sampler == 2) pdjkj[h][i] = exp(log(temp)+temp2+log(pi[h]));
-//if (sw==12 && h==9 && i==499) Rprintf("%i %i %i %f %f %f %f %f %f %f %f \n",
-//                                        sw,h,i,XiC[0],XiC[1],temp,pdjkj[h][i],lower,upper,nuSIxmm,storenuSInu[h]);
+                        baseMUS[k+1] = muh[h][k];
+                    MUSTAR = gsl_vector_view_array(baseMUS,totran);                                     
+                    for (k = 0; k < NCC; k++)
+                        baseC[k] = X[(NDC+k)*n+i];                    
+                    Ci = gsl_vector_view_array(baseC,NCC);                                                                               
+                    MNCondParams2of2(NDV,NCC,&MUSTAR.vector,&Ci.vector,PartMean,CondMean,params);                       
+                    calcGLMLimitsYX(Y,H,X,i,NDC,n,XiC,lower,upper,family);                                                            
+                    nocuba = 0;
+                    for (k = 0; k < NDV; k++)
+                        if (((lower[k] - params[k]) > tol2 / params[k+NDV]) || ((params[k] - upper[k]) > tol2 / params[k+NDV]))
+                            nocuba += 1;                    
+                    if (nocuba == 0){                                                               
+                        for (k = 0; k < NDV; k++){
+                            if (lower[k]==-lmt) lower[k] = params[k] - tol2 / params[NDV+k];
+                            if (upper[k]==lmt) upper[k] = params[k] + tol2 / params[NDV+k];
+                        }                    
+                        if (NDV > 3) p_hcubature(1,MultiNormalPDF,params,NDV,lower,upper,0,0.0001,0,ERROR_INDIVIDUAL,&val,&err);
+                        if (NDV <= 3) p_pcubature(1,MultiNormalPDF,params,NDV,lower,upper,0,0.0001,0,ERROR_INDIVIDUAL,&val,&err);                                
+                    }else
+                        val = 0.0; 
+                    temp2 = 0;
+                    if (NCC > 0){
+                        for (k = 0; k < NCC; k++) 
+                            baseXmM[k] = X[NDC*n+k*n+i]-muh[h][NDC+k];                                                            
+                        XmMview = gsl_vector_view_array(baseXmM,NCC);                    
+                        temp2 = logMVNormalpdf3(NCC,&XmMview.vector,vecZero2,&SigmaSht2.matrix);
+				    }				    
+                    if (sampler == 1) pdih[h][i] = exp(log(val)+temp2);
+                    else if (sampler == 2) pdih[h][i] = exp(log(val)+temp2+log(pi[h]));
+                    if (gsl_isnan(pdih[h][i])) {pdih[h][i] = 0.0;Rprintf("%s %i %i %i %f %f %i %f %f\n", "oops:",sw,h,i,XiC[0],XiC[1],Y[i],H[i],
+						cdf_generalized_poisson_P3(18,4.7,0.006,&temp));}
                 }
-                else
-                    pdjkj[h][i] = 0.0;
-                //if (sw==2847 && i==149 && h==3)
-                //Rprintf("%i %i %i %i %f %f %f %f %f %f %f %f %f %f %f\n",
-                //sw,h,i,Y[i],H[i],XiC[0],XiC[1],XiC[2],nuSIxmm,storenuSInu[h],upper,lower,temp,temp2,pdjkj[h][i]);
-
-
-                //Rprintf("%i %f ", h, pdjkj[h][i]);
+                else pdih[h][i] = 0.0;               		         
+                if (sw==1 && h==3 && i==263 && 0==1) Rprintf(
+                "%s %i %i %i %i %f | %f %f | %f %f %f | %f %f %f | %f %f %f %f | %f %f | %f %f %f %f %f \n",
+                "prob",sw,h,i,Y[i],H[i], pi[h],u[i], val,temp2,log(pdih[h][i]),
+                XiC[0],XiC[1],XiC[2],
+                lower[0],upper[0],lower[1],upper[1],latentYX[i][0],latentYX[i][1],
+                params[0],params[1],params[2],params[3],params[4]);                                                                
             }
         }
         for (h = nUpdated; h < ncomp; h++)
             for (i = 0; i < n; i++)
-                pdjkj[h][i] = 0.0;
-//if (sw==8 && h>35 && h<41)
-//if (sw==54364) Rprintf("%s %i \n","alloc...",sw);
-        // - 10 - Update allocation to
-        s = gsl_ran_flat(r,1.0,100000);
-        allocation(s,n,ncomp,pdjkj,compAlloc,sw);
-//if (sw==8 && h>35 && h<41)
-//Rprintf("%s %i \n","nmem...",sw);
-        // - 11 - Find nmembers
-        findNmembers(n,ncomp,compAlloc,nmembers);
+                pdih[h][i] = 0.0;
 
-        // - 12a - Label switching
+        // - 9 - Update allocation to
+        //Rprintf("%s %i \n","alloc",sw);
         s = gsl_ran_flat(r,1.0,100000);
-        labelSwtchA(s,n,p,ncomp,nRespPars,Th1,Sigmah,SigmahI,nuh,muh,Xi,storenuSInu,storenuSI,nmembers,compAlloc,pi);
+        allocation(s,n,ncomp,pdih,compAlloc,sw);
+
+        // - 10 - Find nmembers
+        //puts("10");
+        findNmembers(n,ncomp,compAlloc,nmembers);
+        active = 0;
+        for (h = 0; h < ncomp; h++) if (nmembers[h] > 0) active += 1;
+        
+        // - 12a - Label switching
+        //puts("11");
+        s = gsl_ran_flat(r,1.0,100000);
+        labelSwtchANEW(s,n,totran,p,ncomp,nRespPars,Sigmah,Dh,Eh,nuh,muh,Xi,storenuSInu,storenuSI,nmembers,compAlloc,pi);
 
         // - 12b - Label switching
         s = gsl_ran_flat(r,1.0,100000);
-        //if (sw==131) Rprintf("%s %li \n","BL",s);
-        labelSwtchB(s,n,p,ncomp,nRespPars,Th1,Sigmah,SigmahI,nuh,muh,Xi,storenuSInu,storenuSI,nmembers,compAlloc,Vdp);
+        labelSwtchBNEW(s,n,totran,p,ncomp,nRespPars,Sigmah,Dh,Eh,nuh,muh,Xi,storenuSInu,storenuSI,nmembers,compAlloc,Vdp);
 
         // - 13 - Update concentration parameter
         s = gsl_ran_flat(r,1.0,100000);
         newalpha = updateAlpha(s,n,ncomp,Alphaa,Alphab,TruncAlpha,nmembers,alpha);
         alpha = newalpha;
-//if (sw==54364) Rprintf("%s %i \n","pred...",sw);
+
         // - 14 - Predictions
-
         if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0) && (npred > 0)){
-
-            newClusI = 0;
-            for (i = 0; i < npred; i++) denomPred[i] = 0.0;
-            for (k = 0; k < maxy; k++) for (i = 0; i < npred; i++) StorePD[i][k] = 0.0;
-            for (h = 0; h < ncomp; h++) if (nmembers[h] > 0) upperL = h;
-            upperL += 2; //one to work ok and one for the empty cluster; check for in between zeros
-            if (upperL > ncomp) upperL=ncomp;
-             
-            for (h = 0; h < upperL; h++){
-                if (nmembers[h] > 0 || newClusI == 0){
-                    if (nmembers[h] == 0) newClusI = 1;
-                    for (k = 0; k < p*p; k++)
-                        baseSigmahI[k] = SigmahI[h][k];
-                    SigmahIview = gsl_matrix_view_array(baseSigmahI,p,p);
-                    for (i = 0; i < npred; i++){
-                        for (k = 0; k < p; k++)
-                            baseXmM[k] = Xpred[k*npred+i]-muh[h][k];
-                        XmMview = gsl_vector_view_array(baseXmM,p);
-                        temp2 = logMVNormalpdf3(p,&XmMview.vector,vecZero,&SigmahIview.matrix);
-                        CPDF[i][h] = exp(temp2);
-                        if (nmembers[h] > 0) PredProb = CPDF[i][h]*nmembers[h];
-                        else if (nmembers[h] == 0) PredProb = CPDF[i][h]*alpha;
-                        denomPred[i] += PredProb;
-                    }
-                }
-            }
-
-            // posterior predictive distribution
-            Iend = 0;
+            //puts("denominator");
+            for (i = 0; i < npred; i++) denomPred[i] = 0.0;                                   
             for (i = 0; i < npred; i++){
-                for (h = 0; h < ncomp; h++) for (k = 0; k < maxy; k++) Disthi[h][k] = 0.0;
-                newClusI = 0;
-                for (h = 0; h < upperL; h++){
-                    if (nmembers[h] > 0 || newClusI == 0){
-                        if (nmembers[h] == 0) newClusI = 1;
-                        for (k = 0; k < nRespPars; k++)
-                            XiC[k] = Xi[h][k];
-                        nuSIxmm = 0.0;
-                        for (k = 0; k < p; k++)
-                            nuSIxmm += storenuSI[h][k]*(Xpred[k*npred+i]-muh[h][k]);
-
-                        //start = Hpred[i]*XiC[0];
-                        //if (family == 3) start = Hpred[i]*XiC[0]/XiC[1];
-                        //if (family == 4) start = Hpred[i]*XiC[0]/(XiC[0] + XiC[1]);
-                        //while (start >= maxy) start = maxy/2;
-
-                        start = 0;
-
-                        if (i == 0 || allEqlI[0] == 0){
-                            if (family < 5) calcGLMLimitsPred(Hpred,start,i,XiC,&lower,&upper,family);
-                            else if (family==5) calcGLMLimitsPredGP(Hpred,start,i,XiC,&lower,&upper,&CDFL[h],&CDFU[h],&normConst[h]);
-                            else if (family==6) calcGLMLimitsPredCP(Hpred,start,i,XiC,&lower,&upper,&CDFL[h],&CDFU[h],&normConst[h]);
-                            else if (family==7) calcGLMLimitsPredHP(Hpred,start,i,XiC,&lower,&upper,&CDFL[h],&CDFU[h],&normConst[h]);
-                            else if (family==8) calcGLMLimitsPredCTP(Hpred,start,i,XiC,&lower,&upper,&CDFL[h],&CDFU[h],&normConst[h]);
-                            StoreLower[h][start] = lower;
-                            StoreUpper[h][start] = upper;
-                            if (family>=5) if (gsl_isinf(normConst[h]) || normConst[h]==0.0 || gsl_isnan(CDFL[h]) || gsl_isnan(-CDFL[h])
-                                || gsl_isnan(CDFU[h]) || gsl_isnan(-CDFU[h])) Iend=1;
+                for (h = 0; h < ncomp; h++){                                                        
+                    move = 0;
+                    NDCPi = 0;
+                    NCCPi = 0;
+                    for (k = 1; k < totran; k++){
+                        if (c[k*npred+i]==1){
+                            if (k < NDV) NDCPi +=1;
+                            else NCCPi += 1;
+                            for (l = 1; l < totran; l++)
+                                if (c[l*npred+i]==1) 
+                                    baseSigmaSh[move++] = Sigmah[h][k*totran+l];                                                
+						}                        				
+				    }				    
+                    SigmaSht = gsl_matrix_view_array(baseSigmaSh,NDCPi+NCCPi,NDCPi+NCCPi);                                                                                
+                    SigmaSht3 = gsl_matrix_submatrix(&SigmaSht.matrix,NDCPi,NDCPi,NCCPi,NCCPi);                                                          
+                    val = 1;
+                    if (NDCPi > 0){                        
+                        move = 0;
+                        for (k = 1; k < totran; k++)
+                            if (c[k*npred+i]==1) 
+                                baseMUS[move++] = muh[h][k-1];
+                        MUSTAR = gsl_vector_view_array(baseMUS,move);  
+                        move = 0;
+                        for (k = 0; k < NCC; k++)
+                            if (c[(k+NDV)*npred+i]==1)
+                                baseC[move++] = Xpred[(k+NDC)*npred+i];
+                        Ci = gsl_vector_view_array(baseC,NCCPi);
+                        MNCondParams2(NDCPi,NCCPi,&MUSTAR.vector,&Ci.vector,&SigmaSht.matrix,tol,params);                                                                          
+                        move = 0;
+                        for (k = 0; k < NDC; k++){
+                            if (Xpred[k*npred+i]==0 && c[(k+1)*npred+i]==1) {lowerX[move] = -lmt; upperX[move] = 0; move++;}
+                            if (Xpred[k*npred+i]==1 && c[(k+1)*npred+i]==1) {lowerX[move] = 0; upperX[move] = lmt; move++;}
+	                    }                                        
+                        nocuba = 0;
+                        for (k = 0; k < NDCPi; k++)
+                            if (((lowerX[k] - params[k]) > tol2 / params[k+NDCPi]) || ((params[k] - upperX[k]) > tol2 / params[k+NDCPi]))
+                                nocuba += 1;                    
+                        if (nocuba == 0){                                                               
+                            for (k = 0; k < NDCPi; k++){
+                                if (lowerX[k]==-lmt) lowerX[k] = params[k] - tol2 / params[NDCPi+k];
+                                if (upperX[k]==lmt) upperX[k] = params[k] + tol2 / params[NDCPi+k];
+                            }                    
+                            if (NDCPi > 3) p_hcubature(1,MultiNormalPDF,params,NDCPi,lowerX,upperX,0,0.0001,0,ERROR_INDIVIDUAL,&val,&err);
+                            if (NDCPi <= 3) p_pcubature(1,MultiNormalPDF,params,NDCPi,lowerX,upperX,0,0.0001,0,ERROR_INDIVIDUAL,&val,&err);                                
+                        }else
+                            val = 0.0;
+					}					
+					CPDF[i][h] = 1;
+					if (NCCPi > 0){
+					    ginv(NCCPi,tol,&SigmaSht3.matrix);                                                                                                                                                  
+                        move = 0;
+                        for (k = 0; k < NCC; k++)
+                            if (c[(k+NDV)*npred+i]==1)
+                                baseXmM2[move++] = Xpred[(NDC+k)*npred+i]-muh[h][NDC+k];                                        
+                        XmMview = gsl_vector_view_array(baseXmM2,NCCPi);                    
+                        gsl_vector_view ZeroSub = gsl_vector_subvector(vecZero2,0,NCCPi);                    
+                        temp2 = logMVNormalpdf3(NCCPi,&XmMview.vector,&ZeroSub.vector,&SigmaSht3.matrix);                    
+                        CPDF[i][h] = exp(temp2); 
+					}                                                                                                
+                    denomPred[i] += pi[h]*CPDF[i][h]*val;
+                }
+            }                                                            
+            //puts("numerator");  
+            Iend = 0;
+            for (k = 0; k < ncomp; k++) for (l = 0; l < maxy; l++) StoreUpper[k][l] = -123456789.0;
+			for (k = 0; k < maxy; k++) for (i = 0; i < npred; i++) StorePD[i][k] = 0.0;
+            for (k = 0; k < ncomp; k++) saveCdf[k] = 0.0;
+            for (i = 0; i < npred; i++){
+                move = 0;
+                for (k = 0; k < NCC; k++) 
+                    if (c[(k+NDV)*npred+i]==1)
+                        baseC[move++] = Xpred[(k+NDC)*npred+i]; 
+                NCCPi = move;
+                Ci = gsl_vector_view_array(baseC,NCCPi);        
+                start = 0; cdfy[i] = 0;                              
+                while(cdfy[i] < (PredTrunc+0) && start < maxy){					                   
+                    for (h = 0; h < ncomp; h++){                                                                                                        
+                        if (StoreUpper[h][start]==-123456789.0){
+							for (k = 0; k < nRespPars; k++) XiC[k] = Xi[h][k];                            
+                            if (start == 0)   
+                                Lower = -lmt; 
+                            else 
+                                Lower = StoreUpper[h][start-1];                                                           
+                            if (family == 1) saveCdf[h] += gsl_ran_poisson_pdf(start,Hpred[0]*XiC[0]);
+                            else if (family == 2) saveCdf[h] += gsl_ran_binomial_pdf(start,XiC[0],Hpred[0]);
+                            else if (family == 3) saveCdf[h] += gsl_ran_negative_binomial_pdf(start,XiC[1]/(Hpred[0]+XiC[1]),XiC[0]);
+                            else if (family == 4) saveCdf[h] += exp(gsl_sf_lnchoose(Hpred[0],start) + gsl_sf_lnbeta(start+XiC[0],Hpred[0]-start+XiC[1]) - gsl_sf_lnbeta(XiC[0],XiC[1]));
+                            else if (family == 5){		
+		                        mu = Hpred[0]*XiC[0]; f = XiC[1];//sqrt(Hpred[0]);
+		                        if (start == 0) saveCdf[h] = cdf_generalized_poisson_P3(0,mu,f,&normConst);		                        
+		                        else if (start > 0){
+		                            B = -mu/(f-1);
+		                            if ((f>=1)||(f < 1 && start < B))
+		                            saveCdf[h] += exp(log(mu)+(start-1)*log(mu+(f-1)*start)-start*log(f)-(mu+(f-1)*start)/f-gsl_sf_lnfact(start))/normConst;		
+							    } 
+	                        }	                        
+	                        if (saveCdf[h] > 1.0) saveCdf[h] = 1.0;                    
+                            Upper = gsl_cdf_ugaussian_Pinv(saveCdf[h]);
+                            if (Upper < -lmt) Upper = -lmt;
+                            if (Upper > lmt) Upper = lmt;                                                                                                                                                                                                                             
+                            StoreUpper[h][start] = Upper;                             
+                            if (gsl_isinf(normConst) || normConst==0.0) {Iend=1; Rprintf("%s %i %i %i \n", "ooPs :",sw,h,i);}                                                                                            
                         }
                         else{
-                            lower = StoreLower[h][start];
-                            upper = StoreUpper[h][start];
+                            if (start == 0) Lower = -lmt;
+                            else Lower = StoreUpper[h][start-1];
+                            Upper = StoreUpper[h][start];
                         }
-                        temp = gsl_cdf_ugaussian_P((upper-nuSIxmm)/sqrt(1-storenuSInu[h]))-
-                               gsl_cdf_ugaussian_P((lower-nuSIxmm)/sqrt(1-storenuSInu[h]));
-                        upper2 = upper;
-                        cdfy = temp;
-                        if (nmembers[h] > 0) Disthi[h][start] = temp * CPDF[i][h] * nmembers[h];
-                        else if (nmembers[h] == 0) Disthi[h][start] = temp * CPDF[i][h] * alpha;
-                        move = 1;
-
-//if (sw==40064) fprintf(out_file7,"%s %i %i %i %i %i %i %f %f %f %f %f %f %f %f %f %f %f %f \n","start",
-//sw,i,h,start,move,k,XiC[0],XiC[1],XiC[2],lower,upper,CDFL[h],CDFU[h],normConst[h],cdfy,nuSIxmm,storenuSInu[h],temp);
-
-                        if (family==2 || family==4) maxy2 = Hpred[i]+1;
-                        while(cdfy<PredTrunc && ((start-move)>=0 || (start+move)<maxy2)){
-                            if (start >= move){
-                                k = start - move;
-                                upper = lower;
-                                if ((i == 0) || (k < ll[h]) || (allEqlI[0] == 0)){
-                                    if (family < 5) calcGLMLimitsPredL(Hpred,k,i,XiC,&lower,family);
-                                    else if (family == 5) calcGLMLimitsPredLGP(Hpred,k,i,XiC,&lower,&CDFL[h],normConst[h]);
-                                    else if (family == 6) calcGLMLimitsPredLCP(Hpred,k,i,XiC,&lower,&CDFL[h],normConst[h]);
-                                    else if (family == 7) calcGLMLimitsPredLHP(Hpred,k,i,XiC,&lower,&CDFL[h],normConst[h]);
-                                    else if (family == 8) calcGLMLimitsPredLCTP(Hpred,k,i,XiC,&lower,&CDFL[h],normConst[h]);
-                                    StoreLower[h][k] = lower;
-                                    ll[h] = k;
-                                }
-                                else lower = StoreLower[h][k];
-                                temp = gsl_cdf_ugaussian_P((upper-nuSIxmm)/sqrt(1-storenuSInu[h]))-
-                                       gsl_cdf_ugaussian_P((lower-nuSIxmm)/sqrt(1-storenuSInu[h]));
-                                cdfy += temp;
-                                if (nmembers[h] > 0) Disthi[h][k] = temp * CPDF[i][h] * nmembers[h];
-                                else if (nmembers[h] == 0) Disthi[h][k] = temp * CPDF[i][h] * alpha;
-
-//if (sw==40064) fprintf(out_file7,"%s %i %i %i %i %i %i %f %f %f %f %f %f %f %f %f %f %f %f \n","start-move",
-//sw,i,h,start,move,k,XiC[0],XiC[1],XiC[2],lower,upper,CDFL[h],CDFU[h],normConst[h],cdfy,nuSIxmm,
-//storenuSInu[h],temp);
-
-                            }
-                            if ((start+move) < maxy2){
-                                k = start + move;
-                                lower2 = upper2;
-                                if ((i == 0) || (k > ul[h]) || (allEqlI[0] == 0)){
-                                    if (family < 5) calcGLMLimitsPredU(Hpred,k,i,XiC,&upper2,family);
-                                    else if (family == 5) calcGLMLimitsPredUGP(Hpred,k,i,XiC,&upper2,&CDFU[h],normConst[h]);
-                                    else if (family == 6) calcGLMLimitsPredUCP(Hpred,k,i,XiC,&upper2,&CDFU[h],normConst[h]);
-                                    else if (family == 7) calcGLMLimitsPredUHP(Hpred,k,i,XiC,&upper2,&CDFU[h],normConst[h]);
-                                    else if (family == 8) calcGLMLimitsPredUCTP(Hpred,k,i,XiC,&upper2,&CDFU[h],normConst[h]);
-                                    StoreUpper[h][k] = upper2;
-                                    ul[h] = k;
-                                }
-                                else upper2 = StoreUpper[h][k];
-                                temp = gsl_cdf_ugaussian_P((upper2-nuSIxmm)/sqrt(1-storenuSInu[h]))-
-                                       gsl_cdf_ugaussian_P((lower2-nuSIxmm)/sqrt(1-storenuSInu[h]));
-                                cdfy += temp;
-                                if (nmembers[h] > 0) Disthi[h][k] = temp * CPDF[i][h] * nmembers[h];
-                                else if (nmembers[h] == 0) Disthi[h][k] = temp * CPDF[i][h] * alpha;
-//if (sw==40064) fprintf(out_file7,"%s %i %i %i %i %i %i %f %f %f %f %f %f %f %f %f %f %f %f \n","start+move",
-//sw,i,h,start,move,k,XiC[0],XiC[1],XiC[2],lower2,upper2,CDFL[h],CDFU[h],normConst[h],cdfy,
-//nuSIxmm,storenuSInu[h],temp);
-
-                            }
-                            move++;
+                        lower[0] = Lower;
+                        upper[0] = Upper;                        
+                        move = 0;
+                        for (k = 0; k < NDC; k++){
+                            if (Xpred[k*npred+i]==0 && c[(k+1)*npred+i]==1) {lower[move+1] = -lmt; upper[move+1] = 0; move++;}
+                            if (Xpred[k*npred+i]==1 && c[(k+1)*npred+i]==1) {lower[move+1] = 0; upper[move+1] = lmt; move++;}
+	                    }	                     	                    
+	                    if (start == 0){
+	                        move = 0;
+                            NDVPi = 0;  
+                            for (k = 0; k < totran; k++){								
+                                if (c[k*npred+i]==1){
+                                    if (k < NDV) NDVPi +=1;
+                                    for (l = 0; l < totran; l++)
+                                        if (c[l*npred+i]==1) 
+                                            baseSigmaSh[move++] = Sigmah[h][k*totran+l];                                                
+						        }                        				
+				            }
+                            SigmaSht = gsl_matrix_view_array(baseSigmaSh,NDVPi+NCCPi,NDVPi+NCCPi);                                                                                          	                                                                               
+                            baseMUS[0] = 0.0;
+                            move = 1;
+                            for (k = 1; k < totran; k++)
+                                if (c[k*npred+i]==1) 
+                                    baseMUS[move++] = muh[h][k-1];
+                            MUSTAR = gsl_vector_view_array(baseMUS,move);                                                                                      
+                            MNCondParams2(NDVPi,NCCPi,&MUSTAR.vector,&Ci.vector,&SigmaSht.matrix,tol,params);                                                                                                                                                                                                                                                                                                          
+                            for (k = 0; k < dimP; k++) 
+                                StoreParams[h][k] = params[k];   
                         }
-                        for (k = 0; k <= (start-move); k++) Disthi[h][k] = 0.0;
-                        for (k = (start+move); k < maxy; k++) Disthi[h][k] = 0.0;
-/*
-                        cdfy = 0.0;
-                        for (k = 0; k < maxy; k++){
-
-                            if(cdfy <=0.9999999999999999999999999999999999999999999999999999999 && k < maxy){
-
-                                calcGLMLimitsPred(Hpred,k,i,XiC,&lower,&upper,family);
-                                temp = gsl_cdf_ugaussian_P((upper-nuSIxmm)/sqrt(1-storenuSInu[h]))-
-                                       gsl_cdf_ugaussian_P((lower-nuSIxmm)/sqrt(1-storenuSInu[h]));
-                                cdfy += temp;
-                            }
-                            else temp=0;
-                            Disthi[h][k] = temp * PredProb[i][h]/denomPred[i];
-                        }
-*/
-                    }
+                        else
+                            for (k = 0; k < dimP; k++) 
+                                params[k] = StoreParams[h][k];                                                                  
+                        nocuba = 0; 
+                        for (k = 0; k < NDVPi; k++)
+                            if (((lower[k] - params[k]) > tol2 / params[k+NDVPi]) || ((params[k] - upper[k]) > tol2 / params[k+NDVPi]))
+                                nocuba += 1;                    
+                        if (nocuba == 0){                                                                
+                            for (k = 0; k < NDVPi; k++){
+                                if (lower[k]==-lmt) lower[k] = params[k] - tol2 / params[NDVPi+k];
+                                if (upper[k]==lmt) upper[k] = params[k] + tol2 / params[NDVPi+k];
+                            }                    
+                            if (NDVPi > 3) p_hcubature(1,MultiNormalPDF,params,NDVPi,lower,upper,0,0.0001,0,ERROR_INDIVIDUAL,&val,&err);
+                            if (NDVPi <= 3) p_pcubature(1,MultiNormalPDF,params,NDVPi,lower,upper,0,0.0001,0,ERROR_INDIVIDUAL,&val,&err);                                 
+                            if (sw==3800 && i==4 && start==5 && h==20 && 1==0) Rprintf("%s %f %f %f %f %f %f %f %f %f \n","val:",
+                            val,StoreUpper[h][0],StoreUpper[h][1],StoreUpper[h][2],StoreUpper[h][3],StoreUpper[h][4],StoreUpper[h][5],lower[0],upper[0]);                        
+                        }else 
+                            val = 0.0;                                                                                       
+                        StorePD[i][start] += pi[h] * CPDF[i][h] * val / denomPred[i];
+                        if (gsl_isnan(StorePD[i][start])) {StorePD[i][start] = 0.0;Rprintf("%s %i %i %i %i \n", "ooPDs:",sw,h,i,start);}
+                        if (val>1 && 1==0) {Rprintf("%s %i %i %i %i %f %f %f %f %f \n", "val:",sw,h,i,start,lower[0],upper[0],params[0],params[1],val);}
+                        if (sw==96 && 1==0) fprintf(out_file4, "%i %i %i %i %f %f %f %f %f %f %f %f %f %f %f \n",
+                        sw,i,start,h,cdfy[i],pi[h],CPDF[i][h],params[0],params[1],params[2],lower[0],upper[0],val,StorePD[i][start],denomPred[i]);                        
+					}
+					cdfy[i] += StorePD[i][start];
+					start++;
                 }
-                for (k = 0; k < maxy; k++)
-                   for (h = 0; h < upperL; h++)
-                       StorePD[i][k] += Disthi[h][k]/denomPred[i];
-            }
-//if (sw >= 592 && sw < 600) Rprintf("%s %i %i %i %f %f %f %f %f %f %f %f %f %i %i \n","pred trunc2...",sw,i,h,XiC[0],Hpred[i-1],Xpred[i-1],upper,lower,
-//nuSIxmm,sqrt(1-storenuSInu[h]),
-//gsl_cdf_ugaussian_P((upper-nuSIxmm)/sqrt(1-storenuSInu[h]))-gsl_cdf_ugaussian_P((lower-nuSIxmm)/sqrt(1-storenuSInu[h])),
-//cdfy,k,maxy);
-            // posterior summaries
-            if (Iend == 0){
-                // Mean
+                //Rprintf("%i %i %i %f \n",sw,i,start,cdfy);                                       
+            }            
+            // posterior summaries 
+            if (Iend == 0){ 
+                //Mean
                 for (i = 0; i < npred; i++) TMR[i] = 0.0;
-
                 for (i = 0; i < npred; i++)
                     for (k = 0; k < maxy; k++)
-                        TMR[i] += (double) (StorePD[i][k] * k);
-
+                        TMR[i] += (double) (StorePD[i][k] / cdfy[i] * k); //mean regression 
                 for (i = 0; i < npred; i++)
-                    meanReg[i] += (double) TMR[i]/(nSamples);
-
-                //Quantiles
+                    meanReg[i] += (double) TMR[i]/(nSamples); //mean of mean regression
+                //Q1,Q2,Q3                
                 for (i = 0; i < npred; i++){
                     k=0;
                     sumProb = StorePD[i][k];
                     while (sumProb <= 0.05){
                         k++;
-                        sumProb += StorePD[i][k];
+                        sumProb += StorePD[i][k] / cdfy[i];
                     }
-                    TQ05R[i] = k;
-                    Q05Reg[i] += (double) k/nSamples;
+                    TQ05R[i] = k;                    
                     while (sumProb <= 0.10){
                         k++;
-                        sumProb += StorePD[i][k];
+                        sumProb += StorePD[i][k] / cdfy[i];
                     }
-                    TQ10R[i] = k;
-                    Q10Reg[i] += (double) k/nSamples;
+                    TQ10R[i] = k;                    
                     while (sumProb <= 0.15){
                         k++;
-                        sumProb += StorePD[i][k];
+                        sumProb += StorePD[i][k] / cdfy[i];
                     }
-                    TQ15R[i] = k;
-                    Q15Reg[i] += (double) k/nSamples;
+                    TQ15R[i] = k;                    
                     while (sumProb <= 0.20){
                         k++;
-                        sumProb += StorePD[i][k];
+                        sumProb += StorePD[i][k] / cdfy[i];
                     }
-                    TQ20R[i] = k;
-                    Q20Reg[i] += (double) k/nSamples;
+                    TQ20R[i] = k;                    
                     while (sumProb <= 0.25){
                         k++;
-                        sumProb += StorePD[i][k];
+                        sumProb += StorePD[i][k] / cdfy[i];
                     }
                     TQ25R[i] = k;
-                    Q25Reg[i] += (double) k/nSamples;
+                    q1Reg[i] += (double) k/(nSamples); // mean q1 reg
                     while (sumProb <= 0.50){
                         k++;
-                        sumProb += StorePD[i][k];
+                        sumProb += StorePD[i][k] / cdfy[i];
                     }
-                    TQ50R[i] = k;
-                    Q50Reg[i] += (double) k/nSamples;
+                    TMdR[i] = k; //median regression
+                    medianReg[i] += (double) k/(nSamples); //mean q2 reg                    
                     while (sumProb <= 0.75){
                         k++;
-                        sumProb += StorePD[i][k];
+                        sumProb += StorePD[i][k] / cdfy[i];
                     }
-                    TQ75R[i] = k;
-                    Q75Reg[i] += (double) k/nSamples;
+                    TQ75R[i] = k;                    
+                    q3Reg[i] += (double) k/(nSamples); //mean q3 reg
                     while (sumProb <= 0.80){
                         k++;
-                        sumProb += StorePD[i][k];
+                        sumProb += StorePD[i][k] / cdfy[i];
                     }
-                    TQ80R[i] = k;
-                    Q80Reg[i] += (double) k/nSamples;
+                    TQ80R[i] = k;                  
                     while (sumProb <= 0.85){
                         k++;
-                        sumProb += StorePD[i][k];
+                        sumProb += StorePD[i][k] / cdfy[i];
                     }
-                    TQ85R[i] = k;
-                    Q85Reg[i] += (double) k/nSamples;
+                    TQ85R[i] = k;                    
                     while (sumProb <= 0.90){
                         k++;
-                        sumProb += StorePD[i][k];
+                        sumProb += StorePD[i][k] / cdfy[i];
                     }
-                    TQ90R[i] = k;
-                    Q90Reg[i] += (double) k/nSamples;
+                    TQ90R[i] = k;                  
                     while (sumProb <= 0.95){
                         k++;
-                        sumProb += StorePD[i][k];
+                        sumProb += StorePD[i][k] / cdfy[i];
                     }
-                    TQ95R[i] = k;
-                    Q95Reg[i] += (double) k/nSamples;
-                }
+                    TQ95R[i] = k;                     
+                }                               
                 // Mode
                 for (i = 0; i < npred; i++){
                     mode = gsl_stats_max_index(StorePD[i],1,maxy);
-                    modeReg[i] += (double) (mode)/nSamples;
+                    modeReg[i] += (double) (mode)/nSamples; 
                 }
                 //Mean and Var of the probabilities
                 for (i = 0; i < npred; i++){
                     for (k = 0; k < maxy; k++){
-                        denReg[k+maxy*i] += (double) StorePD[i][k]/nSamples;
-                        denVar[k+maxy*i] += (double) StorePD[i][k]*StorePD[i][k]/nSamples;
-                        //if (k<10) Rprintf("%s %i %i %f %f \n","pred,num,den,store",i,k,denReg[k+maxy*i], StorePD[i][k]);
+                        denReg[k+maxy*i] += (double) (StorePD[i][k]/cdfy[i])/nSamples;
+                        denVar[k+maxy*i] += (double) (StorePD[i][k]/cdfy[i])*(StorePD[i][k]/cdfy[i])/nSamples;                        
                     }
                 }
             }
-        }
+        }//end pred
         // - 15 - Write to files
         if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0) && (WF == 1) && (Iend==0)){
 
             for (h = 0; h < ncomp; h++){
-                for (j = 0; j < (p*p); j++)
-                    fprintf(out_file1, "%f ", Th1[h][j]);
-                fprintf(out_file1, "\n");
-            }
-
-            for (h = 0; h < ncomp; h++){
-                for (j = 0; j < (p*p); j++)
-                    fprintf(out_file2, "%f ", Sigmah[h][j]);
-                fprintf(out_file2, "\n");
-            }
-
-            for (h = 0; h < ncomp; h++){
-                for (j = 0; j < (p*p); j++)
-                    fprintf(out_file3, "%f ", SigmahI[h][j]);
-                fprintf(out_file3, "\n");
+                for (j = 0; j < (totran*totran); j++)
+                    fprintf(out_file1, "%f ", Sigmah[h][j]);
+                fprintf (out_file1, "\n");
             }
 
             for (h = 0; h < ncomp; h++){
                 for (j = 0; j < p; j++)
-                    fprintf(out_file4, "%f ", nuh[h][j]);
-                fprintf(out_file4, "\n");
-            }
-
-            for (h = 0; h < ncomp; h++){
-                for (j = 0; j < p; j++)
-                    fprintf(out_file5, "%f ", muh[h][j]);
-                fprintf(out_file5, "\n");
+                    fprintf(out_file2, "%f ", muh[h][j]);
+                fprintf (out_file2, "\n");
             }
 
             for (h = 0; h < ncomp; h++){
                 for (j = 0; j < nRespPars; j++)
-                    fprintf(out_file6, "%f ", Xi[h][j]);
-                fprintf(out_file6, "\n");
+                    fprintf(out_file3, "%f ", Xi[h][j]);
+                fprintf (out_file3, "\n");
             }
 
-            fprintf(out_file7, "%f \n", alpha);
+            fprintf(out_file4, "%f \n", alpha); 
 
             for (i = 0; i < n; i++)
-                fprintf(out_file8, "%i ", compAlloc[i]);
-            fprintf(out_file8, "\n");
+                fprintf(out_file5, "%i ", compAlloc[i]);
+            fprintf (out_file5, "\n");
 
             for (h = 0; h < ncomp; h++)
-                fprintf(out_file9, "%i ", nmembers[h]);
-            fprintf(out_file9, "\n");
+                fprintf(out_file6, "%i ", nmembers[h]);
+            fprintf (out_file6, "\n");
 
-            fprintf(out_file10, "%i \n", nUpdated);
+            fprintf(out_file7, "%i \n", nUpdated);
 
             for (i = 0; i < npred; i++)
-                fprintf(out_file11, "%f ", TMR[i]);
+                fprintf(out_file8, "%f ", TMR[i]);
+            fprintf (out_file8, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file9, "%f ", TMdR[i]);
+            fprintf (out_file9, "\n");            
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file10, "%f ", TQ05R[i]);
+            fprintf(out_file10, "\n");
+
+            for (i = 0; i < npred; i++)
+                fprintf(out_file11, "%f ", TQ10R[i]);
             fprintf(out_file11, "\n");
 
             for (i = 0; i < npred; i++)
-                fprintf(out_file12, "%f ", TQ05R[i]);
+                fprintf(out_file12, "%f ", TQ15R[i]);
             fprintf(out_file12, "\n");
 
             for (i = 0; i < npred; i++)
-                fprintf(out_file13, "%f ", TQ10R[i]);
+                fprintf(out_file13, "%f ", TQ20R[i]);
             fprintf(out_file13, "\n");
 
             for (i = 0; i < npred; i++)
-                fprintf(out_file14, "%f ", TQ15R[i]);
+                fprintf(out_file14, "%f ", TQ25R[i]);
             fprintf(out_file14, "\n");
 
             for (i = 0; i < npred; i++)
-                fprintf(out_file15, "%f ", TQ20R[i]);
+                fprintf(out_file15, "%f ", TQ75R[i]);
             fprintf(out_file15, "\n");
 
             for (i = 0; i < npred; i++)
-                fprintf(out_file16, "%f ", TQ25R[i]);
+                fprintf(out_file16, "%f ", TQ80R[i]);
             fprintf(out_file16, "\n");
 
             for (i = 0; i < npred; i++)
-                fprintf(out_file17, "%f ", TQ50R[i]);
+                fprintf(out_file17, "%f ", TQ85R[i]);
             fprintf(out_file17, "\n");
 
             for (i = 0; i < npred; i++)
-                fprintf(out_file18, "%f ", TQ75R[i]);
+                fprintf(out_file18, "%f ", TQ90R[i]);
             fprintf(out_file18, "\n");
 
             for (i = 0; i < npred; i++)
-                fprintf(out_file19, "%f ", TQ80R[i]);
+                fprintf(out_file19, "%f ", TQ95R[i]);
             fprintf(out_file19, "\n");
-
-            for (i = 0; i < npred; i++)
-                fprintf(out_file20, "%f ", TQ85R[i]);
-            fprintf(out_file20, "\n");
-
-            for (i = 0; i < npred; i++)
-                fprintf(out_file21, "%f ", TQ90R[i]);
-            fprintf(out_file21, "\n");
-
-            for (i = 0; i < npred; i++)
-                fprintf(out_file22, "%f ", TQ95R[i]);
-            fprintf(out_file22, "\n");
 
         }
         if (Iend == 1) sw -= 1;
         if (sw==(sweeps-1) && (!((sw+1) % 500)==0)) Rprintf("%i %s \n",sw+1, "posterior samples...");
     }//end of sw
-
     //Free up random number
     gsl_rng_free (r);
 
     //Close files
     fclose(out_file1); fclose(out_file2); fclose(out_file3); fclose(out_file4); fclose(out_file5);
-    fclose(out_file6); fclose(out_file7); fclose(out_file8); fclose(out_file9); fclose(out_file10);
-    fclose(out_file11); fclose(out_file12); fclose(out_file13); fclose(out_file14); fclose(out_file15);
-    fclose(out_file16); fclose(out_file17); fclose(out_file18); fclose(out_file19); fclose(out_file20);
-    fclose(out_file21); fclose(out_file22);
+    fclose(out_file6); fclose(out_file7); fclose(out_file8); fclose(out_file9); fclose(out_file10); 
+    fclose(out_file11); fclose(out_file12); fclose(out_file13); fclose(out_file14); fclose(out_file15); 
+    fclose(out_file16); fclose(out_file17); fclose(out_file18); fclose(out_file19);
 
     //Free up gsl matrices
-    gsl_matrix_free(V);gsl_matrix_free(Vinv);
-    gsl_vector_free(MuNu); gsl_matrix_free(SigmaNuInv); gsl_matrix_free(SigmaNuHalf); gsl_vector_free(SIMnu);
+    gsl_matrix_free(V); gsl_matrix_free(Vinv);
     gsl_vector_free(MuMu); gsl_matrix_free(SigmaMuInv); gsl_matrix_free(SigmaMuHalf); gsl_vector_free(SIMmu);
-    gsl_matrix_free(Th); gsl_matrix_free(Sh);
-    gsl_vector_free(nu);
+    gsl_matrix_free(Sh);
     gsl_vector_free(nuSI);
-    gsl_matrix_free(Dg1); gsl_matrix_free(Dg2); gsl_matrix_free(Dg3);
+    gsl_matrix_free(Dg1); gsl_matrix_free(Dg3);
     gsl_matrix_free(nTDi);
-    gsl_vector_free(vecZero);
+    gsl_vector_free(vecZero); gsl_vector_free(vecZero2);
     gsl_vector_free(Z); gsl_vector_free(U1); gsl_vector_free(U2); gsl_vector_free(U3);
+    gsl_vector_free(CondMean); gsl_vector_free(CondMean2); gsl_vector_free(yxstar);
+    gsl_matrix_free(PartMean); gsl_matrix_free(PartMean2); gsl_matrix_free(CondCov); gsl_matrix_free(CondCov2);
+    gsl_matrix_free(Ehp); gsl_matrix_free(Dhp); gsl_matrix_free(SigmaShp);
+    gsl_matrix_free(SigmaSH); gsl_matrix_free(Th);
 }

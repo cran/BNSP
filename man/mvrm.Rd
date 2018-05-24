@@ -9,18 +9,15 @@ mean and variance functions achieved via spike-slab prior for variable selection
 See `Details' section for a full description of the model.}
 
 \usage{
-mvrm(formula,formula.v=~1,data,sweeps,burn,thin=1,seed,StorageDir,
+mvrm(formula,data,sweeps,burn=0,thin=1,seed,StorageDir,
 c.betaPrior="IG(0.5,0.5*n)",c.alphaPrior="IG(1.1,1.1)",
 pi.muPrior="Beta(1,1)",pi.sigmaPrior="Beta(1,1)",sigmaPrior="HN(2)",...)
 }
 
 \arguments{
-\item{formula}{a formula defining the response and the covariates in the mean model e.g. \code{y ~ x} or 
-for smooth effects \code{y ~ sm(x)}.}
-
-\item{formula.v}{a formula defining the variance model e.g. \code{ ~ x} or 
-for smooth effects \code{ ~ sm(x)}.}
-
+\item{formula}{a formula defining the response and the covariates in the mean and variance models e.g. \code{y ~ x | z} or 
+for smooth effects \code{y ~ sm(x) | sm(z)}. The package uses the extended formula notation, where on the right of \code{~} 
+we define two models: on the right of \code{|} is the mean model and on the left is the variance model.}
 
 \item{data}{a required data frame.}
 
@@ -124,8 +121,7 @@ Lastly, for \eqn{\sigma^2} we consider inverse Gamma and half-normal priors
 
 \value{Function \code{mvrm} returns the following:
 \item{call}{the matched call.}
-\item{formula}{mean model formula.}
-\item{formula.v}{variance model formula.}
+\item{formula}{model formula.}
 \item{seed}{the seed that was used (in case replication of the results is needed).}
 \item{data}{the dataset}
 \item{X}{the mean model design matrix.}
@@ -158,7 +154,10 @@ indicator variables, and they are in the same order as the columns of design mat
 \references{
 Chan, D., Kohn, R., Nott, D., & Kirby, C. (2006). Locally adaptive semiparametric estimation of the
 mean and variance functions in regression models. Journal of Computational and Graphical Statistics,
-15(4), 915-936.}
+15(4), 915-936.
+
+Papageorgiou, G. (2018). BNSP: an R Package for fitting Bayesian regression models with semiparametric mean and variance functions. arXiv:1804.10939 [stat.OT]
+}
 
 \author{Georgios Papageorgiou \email{gpapageo@gmail.com}}
 
@@ -167,18 +166,23 @@ mean and variance functions in regression models. Journal of Computational and G
 require(np)
 require(ggplot2)
 data(cps71)
-meanModel<-logwage~sm(age,nknots=30,bs="rd")
-varianceModel<-~sm(age,nknots=30,bs="rd")
+model <- logwage ~ sm(age,nknots=30,bs="rd") | sm(age,nknots=30,bs="rd")
 DIR<-getwd()
-m1<-mvrm(formula=meanModel,formula.v=varianceModel,data=cps71,sweeps=10,burn=5,thin=1,
-         seed=1,StorageDir=DIR)
-\donttest{m2 <- mvrm(formula=meanModel,formula.v=varianceModel,data=cps71,sweeps=10000,burn=5000,thin=2,
-          seed=1,StorageDir=DIR)}  
-alpha<-mvrm2mcmc(mvrmObj=m1,"alpha")
+m1<-mvrm(formula=model,data=cps71,sweeps=10,burn=5,thin=1,seed=1,StorageDir=DIR)
+\donttest{m2 <- mvrm(formula=model,data=cps71,sweeps=10000,burn=5000,thin=2, seed=1,StorageDir=DIR)  
+#Print information and summarize the model
+print(m2)
+summary(m2)
+#Summarize and plot one parameter of interest
+alpha<-mvrm2mcmc(m2,"alpha")
 summary(alpha)
 plot(alpha)
+#Obtain a plot of a term in the mean model
 wagePlotOptions<-list(geom_point(data=cps71,aes(x=age,y=logwage)))
-plot(x=m1,model="mean",term="sm(age)",plotOptions=wagePlotOptions)          
+plot(x=m2,model="mean",term="sm(age)",plotOptions=wagePlotOptions)
+#Obtain predictions for new values of the predictor "age"
+predict(m2,data.frame(age=c(21,65)),interval="credible")
+}
 }
 
 \keyword{nonparametric}

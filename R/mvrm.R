@@ -1,5 +1,5 @@
-sm<-function (...,nknots=10,knots=NULL,bs="rd"){
-    pf <- parent.frame()
+sm<-function (...,nknots=10,knots=NULL,bs="rd"){    
+    pf <- parent.frame()    
     vars<-as.list(substitute(list(...)))[-1] 
     d<-length(vars)
     if (d > 2) stop("Up to bivariate covariates supported")
@@ -68,7 +68,8 @@ sm<-function (...,nknots=10,knots=NULL,bs="rd"){
     return(XK)    
 }
 
-DM<-function(formula,data,mm,ns,knots=NULL){
+DM<-function(formula,data,mm,ns,knots=NULL,meanVector){
+    Rknots <- list()
     specials <- c('sm')    
     trms<-terms.formula(formula,specials=specials)
     attr(trms,"intercept")<-1
@@ -77,7 +78,7 @@ DM<-function(formula,data,mm,ns,knots=NULL){
         y<-with(data,eval(trms[[2]])) 
         n<-length(y)
 	} else n<-ns    
-    if (!is.null(nFactors)){ 
+    if (!is.null(nFactors)){
         whereSpecials <- unique(unlist(apply(attr(trms,"factors")[unlist(attr(trms,"specials")), ,drop = F] > 0,1,which)))
         if (length(whereSpecials) < nFactors){
             if (length(whereSpecials) > 0){ 
@@ -97,6 +98,7 @@ DM<-function(formula,data,mm,ns,knots=NULL){
             for (i in 1:dim(attr(trms3,"factors"))[2]){ 
                 XK<-with(data,eval(trms3[i][[2]]))
                 X<-cbind(X,XK$X)
+                Rknots[[i]] <- XK$knots
 			}
     }else if (attr(trms,"response") && mm){ 
         X<-model.matrix(trms,data=data)    
@@ -105,36 +107,62 @@ DM<-function(formula,data,mm,ns,knots=NULL){
         colnames(X)<-"(Intercept)"
 	}
 	unique.values<-unlist(lapply(apply(X,2,unique),length))
-	indicator<-which(unique.values<=2)
+	indicator<-which(unique.values<=2 && unique.values<=n)
 	main<-colnames(X)
 	main<-main[main %in% colnames(data)]
 	is.F<-vector()
 	if (length(main) > 0) for (i in 1:length(main)) is.F[i]<-is.factor(data[,main[i]])
-	#print(main);print(is.F)
 	fact<-main[is.F]
-	#print(fact)
-	indicator<-sort(c(indicator,which(colnames(X)==fact)))
-	#print(indicator)
-	X[,-indicator] <- X[,-indicator] - matrix(1,nrow=n)%*%apply(as.matrix(X[,-indicator]),2,mean)	
-    if (mm) return(as.matrix(cbind(y,X)))
-    else return(as.matrix(X))
+	indicator<-sort(c(indicator,which(colnames(X)==fact)))	
+	storeMeanVector<-apply(as.matrix(X),2,mean)	
+	if (missing(meanVector)) X[,-indicator] <- X[,-indicator] - matrix(1,nrow=n)%*%storeMeanVector[-indicator]
+	else X[,-indicator] <- X[,-indicator] - matrix(1,nrow=n)%*%matrix(meanVector[-indicator],nrow=1)     
+    if (mm) Ret<-as.matrix(cbind(y,X))
+    else Ret<-as.matrix(X)
+    return(list(yX=Ret,Rknots=Rknots,storeMeanVector=storeMeanVector))
 }
 
-mvrm <- function(formula,formula.v=~1,data,sweeps,burn,thin=1,seed,StorageDir,
+match.call.defaults <- function(...) {
+    call <- evalq(match.call(expand.dots = FALSE), parent.frame(1))
+    formals <- evalq(formals(), parent.frame(1))
+    for(k in setdiff(names(formals), names(call)))
+        call[k] <- list( formals[[k]] )
+    match.call(sys.function(sys.parent()), call)
+}
+
+mvrm <- function(formula,data,sweeps,burn=0,thin=1,seed,StorageDir,
                  c.betaPrior="IG(0.5,0.5*n)",c.alphaPrior="IG(1.1,1.1)",
-                 pi.muPrior="Beta(1,1)",pi.sigmaPrior="Beta(1,1)",
-                 sigmaPrior="HN(2)",...){
+                 pi.muPrior="Beta(1,1)",pi.sigmaPrior="Beta(1,1)",sigmaPrior="HN(2)",...){
+    #Fix thin etc
+    if (thin <= 0) thin=1
+    thin <- as.integer(thin)
+    sweeps <- as.integer(sweeps)
+    burn <- as.integer(burn)
+    if (missing(sweeps)) stop("provide sweeps argument")
+    nSamples <- length(seq(1,(sweeps-burn),by=thin))
+    #Specials
     specials <- c('sm')
     # Match call
     call <- match.call(expand.dots = FALSE)
+    call2 <- match.call.defaults()
     #Data
     if (missing(data)) stop("provide data argument") 
     data <- as.data.frame(data)        
+    #Formula
+    if (length(as.Formula(formula))[1] > 1) stop("more than one response provided") 
+    if (length(as.Formula(formula))[2] > 2) stop("more than two regression models provided")
+    if (length(as.Formula(formula))[2] == 1) formula <- as.Formula(formula, ~1)
+    formula.save <- formula
+    formula.v<-formula(as.Formula(formula),lhs=0,rhs=2)
+    formula<-formula(as.Formula(formula),lhs=1,rhs=1)
     # Design matrices, response, indicators
-    XY<-DM(formula,data,1,5,NULL)
+    XYK<-DM(formula,data,1,5,NULL)
+    XY<-XYK$yX
     Y<-XY[,1]    
     n<-length(Y)
     X<-XY[,-1]
+    Xknots<-XYK$Rknots
+    storeMeanVectorX<-XYK$storeMeanVector
     main<-colnames(X)[-c(1,grep(specials,colnames(X)))]
     mainApp<-sapply(main,grep,colnames(X)[-1],simplify=FALSE)
     gX<-vector()
@@ -155,8 +183,12 @@ mvrm <- function(formula,formula.v=~1,data,sweeps,burn,thin=1,seed,StorageDir,
     vecLG<-table(gX)
     cusumVecLG<-c(0,cumsum(vecLG))
     #    
-    Z<-DM(formula.v,data,0,n,NULL) 
-    attr(Z,"assign")<-NULL       
+    ZK<-DM(formula.v,data,0,n,NULL)
+    Z<-ZK$yX  
+    attr(Z,"assign")<-NULL
+    Zknots<-ZK$Rknots
+    storeMeanVectorZ<-ZK$storeMeanVector
+    #       
     main<-colnames(Z)[-c(1,grep(specials,colnames(Z)))]
     mainApp<-sapply(main,grep,colnames(Z)[-1],simplify=FALSE)
     gZ<-vector()
@@ -267,14 +299,14 @@ mvrm <- function(formula,formula.v=~1,data,sweeps,burn,thin=1,seed,StorageDir,
             as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
             as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
             as.double(cetaParams),as.double(calphaParams),as.double(pimu),as.double(pisigma),
-            as.integer(HN),as.double(sigmaParams))
+            as.integer(HN),as.double(sigmaParams),as.double(0))
     #Output
-    fit <- list(call=call,formula=formula,formula.v=formula.v,seed=seed,
-                data=data,X=X,Z=Z,LG=LG,LD=LD,
-                mcpar=c(as.integer(burn+1),as.integer(sweeps),as.integer(thin)),
-                nSamples=round((sweeps-burn)/thin),
+    fit <- list(call=call,call2=call2,formula=formula.save,seed=seed,
+                data=data,X=X,Xknots=Xknots,Z=Z,Zknots=Zknots,LG=LG,LD=LD,
+                mcpar=c(as.integer(burn+1),as.integer(seq(from=burn+1,by=thin,length.out=nSamples)[nSamples]),as.integer(thin)),
+                nSamples=nSamples,storeMeanVectorX=storeMeanVectorX,storeMeanVectorZ=storeMeanVectorZ,
                 #f=out[[17]][1],g=out[[18]][1],h=out[[19]],
-                DIR=StorageDir)
+                DIR=StorageDir,deviance=out[[33]][1]/nSamples,nullDeviance=-2*logLik(lm(Y ~ 1)))
     class(fit) <- 'mvrm'
     return(fit)
 }
@@ -318,12 +350,14 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 	label<-colnames(mvrmObj$data)[match1]
 	count<-length(label)
 	label2<-main[unlist(lapply(sl,grep,main))]
+	new.formula1<-formula(as.Formula(mvrmObj$formula),lhs=1,rhs=1)#mean formula for later use
+	new.formula2<-formula(as.Formula(mvrmObj$formula),lhs=0,rhs=2)#variance formula for later use
 	MEAN<-0
     if (model=="mean" || model=="both"){ #check if chosen label is in the mean model
         if (!sum(label2 %in% mainM)==length(label2)) stop("chosen term doesn't appear in the mean model")
         if (length(label2)==0) stop("chosen term doesn't appear in the mean model")
         TEST<-1
-        trms<-terms.formula(mvrmObj$formula,specials=specials)
+        trms<-terms.formula(new.formula1,specials=specials)
         termLabels<-attr(trms,"term.labels")
         for (i in 1:length(termLabels)){
             test<-termLabels[i]
@@ -346,7 +380,7 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
         if (!sum(label2 %in% mainV)==length(label2)) stop("chosen term doesn't appear in the variance model")
         if (length(label2)==0) stop("chosen term doesn't appear in the variance model")
         TEST<-1
-        trms<-terms.formula(mvrmObj$formula.v,specials=specials)
+        trms<-terms.formula(new.formula2,specials=specials)
         termLabels<-attr(trms,"term.labels")
         idTermS<-(-99)
         for (i in 1:length(termLabels)){
@@ -426,17 +460,23 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
             if (sum(is.D)==0){
                 newR1<-seq(min(mvrmObj$data[,label2[1]]),max(mvrmObj$data[,label2[1]]),length.out=grid)
                 newR2<-seq(min(mvrmObj$data[,label2[2]]),max(mvrmObj$data[,label2[2]]),length.out=grid)
-                newData<-data.frame(expand.grid(newR1,newR2))
+                newData<-expand.grid(newR1,newR2)
                 colnames(newData)<-label2                        
-                trms<-terms.formula(mvrmObj$formula,specials=specials)
-                trms3<-drop.terms(trms, dropx = -idTermM)            
-                XK<-with(mvrmObj$data,eval(trms3[1][[2]]))
+                
+                trms<-terms.formula(new.formula1,specials=specials)
+                whereSpecials <- unique(unlist(apply(attr(trms,"factors")[unlist(attr(trms,"specials")), ,drop = F] > 0,1,which)))
+                whichKnots <- which(idTermM == whereSpecials)
+                #trms3<-drop.terms(trms, dropx = -idTermM)            
+                #XK<-with(mvrmObj$data,eval(trms3[1][[2]]))
                 #D<-matrix(XK$knots,ncol=2)
-                Dstar<-XK$knots
+                #Dstar<-XK$knots
+                #print(Dstar)
+                Dstar<-mvrmObj$Xknots[[whichKnots]]
+                
                 #DsM<-DM(trms3,newData,0,NROW(newData)) 
                 #print(formula(paste("~",sub(")",",knots=D)",plotLabel))))
                 #print(formula(parse(paste("~",sub(")",",knots=D)",plotLabel)))))
-                DsM<-DM(formula(paste("~",sub(")",",knots=knots)",plotLabel))),data=newData,0,NROW(newData),knots=Dstar)                   
+                DsM<-DM(formula(paste("~",sub(")",",knots=knots)",plotLabel))),data=newData,0,NROW(newData),knots=Dstar)$yX                   
                 #DsM<-DM(mvrmObj$formula,newData,0,NROW(newData))             
                 #DsM<-DsM[,ML]    
 		    }                    
@@ -517,7 +557,7 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 				}
 		    }
             if (!static){             
-                newData<-data.frame(expand.grid(as.numeric(newR1),as.numeric(newR2)))
+                newData<-as.matrix(expand.grid(newR1,newR2))
                 a<-cbind(newData,centreM)
                 if (is.null(plotOptions$col)) col=rainbow(16,2/3)
                 else col<-plotOptions$col
@@ -563,13 +603,17 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
             if (sum(is.D)==0){
                 newR1<-seq(min(mvrmObj$data[,label2[1]]),max(mvrmObj$data[,label2[1]]),length.out=grid)
                 newR2<-seq(min(mvrmObj$data[,label2[2]]),max(mvrmObj$data[,label2[2]]),length.out=grid)
-                newData<-data.frame(expand.grid(newR1,newR2))
+                newData<-expand.grid(newR1,newR2)
                 colnames(newData)<-label2                        
-                trms<-terms.formula(mvrmObj$formula.v,specials=specials)
-                trms3<-drop.terms(trms, dropx = -idTermS)          
-                XK<-with(mvrmObj$data,eval(trms3[1][[2]]))                
-                Dstar<-XK$knots
-                DsV<-DM(formula(paste("~",sub(")",",knots=knots)",plotLabel))),data=newData,0,NROW(newData),knots=Dstar)    
+                #trms<-terms.formula(new.formula2,specials=specials)
+                #trms3<-drop.terms(trms, dropx = -idTermS)          
+                #XK<-with(mvrmObj$data,eval(trms3[1][[2]]))                
+                #Dstar<-XK$knots
+                trms<-terms.formula(new.formula2,specials=specials)
+                whereSpecials <- unique(unlist(apply(attr(trms,"factors")[unlist(attr(trms,"specials")), ,drop = F] > 0,1,which)))
+                whichKnots <- which(idTermS == whereSpecials)
+                Dstar<-mvrmObj$Zknots[[whichKnots]]
+                DsV<-DM(formula(paste("~",sub(")",",knots=knots)",plotLabel))),data=newData,0,NROW(newData),knots=Dstar)$yX    
                 DsV<-DsV[,-1]
 		    }                                
         }
@@ -654,7 +698,7 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 				}
 		    }
             if (!static){                
-                newData<-data.frame(expand.grid(as.numeric(newR1),as.numeric(newR2)))
+                newData<-as.matrix(expand.grid(newR1,newR2)) 
                 a<-cbind(newData,centreV)
                 if (is.null(plotOptions$col)) col=rainbow(16,2/3)
                 else col<-plotOptions$col
@@ -676,3 +720,145 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 	    if (STDEV) print(plotV)
 	}	
 }
+
+predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction"),level=0.95,nSamples=100, ...){
+    #newdata
+    if (missing(newdata) || is.null(newdata)) newdata<-object$data
+    newdata <- as.data.frame(newdata)
+    specials <- c('sm') 
+    if (colnames(newdata)[1]=="newdata") colnames(newdata)<-colnames(object$X)[-c(1,grep(specials,colnames(object$X)))]
+    #Formula
+    formula <- object$formula
+    formula.v<-formula(as.Formula(formula),lhs=0,rhs=2)
+    formula<-formula(as.Formula(formula),lhs=1,rhs=1)
+    #Reformulate and get X design matrix
+    trms<-terms.formula(formula,specials=specials)
+    whereSpecials <- unique(unlist(apply(attr(trms,"factors")[unlist(attr(trms,"specials")), ,drop = F] > 0,1,which)))
+    nFactors<-dim(attr(trms,"factors"))[2]
+    if (length(whereSpecials) == nFactors) {formula2<-~1}else 
+        {trms2<-drop.terms(trms, dropx = whereSpecials)
+        formula2<-reformulate(attr(trms2, "term.labels"))}    
+    for (k in 1:length(whereSpecials)){
+        term<-attr(trms,"term.labels")[whereSpecials][k]
+        A<-sub(specials,"",term)
+        B<-sub("\\(","",A)
+        C<-sub("\\)","",B)
+        sl<-strsplit(C,",")
+        sl<-sub(" ","",sl[[1]])
+        match1<-unlist(lapply(sl,match,colnames(object$data)))
+        match1<-match1[!is.na(match1)]
+        label<-colnames(object$data)[match1]
+        K<-paste("sm(",paste(label,collapse=","),",knots= knots[[",k,"]])") 
+        terms.f2<-terms(formula2)
+        term.labels.f2<-attr(terms.f2,"term.labels")
+        terms.f2<-paste(term.labels.f2,collapse=" + ")
+        formula2<-reformulate(paste(terms.f2,"+", K,collapse=" + "))
+    }
+    X<-DM(formula2,newdata,0,NROW(newdata),object$Xknots,object$storeMeanVectorX)$yX
+	fitM<-matrix(0,nrow=object$nSamples,ncol=NROW(newdata))
+    etaFN <- file.path(paste(object$DIR,"BNSP.beta.txt",sep="")) 
+    eFile<-file(etaFN,open="r")
+	for (i in 1:object$nSamples){
+        eta<-scan(eFile,what=numeric(),n=object$LG+1,quiet=T)
+        fitM[i,]<-c(X%*%matrix(c(eta)))
+	}
+	close(eFile)
+	predictions<-fit<-apply(fitM,2,mean)
+	interval <- match.arg(interval)
+	if (interval=="credible"){
+		QMb<-apply(fitM,2,quantile,probs=c((1-level)/2,1-(1-level)/2),na.rm=TRUE)
+		QM<-matrix(QMb,nrow=NROW(newdata))
+		colnames(QM) <- rownames(QMb)
+		predictions<-cbind(fit,QM)
+		#colnames(predictions) <- c("fit", "lwr", "upr")
+	}
+	if (interval=="prediction"){
+	    trms<-terms.formula(formula.v,specials=specials)
+        whereSpecials <- unique(unlist(apply(attr(trms,"factors")[unlist(attr(trms,"specials")), ,drop = F] > 0,1,which)))
+        nFactors<-dim(attr(trms,"factors"))[2]
+        if (length(whereSpecials) == nFactors) {formula2<-~1}else 
+            {trms2<-drop.terms(trms, dropx = whereSpecials)
+            formula2<-reformulate(attr(trms2, "term.labels"))}        
+        for (k in 1:length(whereSpecials)){
+            term<-attr(trms,"term.labels")[whereSpecials][k]
+            A<-sub(specials,"",term)
+            B<-sub("\\(","",A)
+            C<-sub("\\)","",B)
+            sl<-strsplit(C,",")
+            sl<-sub(" ","",sl[[1]])
+            match1<-unlist(lapply(sl,match,colnames(object$data)))
+            match1<-match1[!is.na(match1)]
+            label<-colnames(object$data)[match1]
+            K<-paste("sm(",paste(label,collapse=","),",knots= knots[[",k,"]])") 
+            terms.f2<-terms(formula2)
+            term.labels.f2<-attr(terms.f2,"term.labels")
+            terms.f2<-paste(term.labels.f2,collapse=" + ")
+            formula2<-reformulate(paste(terms.f2,"+", K,collapse=" + "))
+        }
+        Z<-DM(formula2,newdata,0,NROW(newdata),object$Zknots,object$storeMeanVectorZ)$yX
+        Z<-Z[,-1]
+        fitV<-matrix(0,nrow=object$nSamples,ncol=NROW(newdata))
+		alphaFN <- file.path(paste(object$DIR,"BNSP.alpha.txt",sep="")) 
+        aFile<-file(alphaFN,open="r")
+		sigma2FN <- file.path(paste(object$DIR,"BNSP.sigma2.txt",sep="")) 
+        s2File<-file(sigma2FN,open="r")
+        for (i in 1:object$nSamples){
+        	alpha<-scan(aFile,what=numeric(),n=object$LD,quiet=T)
+		    s2<-scan(s2File,what=numeric(),n=1,quiet=T)
+            fitV[i,]<-sqrt(s2*exp(Z%*%matrix(c(alpha))))            
+		}
+		close(aFile)
+		close(s2File)	
+		sample.Pred <- rnorm(nSamples*object$nSamples*NROW(newdata),c(fitM),c(fitV))	
+		sample.Pred <- matrix(sample.Pred,ncol=NROW(newdata)*object$nSamples,byrow=T)
+		QM<-NULL
+		for (k in 1:NROW(newdata))
+		    QM<-rbind(QM,quantile(sample.Pred[,(1+object$nSamples*(k-1)):(object$nSamples*k)],probs=c((1-level)/2,1-(1-level)/2),na.rm=TRUE))
+		predictions<-cbind(fit,QM)
+	}
+	return(predictions)
+}
+
+print.mvrm <- function(x,  digits = 5, ...) {
+  cat("\nCall:\n")
+  print(x$call)
+  cat("\n")
+  cat(x$nSamples,"posterior samples\n")
+  G<-as.data.frame(mvrm2mcmc(x,"gamma"))
+  D<-as.data.frame(mvrm2mcmc(x,"delta"))
+  colnames(G)<- colnames(x$X)[-1] 
+  colnames(D)<- colnames(x$Z)[-1] 
+  cat("\nMean model: marginal probabilities of term inclusion:\n")
+  print(apply(G,2,mean), digits=5)
+  cat("\nVariance model: marginal probabilities of term inclusion:\n")
+  print(apply(D,2,mean), digits=5)
+}	
+
+summary.mvrm <- function(object, nModels = 5, digits = 5, ...) {
+  cat("\nSpecified model for the mean and variance:\n")
+  print(object$formula, showEnv = FALSE)
+  Prior<-NULL
+  for (k in 9:13) Prior<-c(Prior,paste(names(as.list(object$call2))[k],"=",object$call2[[k]]))
+  cat("\nSpecified priors:\n")
+  print(noquote(sub("Prior","",Prior)))
+  cat("\nTotal posterior samples:",object$nSamples,"; burn-in:",object$mcpar[1]-1,"; thinning:",object$mcpar[3],"\n")
+  cat("\nFiles stored in",object$DIR,"\n")
+  deviance <- matrix(c(object$nullDeviance,object$deviance),ncol=1)
+  rownames(deviance) <- c("Null deviance:", "Mean posterior deviance:")
+  colnames(deviance) <- c("")
+  print(deviance, digits = digits)
+  cat("\nJoint mean/variance model posterior probabilities:\n")
+  G<-as.data.frame(mvrm2mcmc(object,"gamma"))
+  D<-as.data.frame(mvrm2mcmc(object,"delta"))
+  colnames(G)<- sub(" ",".",paste("mean",colnames(object$X)[-1])) 
+  colnames(D)<- sub(" ",".",paste("var",colnames(object$Z)[-1])) 
+  g<-count(cbind(G,D))
+  g<-g[order(g$freq,decreasing=TRUE),]
+  rownames(g)<-seq(1,NROW(g))
+  g$prob<-100*g$freq/sum(g$freq)
+  g$cumulative<-cumsum(g$prob)
+  print(g[1:nModels,])
+  cat("Displaying", nModels, "models of the",NROW(g),"visited\n")
+  cat(nModels,"models account for",sub(" ","",paste(g$cumulative[nModels],"%")),"of the posterior mass\n")
+}
+

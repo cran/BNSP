@@ -7,15 +7,14 @@
 
 \title{Bayesian non- and semi-parametric model fitting}
 
-\description{Markov chain Monte Carlo algorithms for non- and semi-parametric models. Dirichlet process mixture models and spike-slab 
-variable selection in mean/variance regression models.}
+\description{Markov chain Monte Carlo algorithms for non- and semi-parametric models: 1. Dirichlet process mixture models with function \code{dpmj} and 2. spike-slab variable selection in mean/variance regression models with function \code{mvrm}.}
 
 \details{
 \tabular{ll}{
 Package: \tab BNSP\cr
 Type: \tab Package\cr
-Version: \tab 2.0.2\cr
-Date: \tab 2017-08-28\cr
+Version: \tab 2.0.3\cr
+Date: \tab 2018-05-23\cr
 License: \tab GPL (>=2)\cr}
 
 This program is free software; you can redistribute it and/or

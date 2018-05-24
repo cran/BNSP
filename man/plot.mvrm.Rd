@@ -25,19 +25,18 @@ Plots without credible intervals may be obtained by setting this argument to NUL
 function \code{ribbon3D} from package \code{plot3D} to create the plot. 
 If \code{static=FALSE} then \code{plot.mvrm} calls 
 function \code{scatterplot3js} from package \code{threejs} to create the plot.}
-\item{centreEffects}{If TRUE then the effects in the mean functions are centred around zero over the range of the 
+\item{centreEffects}{if TRUE then the effects in the mean functions are centred around zero over the range of the 
 predictor while the effects in the variance function are scaled around one.}
 \item{plotOptions}{for plots of univariate smooth terms or for plots of bivariate smooth terms where one of the 
 two covariates is discrete, this is a list of plot elements to give to \code{ggplot}.
 For smooths of bivariate continuous covariates, this is a list of plot elements to give to 
 \code{ribbon3D} (if \code{static=FALSE}) or to \code{scatterplot3js} (if \code{static=TRUE}).}
-\item{...}{Other arguments.}
+\item{...}{other arguments.}
 }
 
-\details{Use this function to plot terms that appear in the right-hand side of 
-\code{formula} or \code{formula.v}, the arguments of function \code{mvrm}.}
+\details{Use this function to obtain predictions.}
 
-\value{Plots of covariate effects}
+\value{Predictions along with credible/pediction intervals}
 
 \author{Georgios Papageorgiou \email{gpapageo@gmail.com}}
 

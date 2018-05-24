@@ -38,11 +38,13 @@
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_roots.h>
 #include <gsl/gsl_multiset.h>
+
 //#include "matalg.h"
 //#include "pdfs.h"
 //#include "sampling.h"
 //#include "other.functions.h"
 //#include "mathm.h"
+
 #include "spec.BCM.h" 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
@@ -54,7 +56,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
          double *f1, double *g1, double *h,
          int *NG1, int *ND1, int *vecLG, int *vecLD, int *cusumVecLG, int *cusumVecLD, int *MVLD,
          double *cetaParams, double *calphaParams, double *pimu, double *pisigma,
-         int *HN1, double *sigmaParams)
+         int *HN1, double *sigmaParams, double *dev)
 {
     gsl_set_error_handler_off();
 
@@ -156,6 +158,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     double sigma2;
     double calpha;
     double ceta;
+    double deviance = 0;
 
     // Declare other quantities
     int move;
@@ -338,7 +341,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
 	                gammaP[cusumVecLG[j]+k] = vecGammaP[j][k];	            	            
 	            NPJ = 0;
                 for (k = 0; k < vecLG[j]; k++)
-                    NPJ += vecGammaP[j][k];
+                    {NPJ += vecGammaP[j][k];}
 	            NgammaP = Ngamma - vecNgamma[j] + NPJ; 
 	            SPP = SPcalc(n,1,tol,yTilde,gammaP,NgammaP,LG,ceta,X,LPV,&Q2);
                 Acp = exp((-SPP+SPC)/(2*sigma2))*pow(ceta+1,0.5*(vecNgamma[j]-NPJ));
@@ -533,6 +536,13 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
             vecEta = gsl_vector_view_array(eta,Ngamma+1); 
             s = gsl_ran_flat(r,1.0,100000);
             sampleMN(s,Ngamma+1,&vecEta.vector,&subMeanEta.vector,&subVarEta.matrix,tol);
+            // - 7 - -2*LogLikelihood
+            SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);            
+            detR = 0.0;
+            for (i = 0; i < n; i++)
+                detR += LPV[i];
+            deviance += SPC/sigma2 + (Ngamma+1)*log(ceta+1) + n*log(sigma2) + detR; 
+            //Rprintf("%i %f %f %f %f %f \n",sw,deviance,SPC/sigma2,(Ngamma+1)*log(ceta+1),n*log(sigma2),detR);
             // write to files
             for (k = 0; k < LG; k++)
                 fprintf(out_file1, "%i ", gamma[k]);
@@ -555,9 +565,10 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
         // If sw needs to be printed
         if (sw==(sweeps-1) && (!(sweeps % 1000)==0)) Rprintf("%i %s \n",sweeps, "posterior samples...");
     }//end of sw
-    //Update adaptive parameters
+    //Update adaptive parameters & deviance
     f1[0] = f;
     g1[0] = g;
+    dev[0] = deviance;
 
     //Free up random number generator
     gsl_rng_free (r);

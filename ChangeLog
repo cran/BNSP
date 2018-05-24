@@ -1,3 +1,11 @@
+2018-05-15 (Version 2.0.4) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
+
+  * Predict, print and summary methods for mvrm objects
+
+2018-04-20 (Version 2.0.3) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
+
+  * DP mixtures with mixed type variables and continuous latent variable representation 
+
 2017-08-16 (Version 2.0.0) Georgios Papageorgiou <g.papageorgiou@bbk.ac.uk>
 
   * Added functions for spike-slab variable selection in the mean and variance functions of normally distributed responses 

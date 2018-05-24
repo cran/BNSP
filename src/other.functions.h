@@ -341,36 +341,94 @@ void calcLimits(double *X, int *Y, double *E, int n, int nreg, int nres, int i, 
 
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith sampling unit,
 //given responses Y, offsets H, sampling unit, rates, and two doubles where lower and upper limits are stored.
-void calcGLMLimits(int *Y, double *H, int i, double *Xi, double *lower, double *upper, int family){
+void calcGLMLimits(int Y, double H, double *Xi, double *lower, double *upper, int family){
     double lmt = 9999.99;
-    if (Y[i]==0)
+    double normConst, saveCdf, mu, f, B; 
+    saveCdf = 0;
+    if (Y==0)
         *lower = -lmt;
     else{
-        if (family == 1) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i]-1,H[i]*Xi[0]));
-        else if (family == 2) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i]-1,Xi[0],(int) H[i]));
-        else if (family == 3) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i]-1,Xi[1]/(H[i]+Xi[1]),Xi[0]));
-        else if (family == 4) *lower = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i]-1,Xi[0],Xi[1]));
-        else if (family == 5) *lower = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(Y[i]-1,H[i]*Xi[0],Xi[1]));
-        else if (family == 6) *lower = gsl_cdf_ugaussian_Pinv(cdf_com_poisson_P2(Y[i]-1,H[i]*Xi[0],Xi[1]));
-        else if (family == 7) *lower = gsl_cdf_ugaussian_Pinv(cdf_hyper_poisson_P2(Y[i]-1,H[i]*Xi[0],Xi[1]));
-        else if (family == 8) *lower = gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P2(Y[i]-1,H[i]*Xi[0],Xi[1],Xi[2]));
+        if (family == 1) saveCdf = gsl_cdf_poisson_P(Y-1,H*Xi[0]);            
+        else if (family == 2) saveCdf = gsl_cdf_binomial_P(Y-1,Xi[0],(int) H);
+        else if (family == 3) saveCdf = gsl_cdf_negative_binomial_P(Y-1,Xi[1]/(H+Xi[1]),Xi[0]);
+        else if (family == 4) saveCdf = cdf_beta_binomial_P2(H,Y-1,Xi[0],Xi[1]);
+        else if (family == 5) saveCdf = cdf_generalized_poisson_P3(Y-1,H*Xi[0],Xi[1],&normConst);//cdf_generalized_poisson_P3(Y-1,H*Xi[0],Xi[1]/sqrt(H),&normConst);
+        else if (family == 6) saveCdf = cdf_com_poisson_P2(Y-1,H*Xi[0],Xi[1]);
+        else if (family == 7) saveCdf = cdf_hyper_poisson_P2(Y-1,H*Xi[0],Xi[1]);
+        else if (family == 8) saveCdf = cdf_tri_parametric_P2(Y-1,H*Xi[0],Xi[1],Xi[2]);
+        *lower = gsl_cdf_ugaussian_Pinv(saveCdf);
     }
-    if (*lower < -lmt) *lower = -lmt;
+    if (*lower < -lmt) *lower = -lmt; 
     if (*lower > lmt) *lower = lmt;
-    if (family == 1) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i],H[i]*Xi[0]));
-    else if (family == 2) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i],Xi[0],(int) H[i]));
-    else if (family == 3) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i],Xi[1]/(H[i]+Xi[1]),Xi[0]));
-    else if (family == 4) *upper = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i],Xi[0],Xi[1]));
-    else if (family == 5) *upper = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(Y[i],H[i]*Xi[0],Xi[1]));
-    else if (family == 6) *upper = gsl_cdf_ugaussian_Pinv(cdf_com_poisson_P2(Y[i],H[i]*Xi[0],Xi[1]));
-    else if (family == 7) *upper = gsl_cdf_ugaussian_Pinv(cdf_hyper_poisson_P2(Y[i],H[i]*Xi[0],Xi[1]));
-    else if (family == 8) *upper = gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P2(Y[i],H[i]*Xi[0],Xi[1],Xi[2]));
+    if (family == 1) saveCdf += gsl_ran_poisson_pdf(Y,H*Xi[0]);
+    else if (family == 2) saveCdf += gsl_ran_binomial_pdf(Y,Xi[0],(int) H);
+    else if (family == 3) saveCdf += gsl_ran_negative_binomial_pdf(Y,Xi[1]/(H+Xi[1]),Xi[0]);
+    else if (family == 4) saveCdf += exp(gsl_sf_lnchoose(H,Y) + gsl_sf_lnbeta(Y+Xi[0],H-Y+Xi[1]) - gsl_sf_lnbeta(Xi[0],Xi[1]));
+    else if (family == 5){		
+		mu = H*Xi[0]; f = Xi[1]; B = -mu/(f-1);
+		if ((f>=1)||(f < 1 && Y < B))
+		    saveCdf += exp(log(mu)+(Y-1)*log(mu+(f-1)*Y)-Y*log(f)-(mu+(f-1)*Y)/f-gsl_sf_lnfact(Y))/normConst;		
+	}
+    else if (family == 6) *upper = gsl_cdf_ugaussian_Pinv(cdf_com_poisson_P2(Y,H*Xi[0],Xi[1]));
+    else if (family == 7) *upper = gsl_cdf_ugaussian_Pinv(cdf_hyper_poisson_P2(Y,H*Xi[0],Xi[1]));
+    else if (family == 8) *upper = gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P2(Y,H*Xi[0],Xi[1],Xi[2]));
+    if (saveCdf > 1.0) saveCdf = 1.0;
+    *upper = gsl_cdf_ugaussian_Pinv(saveCdf);
     if (*upper < -lmt) *upper = -lmt;
     if (*upper > lmt) *upper = lmt;
 }
 
+//Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith sampling unit for both Y* and X*,
+//given responses Y, offsets H, covariates X, sampling unit, rates, and two doubles where lower and upper limits are stored.
+void calcGLMLimitsYX(int *Y, double *H, double *X, int i, int NDC, int n, double *Xi, double *lower, double *upper, int family){
+    int j;
+    double lmt = 9999.99;
+    calcGLMLimits(Y[i],H[i],Xi,&lower[0],&upper[0],family);
+/*    
+    double saveCdf, mu, f, B, normConst;
+    if (Y[i]==0)
+        lower[0] = -lmt;
+    else{
+        if (family == 1) lower[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i]-1,H[i]*Xi[0]));
+        else if (family == 2) lower[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i]-1,Xi[0],(int) H[i]));
+        else if (family == 3) lower[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i]-1,Xi[1]/(H[i]+Xi[1]),Xi[0]));
+        else if (family == 4) lower[0] = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i]-1,Xi[0],Xi[1]));
+        else if (family == 5){
+			 saveCdf = cdf_generalized_poisson_P3(Y[i]-1,H[i]*Xi[0],Xi[1],&normConst);
+			 lower[0] = gsl_cdf_ugaussian_Pinv(saveCdf);
+		 }
+        else if (family == 6) lower[0] = gsl_cdf_ugaussian_Pinv(cdf_com_poisson_P2(Y[i]-1,H[i]*Xi[0],Xi[1]));
+        else if (family == 7) lower[0] = gsl_cdf_ugaussian_Pinv(cdf_hyper_poisson_P2(Y[i]-1,H[i]*Xi[0],Xi[1]));
+        else if (family == 8) lower[0] = gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P2(Y[i]-1,H[i]*Xi[0],Xi[1],Xi[2]));
+    }
+    if (lower[0] < -lmt) lower[0] = -lmt;
+    if (lower[0] > lmt) lower[0] = lmt;
+    if (family == 1) upper[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i],H[i]*Xi[0]));
+    else if (family == 2) upper[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i],Xi[0],(int) H[i]));
+    else if (family == 3) upper[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i],Xi[1]/(H[i]+Xi[1]),Xi[0]));
+    else if (family == 4) upper[0] = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i],Xi[0],Xi[1]));
+    else if (family == 5){ 
+        mu = H[i]*Xi[0]; f = Xi[1]; B = -mu/(f-1);
+        if ((f>=1)||(f < 1 && Y[i] < B))
+		    saveCdf += exp(log(mu)+(Y[i]-1)*log(mu+(f-1)*Y[i])-Y[i]*log(f)-(mu+(f-1)*Y[i])/f-gsl_sf_lnfact(Y[i]))/normConst;
+		if (saveCdf > 1.0) saveCdf = 1.0;
+        upper[0] = gsl_cdf_ugaussian_Pinv(saveCdf);
+	}
+    else if (family == 6) upper[0] = gsl_cdf_ugaussian_Pinv(cdf_com_poisson_P2(Y[i],H[i]*Xi[0],Xi[1]));
+    else if (family == 7) upper[0] = gsl_cdf_ugaussian_Pinv(cdf_hyper_poisson_P2(Y[i],H[i]*Xi[0],Xi[1]));
+    else if (family == 8) upper[0] = gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P2(Y[i],H[i]*Xi[0],Xi[1],Xi[2]));
+    if (upper[0] < -lmt) upper[0] = -lmt;
+    if (upper[0] > lmt) upper[0] = lmt;
+*/
+    for (j = 0; j < NDC; j++){
+        if (X[j*n+i]==0) {lower[j+1] = -lmt; upper[j+1] = 0;}
+        else if (X[j*n+i]==1) {lower[j+1] = 0; upper[j+1] = lmt;}
+	}
+}
+
 void calcGLMLimits2(int *Y, double *H, int i, double *Xi, double *lower, double *upper, int family, int *BFE){
-    double lmt = 999.99;
+    double normConst;
+    double lmt = 9999.99;
     double lp = Xi[0] + Xi[1] * BFE[i];
     if (Y[i]==0)
         *lower = -lmt;
@@ -379,7 +437,7 @@ void calcGLMLimits2(int *Y, double *H, int i, double *Xi, double *lower, double 
         else if (family == 2) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i]-1,Xi[0],(int) H[i]));
         else if (family == 3) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i]-1,Xi[1]/(H[i]+Xi[1]),Xi[0]));
         else if (family == 4) *lower = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i]-1,Xi[0],Xi[1]));
-        else if (family == 5) *lower = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(Y[i]-1,H[i]*exp(lp),Xi[2]));
+        else if (family == 5) *lower = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(Y[i]-1,H[i]*exp(lp),Xi[2],&normConst));
         else if (family == 6) *lower = gsl_cdf_ugaussian_Pinv(cdf_com_poisson_P(Y[i]-1,H[i]*Xi[0],Xi[1]));
         else if (family == 7) *lower = gsl_cdf_ugaussian_Pinv(cdf_hyper_poisson_P2(Y[i]-1,H[i]*Xi[0],Xi[1]));
         else if (family == 8) *lower = gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P(Y[i]-1,Xi[0],Xi[1],Xi[2]));
@@ -390,7 +448,7 @@ void calcGLMLimits2(int *Y, double *H, int i, double *Xi, double *lower, double 
     else if (family == 2) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i],Xi[0],(int) H[i]));
     else if (family == 3) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i],Xi[1]/(H[i]+Xi[1]),Xi[0]));
     else if (family == 4) *upper = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i],Xi[0],Xi[1]));
-    else if (family == 5) *upper = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(Y[i],H[i]*exp(lp),Xi[2]));
+    else if (family == 5) *upper = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(Y[i],H[i]*exp(lp),Xi[2],&normConst));
     else if (family == 6) *upper = gsl_cdf_ugaussian_Pinv(cdf_com_poisson_P(Y[i],H[i]*Xi[0],Xi[1]));
     else if (family == 7) *upper = gsl_cdf_ugaussian_Pinv(cdf_hyper_poisson_P2(Y[i],H[i]*Xi[0],Xi[1]));
     else if (family == 8) *upper = gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P(Y[i],Xi[0],Xi[1],Xi[2]));
@@ -398,43 +456,10 @@ void calcGLMLimits2(int *Y, double *H, int i, double *Xi, double *lower, double 
     if (*upper > lmt) *upper = lmt;
 }
 
-//Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith sampling unit for both Y* and X*,
-//given responses Y, offsets H, covariates X, sampling unit, rates, and two doubles where lower and upper limits are stored.
-void calcGLMLimitsYX(int *Y, double *H, double *X, int i, double *Xi, double *lower, double *upper, int family){
-    double lmt = 9999.99;
-    if (Y[i]==0)
-        lower[0] = -lmt;
-    else{
-        if (family == 1) lower[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i]-1,H[i]*Xi[0]));
-        else if (family == 2) lower[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i]-1,Xi[0],(int) H[i]));
-        else if (family == 3) lower[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i]-1,Xi[1]/(H[i]+Xi[1]),Xi[0]));
-        else if (family == 4) lower[0] = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i]-1,Xi[0],Xi[1]));
-        else if (family == 5) lower[0] = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(Y[i]-1,H[i]*Xi[0],Xi[1]));
-        else if (family == 6) lower[0] = gsl_cdf_ugaussian_Pinv(cdf_com_poisson_P2(Y[i]-1,H[i]*Xi[0],Xi[1]));
-        else if (family == 7) lower[0] = gsl_cdf_ugaussian_Pinv(cdf_hyper_poisson_P2(Y[i]-1,H[i]*Xi[0],Xi[1]));
-        else if (family == 8) lower[0] = gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P2(Y[i]-1,H[i]*Xi[0],Xi[1],Xi[2]));
-    }
-    if (lower[0] < -lmt) lower[0] = -lmt;
-    if (lower[0] > lmt) lower[0] = lmt;
-
-    if (family == 1) upper[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(Y[i],H[i]*Xi[0]));
-    else if (family == 2) upper[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(Y[i],Xi[0],(int) H[i]));
-    else if (family == 3) upper[0] = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(Y[i],Xi[1]/(H[i]+Xi[1]),Xi[0]));
-    else if (family == 4) upper[0] = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],Y[i],Xi[0],Xi[1]));
-    else if (family == 5) upper[0] = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(Y[i],H[i]*Xi[0],Xi[1]));
-    else if (family == 6) upper[0] = gsl_cdf_ugaussian_Pinv(cdf_com_poisson_P2(Y[i],H[i]*Xi[0],Xi[1]));
-    else if (family == 7) upper[0] = gsl_cdf_ugaussian_Pinv(cdf_hyper_poisson_P2(Y[i],H[i]*Xi[0],Xi[1]));
-    else if (family == 8) upper[0] = gsl_cdf_ugaussian_Pinv(cdf_tri_parametric_P2(Y[i],H[i]*Xi[0],Xi[1],Xi[2]));
-    if (upper[0] < -lmt) upper[0] = -lmt;
-    if (upper[0] > lmt) upper[0] = lmt;
-    if (X[i]==0) {lower[1] = -lmt; upper[1] = 0;}
-    else if (X[i]==1) {lower[1] = 0; upper[1] = lmt;}
-}
-
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith predictive scenario,
 //given offsets H, value, scenario, rates, and two doubles where lower and upper limits are stored.
 void calcGLMLimitsPred(double *H, int k, int i, double *Xi, double *lower, double *upper, int family){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     if (k==0)
         *lower = -lmt;
     else{
@@ -442,7 +467,6 @@ void calcGLMLimitsPred(double *H, int k, int i, double *Xi, double *lower, doubl
         else if (family == 2) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(k-1,Xi[0],(int) H[i]));
         else if (family == 3) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(k-1,Xi[1]/(H[i]+Xi[1]),Xi[0]));
         else if (family == 4) *lower = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],k-1,Xi[0],Xi[1]));
-        else if (family == 5) *lower = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(k-1,H[i]*Xi[0],Xi[1]));
     }
     if (*lower < -lmt) *lower = -lmt;
     if (*lower > lmt) *lower = lmt;
@@ -450,75 +474,43 @@ void calcGLMLimitsPred(double *H, int k, int i, double *Xi, double *lower, doubl
     else if (family == 2) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(k,Xi[0],(int) H[i]));
     else if (family == 3) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(k,Xi[1]/(H[i]+Xi[1]),Xi[0]));
     else if (family == 4) *upper = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],k,Xi[0],Xi[1]));
-    else if (family == 5) *upper = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(k,H[i]*Xi[0],Xi[1]));
     if (*upper < -lmt) *upper = -lmt;
     if (*upper > lmt) *upper = lmt;
 }
 
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) for Generalized Poisson
-void calcGLMLimitsPredGP(double *H, int q, int i, double *Xi, double *lower, double *upper,
+void calcGLMLimitsPredGP(int k, double H, double *Xi, double *lower, double *upper,
                          double *CDFL, double *CDFU, double *normConst){
-    double lmt = 999.99;
+    double lmt = 9999.99;
+    double mu = H*Xi[0];
+    double f = Xi[1]; 
+    double B = -mu/(f-1);
     *normConst = 1.0;
     *CDFL = 0.0;
     *CDFU = 0.0;
-    int j = 0;
-    //double lp = Xi[0] + Xi[1] * BFE[i];
-    //double mu = H[i]*exp(Xi[0] + Xi[1] * BFE[i]);
-    double mu = H[i]*Xi[0];
-    double f = Xi[1];
-    double B = -mu/(f-1);
-
-    if (f == 1.0){
-        if (q > 0) *CDFL = gsl_cdf_poisson_P(q-1,mu);
-        *CDFU = gsl_cdf_poisson_P(q,mu);
-    }
-    else if (f > 1.0){
-        for (j = 0; j < q; j++)
-            *CDFL += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
-        *CDFU = *CDFL + exp(log(mu)+(q-1)*log(mu+(f-1)*q)-q*log(f)-(mu+(f-1)*q)/f-gsl_sf_lnfact(q));
-    }
-    else if ((mu < 1.0 && f < 0.97) || (mu < 2.0 && f < 0.80) || (mu < 3.0 && f < 0.65) || (mu < 4.0 && f < 0.60) ||
-            (mu < 5.0 && f < 0.55))
-    {
-        while (j < q && j < B){
-            if ((mu+(f-1)*j)>0) *CDFL += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
-            j++;
-        }
+    if (k > 0){
+        *CDFL = cdf_generalized_poisson_P3(k-1,mu,f,normConst);                
         *CDFU = *CDFL;
-        if (q < B) if ((mu+(f-1)*q)>0) *CDFU += exp(log(mu)+(q-1)*log(mu+(f-1)*q)-q*log(f)-(mu+(f-1)*q)/f-gsl_sf_lnfact(q));
-        *normConst = *CDFU;
-        while (j < B){
-            j++;
-            if ((mu+(f-1)*j)>0) *normConst += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
-        }
-        *CDFL = *CDFL/(*normConst);
-        *CDFU = *CDFU/(*normConst);
-    }
-    else
-    {
-        while (j < q && j < B){
-            if ((mu+(f-1)*j)>0) *CDFL += exp(log(mu)+(j-1)*log(mu+(f-1)*j)-j*log(f)-(mu+(f-1)*j)/f-gsl_sf_lnfact(j));
-            j++;
-        }
-        *CDFU = *CDFL;
-        if (q < B) if ((mu+(f-1)*q)>0) *CDFU += exp(log(mu)+(q-1)*log(mu+(f-1)*q)-q*log(f)-(mu+(f-1)*q)/f-gsl_sf_lnfact(q));
-    }
+        if ((f>=1)||(f < 1 && k < B))
+		    *CDFU += exp(log(mu)+(k-1)*log(mu+(f-1)*k)-k*log(f)-(mu+(f-1)*k)/f-gsl_sf_lnfact(k)) / *normConst;
+    }                   
+    else if (k==0)
+        *CDFU = cdf_generalized_poisson_P3(k,mu,f,normConst);    
     if (*CDFL > 1.0) *CDFL = 1.0;
     if (*CDFU > 1.0) *CDFU = 1.0;
     *lower = gsl_cdf_ugaussian_Pinv(*CDFL);
     *upper = gsl_cdf_ugaussian_Pinv(*CDFU);
-    if (q==0) *lower = -lmt;
+    if (k==0) *lower = -lmt;
     if (*lower < -lmt) *lower = -lmt;
     if (*lower > lmt) *lower = lmt;
     if (*upper < -lmt) *upper = -lmt;
     if (*upper > lmt) *upper = lmt;
 }
 
-//Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) for Generalized Poisson
+//Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) for Generalized Poisson with fixed effect
 void calcGLMLimitsPredGP2(double *H, int q, int i, double *Xi, double *lower, double *upper,
                           double *CDFL, double *CDFU, double *normConst,int *BFE){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     *normConst = 1.0;
     *CDFL = 0.0;
     *CDFU = 0.0;
@@ -576,7 +568,7 @@ void calcGLMLimitsPredGP2(double *H, int q, int i, double *Xi, double *lower, do
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) for C Poisson
 void calcGLMLimitsPredCP(double *H, int x, int i, double *Xi, double *lower, double *upper,
                          double *CDFL, double *CDFU, double *normConst){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     *CDFU = 0.0;
 
     double lambda = pow(H[i]*Xi[0] + (Xi[1]-1)/(2*Xi[1]),Xi[1]); //Xi[0];
@@ -622,7 +614,7 @@ void calcGLMLimitsPredCP(double *H, int x, int i, double *Xi, double *lower, dou
 
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) for hyper Poisson
 void calcGLMLimitsPredHP(double *H, int x, int i, double *Xi, double *lower, double *upper, double *CDFL, double *CDFU, double *normConst){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     *CDFL = 0.0;
     double lambda = solve_hyper_poisson(H[i]*Xi[0],Xi[1]); //H[i]*Xi[0];
     double gamma = Xi[1];
@@ -644,7 +636,7 @@ void calcGLMLimitsPredHP(double *H, int x, int i, double *Xi, double *lower, dou
 
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) for CTP
 void calcGLMLimitsPredCTP(double *H, int x, int i, double *Xi, double *lower, double *upper, double *CDFL, double *CDFU, double *normConst){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     *CDFL = 0.0;
     double beta = sqrt(H[i]*Xi[0]*(Xi[1]-2*Xi[2]-1) - Xi[2]*Xi[2]);
     double gamma = Xi[1];
@@ -680,25 +672,26 @@ void calcGLMLimitsPredCTP(double *H, int x, int i, double *Xi, double *lower, do
 
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith predictive scenario,
 //given offsets H, value, scenario, rates, and two doubles where lower and upper limits are stored.
-void calcGLMLimitsPredL(double *H, int k, int i, double *Xi, double *lower, int family){
-    double lmt = 999.99;
+void calcGLMLimitsPredL(int k, double H, double *Xi, double *lower, int family){
+    double normConst;
+    double lmt = 9999.99;
     if (k==0)
         *lower = -lmt;
     else{
-        if (family == 1) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(k-1,H[i]*Xi[0]));
-        else if (family == 2) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(k-1,Xi[0],(int) H[i]));
-        else if (family == 3) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(k-1,Xi[1]/(H[i]+Xi[1]),Xi[0]));
-        else if (family == 4) *lower = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],k-1,Xi[0],Xi[1]));
-        else if (family == 5) *lower = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(k-1,H[i]*Xi[0],Xi[1]));
+        if (family == 1) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(k-1,H*Xi[0]));
+        else if (family == 2) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(k-1,Xi[0],(int) H));
+        else if (family == 3) *lower = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(k-1,Xi[1]/(H+Xi[1]),Xi[0]));
+        else if (family == 4) *lower = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P2(H,k-1,Xi[0],Xi[1]));
+        else if (family == 5) *lower = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(k-1,H*Xi[0],Xi[1],&normConst));
     }
     if (*lower < -lmt) *lower = -lmt;
     if (*lower > lmt) *lower = lmt;
 }
 
 //For GP only
-void calcGLMLimitsPredLGP(double *H, int k, int i, double *Xi, double *lower, double *CDFL, double normConst){
-    double lmt = 999.99;
-    double mu = H[i]*Xi[0];
+void calcGLMLimitsPredLGP(int k, double H, double *Xi, double *lower, double *CDFL, double normConst){
+    double lmt = 9999.99;
+    double mu = H*Xi[0];
     double f = Xi[1];
     double B = -mu/(f-1);
     double prob = 0.0;
@@ -717,7 +710,7 @@ void calcGLMLimitsPredLGP(double *H, int k, int i, double *Xi, double *lower, do
 
 //For GP only
 void calcGLMLimitsPredLGP2(double *H, int k, int i, double *Xi, double *lower, double *CDFL, double normConst, int *BFE){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     double mu = H[i]*exp(Xi[0] + Xi[1] * BFE[i]);
     double f = Xi[2];
     double B = -mu/(f-1);
@@ -737,7 +730,7 @@ void calcGLMLimitsPredLGP2(double *H, int k, int i, double *Xi, double *lower, d
 
 //For CP only
 void calcGLMLimitsPredLCP(double *H, int k, int i, double *Xi, double *lower, double *CDFL, double normConst){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     double lambda = pow(H[i]*Xi[0] + (Xi[1]-1)/(2*Xi[1]),Xi[1]); //Xi[0];
     double nu = Xi[1];
     double prob = 0.0;
@@ -755,7 +748,7 @@ void calcGLMLimitsPredLCP(double *H, int k, int i, double *Xi, double *lower, do
 
 //For HP only
 void calcGLMLimitsPredLHP(double *H, int k, int i, double *Xi, double *lower, double *CDFL, double normConst){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     double lambda = solve_hyper_poisson(H[i]*Xi[0],Xi[1]); //H[i]*Xi[0];
     double gamma = Xi[1];
     //double lambda = H[i]*Xi[0];
@@ -775,7 +768,7 @@ void calcGLMLimitsPredLHP(double *H, int k, int i, double *Xi, double *lower, do
 
 //For CTP only
 void calcGLMLimitsPredLCTP(double *H, int k, int i, double *Xi, double *lower, double *CDFL, double normConst){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     //double beta = Xi[0];
     double beta = sqrt(H[i]*Xi[0]*(Xi[1]-2*Xi[2]-1) - Xi[2]*Xi[2]);
     double gamma = Xi[1];
@@ -805,21 +798,22 @@ void calcGLMLimitsPredLCTP(double *H, int k, int i, double *Xi, double *lower, d
 
 //Returns c_{y-1}(gamma,H) (lower) and c_{y}(gamma,H) (upper) limits for ith predictive scenario,
 //given offsets H, value, scenario, rates, and two doubles where lower and upper limits are stored.
-void calcGLMLimitsPredU(double *H, int k, int i, double *Xi, double *upper, int family){
-        double lmt = 999.99;
-        if (family == 1) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(k,H[i]*Xi[0]));
-        else if (family == 2) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(k,Xi[0],(int) H[i]));
-        else if (family == 3) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(k,Xi[1]/(H[i]+Xi[1]),Xi[0]));
-        else if (family == 4) *upper = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P(H[i],k,Xi[0],Xi[1]));
-        else if (family == 5) *upper = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(k,H[i]*Xi[0],Xi[1]));
+void calcGLMLimitsPredU(int k, double H, double *Xi, double *upper, int family){
+        double normConst;
+        double lmt = 9999.99;
+        if (family == 1) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_poisson_P(k,H*Xi[0]));
+        else if (family == 2) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_binomial_P(k,Xi[0],(int) H));
+        else if (family == 3) *upper = gsl_cdf_ugaussian_Pinv(gsl_cdf_negative_binomial_P(k,Xi[1]/(H+Xi[1]),Xi[0]));
+        else if (family == 4) *upper = gsl_cdf_ugaussian_Pinv(cdf_beta_binomial_P2(H,k,Xi[0],Xi[1]));
+        else if (family == 5) *upper = gsl_cdf_ugaussian_Pinv(cdf_generalized_poisson_P3(k,H*Xi[0],Xi[1],&normConst));
         if (*upper < -lmt) *upper = -lmt;
         if (*upper > lmt) *upper = lmt;
 }
 
 //For GP only
-void calcGLMLimitsPredUGP(double *H, int k, int i, double *Xi, double *upper, double *CDFU, double normConst){
-        double lmt = 999.99;
-        double mu = H[i]*Xi[0];
+void calcGLMLimitsPredUGP(int k, double H, double *Xi, double *upper, double *CDFU, double normConst){
+        double lmt = 9999.99;
+        double mu = H*Xi[0];
         double f = Xi[1];
         double B = -mu/(f-1);
         double prob = 0.0;
@@ -834,7 +828,7 @@ void calcGLMLimitsPredUGP(double *H, int k, int i, double *Xi, double *upper, do
 
 //For GP only
 void calcGLMLimitsPredUGP2(double *H, int k, int i, double *Xi, double *upper, double *CDFU, double normConst, int *BFE){
-        double lmt = 999.99;
+        double lmt = 9999.99;
         double mu = H[i]*exp(Xi[0] + Xi[1] * BFE[i]);
         double f = Xi[2];
         double B = -mu/(f-1);
@@ -850,7 +844,7 @@ void calcGLMLimitsPredUGP2(double *H, int k, int i, double *Xi, double *upper, d
 
 //For CP only
 void calcGLMLimitsPredUCP(double *H, int k, int i, double *Xi, double *upper, double *CDFU, double normConst){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     double lambda = pow(H[i]*Xi[0] + (Xi[1]-1)/(2*Xi[1]),Xi[1]); //Xi[0];
     double nu = Xi[1];
     double prob;
@@ -864,7 +858,7 @@ void calcGLMLimitsPredUCP(double *H, int k, int i, double *Xi, double *upper, do
 
 //For HP only
 void calcGLMLimitsPredUHP(double *H, int k, int i, double *Xi, double *upper, double *CDFU, double normConst){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     double lambda = solve_hyper_poisson(H[i]*Xi[0],Xi[1]); //H[i]*Xi[0];
     double gamma = Xi[1];
     //double lambda = H[i]*Xi[0];
@@ -880,7 +874,7 @@ void calcGLMLimitsPredUHP(double *H, int k, int i, double *Xi, double *upper, do
 
 //For CTP only
 void calcGLMLimitsPredUCTP(double *H, int k, int i, double *Xi, double *upper, double *CDFU, double normConst){
-    double lmt = 999.99;
+    double lmt = 9999.99;
     //double beta = Xi[0];
     double beta = sqrt(H[i]*Xi[0]*(Xi[1]-2*Xi[2]-1) - Xi[2]*Xi[2]);
     double gamma = Xi[1];
@@ -1044,7 +1038,6 @@ void initEDS(int ncomp, int totran, double SigmaSh[ncomp][totran*totran], double
             Dh[h][k] = 0.0;
         }
     }
-
     for (h = 0; h < ncomp; h++){
         for (k = 0; k < totran; k++){
             SigmaSh[h][(totran+1)*k] = 1.0;

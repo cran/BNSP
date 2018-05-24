@@ -38,6 +38,30 @@ void ginv(int p, double tol, gsl_matrix *A){
     gsl_vector_free(eval); gsl_matrix_free(evec); gsl_eigen_symmv_free(w);
 }
 
+//Matrix generalized inverse function with arguments (dimension, tolerance, Matrix). After this function has 
+//been called matrix A becomes its inverse and det it's determinant
+void ginv2(int p, double tol, gsl_matrix *A, double *det){
+    int i; double temp;
+    gsl_matrix *D = gsl_matrix_calloc(p,p);
+    gsl_matrix *M = gsl_matrix_alloc(p,p);
+    gsl_matrix *N = gsl_matrix_alloc(p,p);
+    gsl_vector *eval = gsl_vector_alloc(p);
+    gsl_matrix *evec = gsl_matrix_alloc(p,p);
+    gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc(p);
+    gsl_eigen_symmv(A,eval,evec,w);
+    *det = 1.0;
+    for (i=0; i < p; i++){ //D = diag{1/eigen for eigen > tol and 0 otherwise}
+        temp = gsl_vector_get(eval,i);
+        *det *= temp;
+	    if (temp > tol) gsl_matrix_set(D,i,i,1/temp);else{gsl_matrix_set(D,i,i,0.0);}
+    }
+    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,evec,D,0.0,M);  //D1 = V D
+    gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,M,evec,0.0,N); //D2 = D1 A = ginv(A)
+    gsl_matrix_memcpy(A,N);
+    gsl_matrix_free(D); gsl_matrix_free(M); gsl_matrix_free(N);
+    gsl_vector_free(eval); gsl_matrix_free(evec); gsl_eigen_symmv_free(w);
+}
+
 //Matrix inverse function with arguments (dimension, Matrix). After this function has been called
 //matrix A becomes its inverse
 void Inverse(int dim, gsl_matrix *A){

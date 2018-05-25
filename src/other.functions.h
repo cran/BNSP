@@ -1360,6 +1360,7 @@ void labelSwitchingB(unsigned long int s, int n, int nconf, int totNreg, int nre
                      double muh[ncomp][nconf], double SigmaSh[ncomp][totran*totran], double Dh[ncomp][totran*totran],
                      double Eh[ncomp][totran*totran], double beta[ncomp][totNreg], int *compAlloc, double *V){
     int j, h, komp, maxZ, labelC;
+    maxZ = 0;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
     gsl_rng_set(r,s);
 
@@ -1375,13 +1376,13 @@ void labelSwitchingB(unsigned long int s, int n, int nconf, int totNreg, int nre
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = 1.0/((double)maxZ);
+    equalProb = 1.0/((double) maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += 1.0/((double)maxZ);
+        equalProb += 1.0/((double) maxZ);
     }
     labelC = komp;
 
@@ -1437,6 +1438,7 @@ void SpatialLabelSwitchingB(unsigned long int s, int n, int nconf, int totNreg, 
                      double muh[ncomp][nconf], double SigmaSh[ncomp][totran*totran], double Dh[ncomp][totran*totran],
                      double Eh[ncomp][totran*totran], double beta[ncomp][totNreg], int *compAlloc, double P[ncomp][n], double eta[ncomp][n]){
     int j, h, komp, maxZ, labelC;
+    maxZ = 0;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
     gsl_rng_set(r,s);
 
@@ -1452,13 +1454,13 @@ void SpatialLabelSwitchingB(unsigned long int s, int n, int nconf, int totNreg, 
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = 1/((double)maxZ);
+    equalProb = 1/((double) maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += 1/((double)maxZ);
+        equalProb += 1/((double) maxZ);
     }
     labelC = komp;
 
@@ -1519,6 +1521,7 @@ void SpatialLabelSwitchingBFG(unsigned long int s, int n, int totNreg, int nres,
                      double SigmaSh[ncomp][totran*totran], double Dh[ncomp][totran*totran], double Eh[ncomp][totran*totran],
                      double beta[ncomp][totNreg], int *compAlloc, double P[ncomp][n], double eta[ncomp][n]){
     int j, h, komp, maxZ, labelC;
+    maxZ = 0;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
     gsl_rng_set(r,s);
 
@@ -1533,13 +1536,13 @@ void SpatialLabelSwitchingBFG(unsigned long int s, int n, int totNreg, int nres,
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = 1/((double)maxZ);
+    equalProb = 1/((double) maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += 1/((double)maxZ);
+        equalProb += 1/((double) maxZ);
     }
     labelC = komp;
 
@@ -1685,6 +1688,7 @@ void labelSwitchingBHannahNoSpace(unsigned long int s, int n, int nreg, int nres
                      double muh[ncomp][nreg], double Sigmah[ncomp][nreg*nreg], double Dh[ncomp][nres*nres],
                      double Eh[ncomp][nres*nres], double Rh[ncomp][nres*nres], double beta[ncomp][(nreg+1)*nres], int *compAlloc, double *V){
     int j, h, komp, maxZ, labelC;
+    maxZ = 0;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
     gsl_rng_set(r,s);
 
@@ -1701,13 +1705,13 @@ void labelSwitchingBHannahNoSpace(unsigned long int s, int n, int nreg, int nres
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = 1/((double)maxZ);
+    equalProb = 1/((double) maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += 1/((double)maxZ);
+        equalProb += 1/((double) maxZ);
     }
     labelC = komp;
 
@@ -1861,6 +1865,7 @@ void labelSwitchingBHannahSpace(unsigned long int s, int n, int nreg, int nres, 
                      double Eh[ncomp][nres*nres], double Rh[ncomp][nres*nres], double beta[ncomp][(nreg+1)*nres],
                      int *compAlloc, double P[ncomp][n], double eta[ncomp][n]){
     int j, h, komp, maxZ, labelC;
+    maxZ = 0;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
     gsl_rng_set(r,s);
 
@@ -1877,13 +1882,13 @@ void labelSwitchingBHannahSpace(unsigned long int s, int n, int nreg, int nres, 
     for (h = 0; h < ncomp; h++)
         if (nmembers[h] > 0) maxZ = h;
 
-    equalProb = 1/((double)maxZ);
+    equalProb = 1/((double) maxZ);
     temp = gsl_ran_flat(r,0.0,1.0);
 
     komp=0;
     while(equalProb < temp){
         komp++;
-        equalProb += 1/((double)maxZ);
+        equalProb += 1/((double) maxZ);
     }
     labelC = komp;
 

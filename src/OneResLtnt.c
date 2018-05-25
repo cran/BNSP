@@ -869,7 +869,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                             if (Upper < -lmt) Upper = -lmt;
                             if (Upper > lmt) Upper = lmt;                                                                                                                                                                                                                             
                             StoreUpper[h][start] = Upper;                             
-                            if (gsl_isinf(normConst) || normConst==0.0) {Iend=1; Rprintf("%s %i %i %i \n", "ooPs :",sw,h,i);}                                                                                            
+                            if (family==5 && (gsl_isinf(normConst) || normConst==0.0)) {Iend=1; Rprintf("%s %i %i %i %i \n", "ooPs :",sw,h,i,seed);}                                                                                            
                         }
                         else{
                             if (start == 0) Lower = -lmt;

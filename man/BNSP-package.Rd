@@ -13,8 +13,8 @@
 \tabular{ll}{
 Package: \tab BNSP\cr
 Type: \tab Package\cr
-Version: \tab 2.0.3\cr
-Date: \tab 2018-05-23\cr
+Version: \tab 2.0.5\cr
+Date: \tab 2018-05-25\cr
 License: \tab GPL (>=2)\cr}
 
 This program is free software; you can redistribute it and/or
@@ -40,5 +40,9 @@ Maintainer: Georgios Papageorgiou <gpapageo@gmail.com>}
 \section{Acknowledgments}{This work was partly supported by the Medical Research Council grant number G09018401.}
 
 \references{
+Papageorgiou, G. (2018). Bayesian density regression for discrete outcomes. arXiv:1603.09706v3 [stat.ME]. 
+
+Papageorgiou, G. (2018). BNSP: an R Package for fitting Bayesian regression models with semiparametric mean and variance functions. arXiv:1804.10939 [stat.OT]
+
 Papageorgiou, G., Richardson, S. and Best, N. (2015). Bayesian nonparametric models for spatially indexed data of mixed type.
 Journal of the Royal Statistical Society: Series B (Statistical Methodology), 77:973-999.}

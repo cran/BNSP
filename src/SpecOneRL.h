@@ -239,6 +239,7 @@ void labelSwtchB(unsigned long int s, int n, int p, int ncomp, int nRespPars, do
                  double SigmahI[ncomp][p*p], double nuh[ncomp][p], double muh[ncomp][p], double Xi[ncomp][nRespPars],
                  double storenuSInu[ncomp], double storenuSI[ncomp][p], int *nmembers, int *compAlloc, double *V){
     int i, j, h, komp, maxZ, labelC;
+    maxZ = 0;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
     gsl_rng_set(r,s);
 
@@ -417,6 +418,7 @@ void labelSwtchBFx(unsigned long int s, int n, int p, int ncomp, double Th[ncomp
                    double storeSxxI[ncomp][(p-1)*(p-1)], double storenuSI[ncomp][p-1], double storenuSInu[ncomp],
                    double muh[ncomp][p], int *nmembers, int *compAlloc, double *V){
     int i, j, h, komp, maxZ, labelC;
+    maxZ = 0;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
     gsl_rng_set(r,s);
 
@@ -596,6 +598,7 @@ void labelSwtchBNEW(unsigned long int s, int n, int totran, int p, int ncomp, in
                     double Dh[ncomp][totran*totran], double Eh[ncomp][totran*totran], double nuh[ncomp][p], double muh[ncomp][p],
                     double Xi[ncomp][nRespPars], double storenuSInu[ncomp], double storenuSI[ncomp][p], int *nmembers, int *compAlloc, double *V){
     int i, j, h, komp, maxZ, labelC;
+    maxZ = 0;
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
     gsl_rng_set(r,s);
 

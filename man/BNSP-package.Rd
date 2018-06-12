@@ -13,8 +13,8 @@
 \tabular{ll}{
 Package: \tab BNSP\cr
 Type: \tab Package\cr
-Version: \tab 2.0.5\cr
-Date: \tab 2018-05-25\cr
+Version: \tab 2.0.6\cr
+Date: \tab 2018-06-12\cr
 License: \tab GPL (>=2)\cr}
 
 This program is free software; you can redistribute it and/or

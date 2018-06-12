@@ -1,10 +1,10 @@
 87da5b676f5d07481b0f620d0973e333 *ChangeLog
-14d7cbd7c318e655303252868a9d5e32 *DESCRIPTION
+e6c17c7d404af7c5b9e696901f6a729c *DESCRIPTION
 8e173a2b72a5024671cf1c97b25f8ab0 *NAMESPACE
 0d509634ad120c9620e092d50e37bbc9 *R/dpmj.R
-bd0c8419b1a626eed2d0402486e2dd3e *R/mvrm.R
+77dc12eaedab5ce67fc7affe3cddf56a *R/mvrm.R
 51963ed1482880dc991a7a47487539b6 *data/simD.rda
-649f0d9c341caae138dda51a786c9788 *man/BNSP-package.Rd
+b1dcb64fe91b790bc94cf99caed697e1 *man/BNSP-package.Rd
 3bc3940e801011836e35a05a0bb35a8d *man/dpmj.Rd
 28166eaf335326d52c917c45e9c99051 *man/mvrm.Rd
 0998a7bc6ccd00e831cf6a3d872d5934 *man/mvrm2mcmc.Rd
@@ -16,8 +16,8 @@ af11ce4509def54d2c052bb941628378 *man/print.mvrm.Rd
 0ca6f33c357da1dd1aaa522c4ff20890 *man/summary.mvrm.Rd
 52a8001c10ba7a6597c1cfe6abfac459 *src/BNSP_init.c
 85bd6fb2d25bd1bf2d5d30087a0ff2eb *src/Makevars
-140f6e5d04ccaf553eb8185178f8a09a *src/OneResLtnt.c
-58b73d711e2d97ee822cac08d7e9bbfd *src/SpecOneRL.h
+6fd35e70a88949ef931bc199e7c54d56 *src/OneResLtnt.c
+397154b2c9e3fb0ae3a31d9c66c994fd *src/SpecOneRL.h
 447139d9fe952480b70ee1f69b4ac51d *src/bnsp.h
 707d382a671813542672db77eaf46e4b *src/matalg.h
 228f29b35eb780fa18193355c9aa7e9c *src/mathm.h

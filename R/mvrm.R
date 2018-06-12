@@ -1,6 +1,6 @@
 sm<-function (...,nknots=10,knots=NULL,bs="rd"){    
     pf <- parent.frame()    
-    vars<-as.list(substitute(list(...)))[-1] 
+    vars<-as.list(substitute(list(...)))[-1]
     d<-length(vars)
     if (d > 2) stop("Up to bivariate covariates supported")
     term<-NULL
@@ -15,22 +15,29 @@ sm<-function (...,nknots=10,knots=NULL,bs="rd"){
     label<-paste("sm(",term[1],sep="")
     if (d>1) for (i in 2:d) label<-paste(label,",",term[i],sep="")
     label<-paste(label,")",sep="")  
-    x<-NULL
-    for (i in 1:d) x<-cbind(x,eval(vars[[i]],pf))    
+    is.D<-rep(0,d)
+    x2<-NULL
+    for (i in 1:d){ 
+        mm<-model.matrix(~eval(vars[[i]],pf))
+        lvs<-levels(eval(vars[[i]],pf))
+        if (length(lvs)==0) {colnames(mm)[2]<-c(term[i]); is.D[i]<-0}
+        if (length(lvs)>=2) {colnames(mm)<-paste(term[i],lvs,sep=""); is.D[i]<-1}
+        x2<-cbind(x2,mm[,-1,drop=FALSE])
+    }
     if (d==1){
         if (is.null(knots)){             
             knots<-seq(from = 0, to = 1, length = nknots + 2)[-c(1, nknots + 2)]
             knots<-seq(from = 0, to = 1, length = nknots)
-            knots<-unique(quantile(x,knots,type=1))                
+            knots<-unique(quantile(x2,knots,type=1))                
         }        
         nknots<-length(knots)
-        X<-x        
+        X<-x2        
         if (bs=="pl"){ 
-            for (i in 1:nknots) X<-cbind(X,pmax(x-knots[i],rep(0,length(x))))
+            for (i in 1:nknots) X<-cbind(X,pmax(x2-knots[i],rep(0,length(x2))))
 		}
         else if (bs=="rd"){
 			for (i in 1:nknots){ 
-			    D<-(x-knots[i])^2
+			    D<-(x2-knots[i])^2
 			    D2<-D*log(D)
 			    D2[which(D==0)]<-0
 			    X<-cbind(X,D2)
@@ -43,18 +50,29 @@ sm<-function (...,nknots=10,knots=NULL,bs="rd"){
         if (!is.null(knots)) nknots<-c(dim(knots))
         if (is.null(knots) && length(nknots)==1) nknots<-rep(nknots,2)        
         if (is.null(knots)){             
-            knots1<-seq(from = 0, to = 1, length = nknots[1] + 2)[-c(1, nknots[1] + 2)]
+			knots1<-seq(from = 0, to = 1, length = nknots[1] + 2)[-c(1, nknots[1] + 2)]
             knots1<-seq(from = 0, to = 1, length = nknots[1])
-            knots1<-unique(quantile(x[,1],knots1,type=1))
             knots2<-seq(from = 0, to = 1, length = nknots[2] + 2)[-c(1, nknots[2] + 2)]
             knots2<-seq(from = 0, to = 1, length = nknots[2])
-            knots2<-unique(quantile(x[,2],knots2,type=1))    
-            knots<-as.matrix(expand.grid(knots1,knots2))
-        }       
-        X<-x
+            if (dim(x2)[2] == 2){                
+                knots1<-unique(quantile(x2[,1],knots1,type=1))            
+                knots2<-unique(quantile(x2[,2],knots2,type=1)) 
+                knots<-as.matrix(expand.grid(knots1,knots2))
+			}else if (is.D[1] == 1){
+			    knots1<-unique(x2[,-dim(x2)[2]])
+			    knots2<-unique(quantile(x2[,dim(x2)[2],drop=FALSE],knots2,type=1))
+			    knots <- cbind(knots1[rep(1:nrow(knots1), length(knots2)), ], rep(knots2, each = nrow(knots1)))
+			}else if (is.D[2] == 1){
+				knots1<-unique(quantile(x2[,1],knots1,type=1))
+			    knots2<-unique(x2[,-1])
+			    knots <- cbind(rep(knots1, nrow(knots2)), knots2[rep(1:nrow(knots2), length(knots1)), ])
+			}
+			colnames(knots)<-colnames(x2)
+		}      
+        X<-x2
         if (bs=="rd"){ 
             for (i in 1:NROW(knots)){ 
-                D<-apply((x-matrix(knots[i,],nrow=NROW(X),ncol=2,byrow=TRUE))^2,1,sum)
+                D<-apply((x2-matrix(knots[i,],nrow=NROW(x2),ncol=NCOL(x2),byrow=TRUE))^2,1,sum)
                 D2<-D*log(D)
                 D2[which(D==0)]<-0
                 X<-cbind(X,D2)
@@ -62,13 +80,13 @@ sm<-function (...,nknots=10,knots=NULL,bs="rd"){
 		} else stop("for bivariate smoothers only rd supported")
     }
     X<-data.frame(X)
-    colnames(X)[1:d]<-term[1:d]
-    colnames(X)[-c(1:d)]<-paste(label,1:(NCOL(X)-d),sep=".")
+    colnames(X)[1:NCOL(x2)]<-colnames(x2)
+    colnames(X)[-c(1:NCOL(x2))]<-paste(label,1:(NCOL(X)-NCOL(x2)),sep=".")
     XK<-list(X=X,knots=knots)
     return(XK)    
 }
 
-DM<-function(formula,data,mm,ns,knots=NULL,meanVector){
+DM<-function(formula,data,mm,ns,knots=NULL,meanVector,indicator){
     Rknots <- list()
     specials <- c('sm')    
     trms<-terms.formula(formula,specials=specials)
@@ -96,7 +114,7 @@ DM<-function(formula,data,mm,ns,knots=NULL,meanVector){
 	    }
         if (!is.null(trms3)) 
             for (i in 1:dim(attr(trms3,"factors"))[2]){ 
-                XK<-with(data,eval(trms3[i][[2]]))
+                XK<-with(data,eval(trms3[i][[2]]))        
                 X<-cbind(X,XK$X)
                 Rknots[[i]] <- XK$knots
 			}
@@ -106,20 +124,31 @@ DM<-function(formula,data,mm,ns,knots=NULL,meanVector){
         X<-matrix(1,ncol=1,nrow=n)
         colnames(X)<-"(Intercept)"
 	}
-	unique.values<-unlist(lapply(apply(X,2,unique),length))
-	indicator<-which(unique.values<=2 && unique.values<=n)
-	main<-colnames(X)
-	main<-main[main %in% colnames(data)]
-	is.F<-vector()
-	if (length(main) > 0) for (i in 1:length(main)) is.F[i]<-is.factor(data[,main[i]])
-	fact<-main[is.F]
-	indicator<-sort(c(indicator,which(colnames(X)==fact)))	
-	storeMeanVector<-apply(as.matrix(X),2,mean)	
-	if (missing(meanVector)) X[,-indicator] <- X[,-indicator] - matrix(1,nrow=n)%*%storeMeanVector[-indicator]
-	else X[,-indicator] <- X[,-indicator] - matrix(1,nrow=n)%*%matrix(meanVector[-indicator],nrow=1)     
-    if (mm) Ret<-as.matrix(cbind(y,X))
-    else Ret<-as.matrix(X)
-    return(list(yX=Ret,Rknots=Rknots,storeMeanVector=storeMeanVector))
+	#print("From dm")
+	#print(head(X))	
+	
+	if (missing(meanVector)) meanVector<-apply(as.matrix(X),2,mean)
+	if (missing(indicator)){ 
+	    unique.values<-unlist(lapply(apply(X,2,unique),length))
+	    indicator<-which(unique.values<=2 & unique.values<=n)
+	}
+			
+	#main<-colnames(X)
+	#print(main)
+	#main<-main[main %in% colnames(data)]
+	#print(main)
+	#is.F<-vector()
+	#if (length(main) > 0) for (i in 1:length(main)) is.F[i]<-is.factor(data[,main[i]])
+	#fact<-main[is.F]
+	#indicator<-sort(c(indicator,which(colnames(X)==fact)))
+	#print(indicator)	
+		
+	X[,-indicator] <- X[,-indicator] - matrix(1,nrow=n)%*%matrix(meanVector[-indicator],nrow=1)     
+    
+    if (mm) {Ret<-as.matrix(cbind(y,X))}
+    else {Ret<-as.matrix(X)}
+    
+    return(list(yX=Ret,Rknots=Rknots,meanVector=meanVector,indicator=indicator))
 }
 
 match.call.defaults <- function(...) {
@@ -162,7 +191,8 @@ mvrm <- function(formula,data,sweeps,burn=0,thin=1,seed,StorageDir,
     n<-length(Y)
     X<-XY[,-1]
     Xknots<-XYK$Rknots
-    storeMeanVectorX<-XYK$storeMeanVector
+    storeMeanVectorX<-XYK$meanVector
+    storeIndicatorX<-XYK$indicator
     main<-colnames(X)[-c(1,grep(specials,colnames(X)))]
     mainApp<-sapply(main,grep,colnames(X)[-1],simplify=FALSE)
     gX<-vector()
@@ -187,7 +217,8 @@ mvrm <- function(formula,data,sweeps,burn=0,thin=1,seed,StorageDir,
     Z<-ZK$yX  
     attr(Z,"assign")<-NULL
     Zknots<-ZK$Rknots
-    storeMeanVectorZ<-ZK$storeMeanVector
+    storeMeanVectorZ<-ZK$meanVector
+    storeIndicatorZ<-ZK$indicator        
     #       
     main<-colnames(Z)[-c(1,grep(specials,colnames(Z)))]
     mainApp<-sapply(main,grep,colnames(Z)[-1],simplify=FALSE)
@@ -306,7 +337,8 @@ mvrm <- function(formula,data,sweeps,burn=0,thin=1,seed,StorageDir,
                 mcpar=c(as.integer(burn+1),as.integer(seq(from=burn+1,by=thin,length.out=nSamples)[nSamples]),as.integer(thin)),
                 nSamples=nSamples,storeMeanVectorX=storeMeanVectorX,storeMeanVectorZ=storeMeanVectorZ,
                 #f=out[[17]][1],g=out[[18]][1],h=out[[19]],
-                DIR=StorageDir,deviance=out[[33]][1]/nSamples,nullDeviance=-2*logLik(lm(Y ~ 1)))
+                DIR=StorageDir,deviance=out[[33]][1]/nSamples,nullDeviance=-2*logLik(lm(Y ~ 1)),
+                storeIndicatorX=storeIndicatorX,storeIndicatorZ=storeIndicatorZ)
     class(fit) <- 'mvrm'
     return(fit)
 }
@@ -315,15 +347,17 @@ mvrm2mcmc <- function(mvrmObj,labels){
     all.labels <- c("alpha","calpha","cbeta","delta","beta","gamma","sigma2")
     mtch<-match(labels,all.labels)
 	R<-NULL
-    if (any(mtch==1)) R<-cbind(R,matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.alpha.txt",sep=""))),ncol=mvrmObj$LD,dimnames=list(c(),colnames(mvrmObj$Z)[-1])))
-    if (any(mtch==2)) R<-cbind(R,matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.calpha.txt",sep=""))),ncol=1,dimnames=list(c(),c("c_alpha"))))
-    if (any(mtch==3)) R<-cbind(R,matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.cbeta.txt",sep=""))),ncol=1,dimnames=list(c(),c("c_eta"))))
-    if (any(mtch==4)) R<-cbind(R,matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.delta.txt",sep=""))),ncol=mvrmObj$LD,dimnames=list(c(),paste("delta",seq(1,mvrmObj$LD),sep="_"))))
-    if (any(mtch==5)) R<-cbind(R,matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.beta.txt",sep=""))),ncol=mvrmObj$LG+1,dimnames=list(c(),colnames(mvrmObj$X))))
-    if (any(mtch==6)) R<-cbind(R,matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.gamma.txt",sep=""))),ncol=mvrmObj$LG,dimnames=list(c(),paste("gamma",seq(1,mvrmObj$LG),sep="_"))))
-    if (any(mtch==7)) R<-cbind(R,matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.sigma2.txt",sep=""))),ncol=1,dimnames=list(c(),c("sigma^2"))))
-	attr(R, "mcpar") <- mvrmObj$mcpar
-    attr(R, "class") <- "mcmc"
+    if (any(mtch==1) && mvrmObj$LD > 0) R<-matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.alpha.txt",sep=""))),ncol=mvrmObj$LD,dimnames=list(c(),colnames(mvrmObj$Z)[-1]))
+    if (any(mtch==2)) R<-matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.calpha.txt",sep=""))),ncol=1,dimnames=list(c(),c("calpha")))
+    if (any(mtch==3)) R<-matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.cbeta.txt",sep=""))),ncol=1,dimnames=list(c(),c("ceta")))
+    if (any(mtch==4) && mvrmObj$LD > 0) R<-matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.delta.txt",sep=""))),ncol=mvrmObj$LD,dimnames=list(c(),paste("delta",seq(1,mvrmObj$LD),sep="_")))
+    if (any(mtch==5) && mvrmObj$LG > 0) R<-matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.beta.txt",sep=""))),ncol=mvrmObj$LG+1,dimnames=list(c(),colnames(mvrmObj$X)))
+    if (any(mtch==6) && mvrmObj$LG > 0) R<-matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.gamma.txt",sep=""))),ncol=mvrmObj$LG,dimnames=list(c(),paste("gamma",seq(1,mvrmObj$LG),sep="_")))
+    if (any(mtch==7)) R<-matrix(unlist(read.table(paste(mvrmObj$DIR,"BNSP.sigma2.txt",sep=""))),ncol=1,dimnames=list(c(),c("sigma2")))	
+	if (!is.null(R)){
+	    attr(R, "mcpar") <- mvrmObj$mcpar
+        attr(R, "class") <- "mcmc"
+	}
 	return(R)
 }
 
@@ -418,11 +452,11 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
     if (!is.null(quantiles)) quantiles <- unique(sort(quantiles))
     if (MEAN){
         if (count==1){  
-			DsM<-unique(mvrmObj$X[,ML])
+			DsM<-unique(mvrmObj$X[,ML,drop=FALSE])
             adjG<-min(grid,NROW(DsM))          
-            if (!is.D) DsM<-DsM[order(DsM[,label2[1]]),]	        
-	        DsM<-DsM[seq(1,NROW(DsM),length.out=adjG),]	
-	        if (is.D) DsM<-DsM[do.call(order,as.data.frame(DsM[,NCOL(DsM):1])),]        
+            if (!is.D) DsM<-DsM[order(DsM[,label2[1]]),,drop=FALSE]	        
+	        DsM<-DsM[seq(1,NROW(DsM),length.out=adjG),,drop=FALSE]	
+	        if (is.D) DsM<-DsM[do.call(order,as.data.frame(DsM[,NCOL(DsM):1])),,drop=FALSE]        
 		}
 	    if (count==2){    
 	        if (sum(is.D)){
@@ -490,7 +524,7 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
             if (centreEffects) fitM[i,]<-fitM[i,]-mean(fitM[i,])
 		}
 		close(eFile)
-		if (count==1 && !is.D){
+		if (count==1 && !is.D){# && length(ML) > 2){
 		    centreM<-apply(fitM,2,centre)
 		    QM<-NULL
 		    if (!is.null(quantiles)) QM<-drop(t(apply(fitM,2,quantile,probs=quantiles,na.rm=TRUE)))
@@ -507,10 +541,18 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 	        plotM<-ggM + plotElM + ggtitle("mean") + plotOptions
 	    }
 	    if (count==1 && is.D){
-	        df<-data.frame(x=rep(levels(mvrmObj$data[,label]),each=mvrmObj$nSamples),y=c(fitM))
+	        df<-data.frame(x=rep(levels(mvrmObj$data[,label]),each=mvrmObj$nSamples),y=c(fitM))	        
             plotElM<-c(geom_boxplot(),list(xlab(label),ylab("")))
             ggM<-ggplot(data=df,aes(x=x,y=y))
 	        plotM<-ggM + plotElM + ggtitle("mean") + plotOptions
+	    }
+	    if (count==1 && !is.D && length(ML)<3 && 1==0){	     #   
+	        df<-data.frame(x=rep(0,length(c(fitM))),y=c(fitM))
+            plotElM<-c(geom_boxplot(),list(ylab(label),xlab("")))
+            ggM<-ggplot(data=df,aes(x=x,y=y))
+	        plotM<-ggM + plotElM + ggtitle("mean") + 
+	        theme(axis.text.x=element_blank(),axis.ticks.x=element_blank())+
+	        plotOptions
 	    }
 	    if (count==2 && sum(is.D)==1){
 		    centreM<-apply(fitM,2,centre)
@@ -519,20 +561,24 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 		    #if (!is.D[1]) newR1<-newR1+mean(mvrmObj$data[,label[1]])
 		    #if (!is.D[2]) newR2<-newR2+mean(mvrmObj$data[,label[2]])		    
 		    #dataM<-data.frame(cbind(expand.grid(newR1,newR2),centreM,QM))				    
-		    if (!is.D[1]) DsM[,label2[1]]<-DsM[,label2[1]]+mean(mvrmObj$data[,label[1]])
-		    if (!is.D[2]) DsM[,label2[2]]<-DsM[,label2[2]]+mean(mvrmObj$data[,label[2]])		    
+		    #if (!is.D[1]) DsM[,label2[1]]<-DsM[,label2[1]]+mean(mvrmObj$data[,label[1]])
+		    #if (!is.D[2]) DsM[,label2[2]]<-DsM[,label2[2]]+mean(mvrmObj$data[,label[2]])		    
 		    #if (is.D[1]) DsM[,label2[1]]<-factor(DsM[,label2[1]])
 		    #if (is.D[2]) DsM[,label2[2]]<-factor(DsM[,label2[2]])		    
-		    dataM<-data.frame(cbind(DsM[,label2],centreM,QM))
-            if (is.D[1]) dataM[,label2[1]]<-factor(dataM[,label2[1]])
-		    if (is.D[2]) dataM[,label2[2]]<-factor(dataM[,label2[2]])		   		    
-		    nms <- c(label2,"centreM")
+		    lvs<-levels(mvrmObj$data[,label[which(is.D==1)]])
+		    nms<-paste(label[which(is.D==1)],lvs[-1],sep="")
+		    pos<-match(nms,colnames(DsM))
+		    fc<-lvs[c(max.col(DsM[,pos,drop=FALSE],ties.method="first")+1*(!apply(DsM[,pos,drop=FALSE],1,sum)==0))]
+		    dataM<-data.frame(fc,DsM[,label[which(is.D==0)]]+mean(mvrmObj$data[,label[which(is.D==0)]]),centreM,QM)
+            #if (is.D[1]) dataM[,label2[1]]<-factor(dataM[,label2[1]])
+		    #if (is.D[2]) dataM[,label2[2]]<-factor(dataM[,label2[2]])		   		    
+		    nms <- c(label[which(is.D==1)],label[which(is.D==0)],"centreM")
 		    if (!is.null(quantiles)) nms<-c(nms,"QLM","QUM")
 		    colnames(dataM) <- nms
-		    plotElM<-c(geom_line(aes_string(x=label2[is.D==0],y=centreM,group=label2[is.D==1],colour=label2[is.D==1]),alpha=0.5),
-                       geom_rug(data=data.frame(mvrmObj$data),aes_string(x=label[is.D==0],y=NULL),alpha=0.3),list(ylab(plotLabel)))
+		    plotElM<-c(geom_line(aes_string(x=label[which(is.D==0)],y=centreM,group=label[which(is.D==1)],colour=label[which(is.D==1)],linetype=label[which(is.D==1)]),alpha=1),
+                       geom_rug(data=data.frame(mvrmObj$data),aes_string(x=label[which(is.D==0)],y=NULL),alpha=0.3),list(ylab(plotLabel)))
             if (!is.null(quantiles))
-                plotElM<-c(geom_ribbon(data=dataM,aes_string(x=label2[is.D==0], ymin="QLM", ymax="QUM",group=label2[is.D==1],fill=label2[is.D==1]),alpha =0.2),plotElM)
+                plotElM<-c(geom_ribbon(data=dataM,aes_string(x=label[which(is.D==0)], ymin="QLM", ymax="QUM",group=label[which(is.D==1)],fill=label[which(is.D==1)]),alpha=0.2),plotElM)
 		    ggM<-ggplot(data=dataM)
 	        plotM<-ggM + plotElM + ggtitle("mean") + plotOptions
 	    }
@@ -573,11 +619,11 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
 	}
 	if (STDEV){
         if (count==1){
-            DsV<-unique(mvrmObj$Z[,VL])
+            DsV<-unique(mvrmObj$Z[,VL,drop=FALSE])
             adjG<-min(grid,NROW(DsV))          
-            if (!is.D) DsV<-DsV[order(DsV[,label2[1]]),]	        
-	        if (!is.D) DsV<-DsV[seq(1,NROW(DsV),length.out=adjG),]
-	        #if (is.D) DsV<-DsV[do.call(order,as.data.frame(DsV[,NCOL(DsV):1])),]	       
+            if (!is.D) DsV<-DsV[order(DsV[,label2[1]]),,drop=FALSE]	        
+	        DsV<-DsV[seq(1,NROW(DsV),length.out=adjG),,drop=FALSE]
+	        if (is.D) DsV<-DsV[do.call(order,as.data.frame(DsV[,NCOL(DsV):1])),,drop=FALSE]	       
 		}
 		if (count==2){
 	        if (sum(is.D)){
@@ -653,23 +699,27 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
             ggV<-ggplot(data=df,aes(x=x,y=y))
 	        plotV<-ggV + plotElV + ggtitle("st dev") + plotOptions
 	    }
-	    if (count==2 && sum(is.D)==1){		    				    		    	 	   		    
+	    if (count==2 && sum(is.D)==1){		    						    
 		    centreV<-apply(fitV,2,centre)
 		    QV<-NULL
 		    if (!is.null(quantiles)) QV<-drop(t(apply(fitV,2,quantile,probs=quantiles,na.rm=TRUE)))		
-		    if (!is.D[1]) DsV[,label2[1]]<-DsV[,label2[1]]+mean(mvrmObj$data[,label[1]])
-		    if (!is.D[2]) DsV[,label2[2]]<-DsV[,label2[2]]+mean(mvrmObj$data[,label[2]])	
-		    dataV<-data.frame(cbind(DsV[,label2],centreV,QV))
-            if (is.D[1]) dataV[,label2[1]]<-factor(dataV[,label2[1]])
-		    if (is.D[2]) dataV[,label2[2]]<-factor(dataV[,label2[2]])	
-		    
-		    nms <- c(label2,"centreV")
+		    #if (!is.D[1]) DsV[,label2[1]]<-DsV[,label2[1]]+mean(mvrmObj$data[,label[1]])
+		    #if (!is.D[2]) DsV[,label2[2]]<-DsV[,label2[2]]+mean(mvrmObj$data[,label[2]])	
+		    lvs<-levels(mvrmObj$data[,label[which(is.D==1)]])
+		    nms<-paste(label[which(is.D==1)],lvs[-1],sep="")
+		    pos<-match(nms,colnames(DsV))
+		    fc<-lvs[c(max.col(DsV[,pos,drop=FALSE],ties.method="first")+1*(!apply(DsV[,pos,drop=FALSE],1,sum)==0))]		    		    
+		    dataV<-data.frame(fc,DsV[,label[which(is.D==0)]]+mean(mvrmObj$data[,label[which(is.D==0)]]),centreV,QV)		    
+            #if (is.D[1]) dataV[,label2[1]]<-factor(dataV[,label2[1]])
+		    #if (is.D[2]) dataV[,label2[2]]<-factor(dataV[,label2[2]])			    
+		    #nms <- c(label,"centreV")
+		    nms <- c(label[which(is.D==1)],label[which(is.D==0)],"centreM")
 		    if (!is.null(quantiles)) nms<-c(nms,"QLV","QUV")
 		    colnames(dataV) <- nms
-		    plotElV<-c(geom_line(aes_string(x=label2[is.D==0],y=centreV,group=label2[is.D==1],colour=label2[is.D==1]),alpha=0.5),
-                       geom_rug(data=data.frame(mvrmObj$data),aes_string(x=label[is.D==0],y=NULL),alpha=0.3),list(ylab(plotLabel)))
+		    plotElV<-c(geom_line(aes_string(x=label[which(is.D==0)],y=centreV,group=label[which(is.D==1)],linetype=label[which(is.D==1)],colour=label[which(is.D==1)]),alpha=0.5),
+                       geom_rug(data=data.frame(mvrmObj$data),aes_string(x=label[which(is.D==0)],y=NULL),alpha=0.3),list(ylab(plotLabel)))
             if (!is.null(quantiles))
-                plotElV<-c(geom_ribbon(data=dataV,aes_string(x=label2[is.D==0], ymin="QLV", ymax="QUV",group=label2[is.D==1],fill=label2[is.D==1]),alpha=0.2),plotElV)
+                plotElV<-c(geom_ribbon(data=dataV,aes_string(x=label[which(is.D==0)], ymin="QLV", ymax="QUV",group=label[which(is.D==1)],fill=label[which(is.D==1)]),alpha=0.2),plotElV)
 		    ggV<-ggplot(data=dataV)
 	        plotV<-ggV + plotElV + ggtitle("st dev") + plotOptions
 	    }
@@ -754,7 +804,9 @@ predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction
         terms.f2<-paste(term.labels.f2,collapse=" + ")
         formula2<-reformulate(paste(terms.f2,"+", K,collapse=" + "))
     }
-    X<-DM(formula2,newdata,0,NROW(newdata),object$Xknots,object$storeMeanVectorX)$yX
+    nd<-object$data[0,match(colnames(newdata),colnames(object$data)),drop=FALSE]
+    nd[1:NROW(newdata),] <- newdata
+    X<-DM(formula2,nd,0,NROW(newdata),object$Xknots,object$storeMeanVectorX,object$storeIndicatorX)$yX
 	fitM<-matrix(0,nrow=object$nSamples,ncol=NROW(newdata))
     etaFN <- file.path(paste(object$DIR,"BNSP.beta.txt",sep="")) 
     eFile<-file(etaFN,open="r")
@@ -767,37 +819,40 @@ predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction
 	interval <- match.arg(interval)
 	if (interval=="credible"){
 		QMb<-apply(fitM,2,quantile,probs=c((1-level)/2,1-(1-level)/2),na.rm=TRUE)
-		QM<-matrix(QMb,nrow=NROW(newdata))
+		QM<-matrix(QMb,nrow=NROW(newdata),byrow=T)
 		colnames(QM) <- rownames(QMb)
-		predictions<-cbind(fit,QM)
-		#colnames(predictions) <- c("fit", "lwr", "upr")
+		predictions<-cbind(fit,QM)	
+		colnames(predictions) <- c("fit", "lwr", "upr")	
 	}
 	if (interval=="prediction"){
 	    trms<-terms.formula(formula.v,specials=specials)
-        whereSpecials <- unique(unlist(apply(attr(trms,"factors")[unlist(attr(trms,"specials")), ,drop = F] > 0,1,which)))
         nFactors<-dim(attr(trms,"factors"))[2]
-        if (length(whereSpecials) == nFactors) {formula2<-~1}else 
+        if (!is.null(nFactors)){ 
+            whereSpecials <- unique(unlist(apply(attr(trms,"factors")[unlist(attr(trms,"specials")), ,drop = F] > 0,1,which)))}
+        else whereSpecials <- NULL
+        if (is.null(nFactors) || length(whereSpecials) == nFactors) {formula2<-~1}else 
             {trms2<-drop.terms(trms, dropx = whereSpecials)
             formula2<-reformulate(attr(trms2, "term.labels"))}        
-        for (k in 1:length(whereSpecials)){
-            term<-attr(trms,"term.labels")[whereSpecials][k]
-            A<-sub(specials,"",term)
-            B<-sub("\\(","",A)
-            C<-sub("\\)","",B)
-            sl<-strsplit(C,",")
-            sl<-sub(" ","",sl[[1]])
-            match1<-unlist(lapply(sl,match,colnames(object$data)))
-            match1<-match1[!is.na(match1)]
-            label<-colnames(object$data)[match1]
-            K<-paste("sm(",paste(label,collapse=","),",knots= knots[[",k,"]])") 
-            terms.f2<-terms(formula2)
-            term.labels.f2<-attr(terms.f2,"term.labels")
-            terms.f2<-paste(term.labels.f2,collapse=" + ")
-            formula2<-reformulate(paste(terms.f2,"+", K,collapse=" + "))
-        }
-        Z<-DM(formula2,newdata,0,NROW(newdata),object$Zknots,object$storeMeanVectorZ)$yX
+        if (length(whereSpecials) > 0)
+            for (k in 1:length(whereSpecials)){
+                term<-attr(trms,"term.labels")[whereSpecials][k]
+                A<-sub(specials,"",term)
+                B<-sub("\\(","",A)
+                C<-sub("\\)","",B) 
+                sl<-strsplit(C,",")
+                sl<-sub(" ","",sl[[1]])
+                match1<-unlist(lapply(sl,match,colnames(object$data)))
+                match1<-match1[!is.na(match1)]
+                label<-colnames(object$data)[match1]
+                K<-paste("sm(",paste(label,collapse=","),",knots= knots[[",k,"]])") 
+                terms.f2<-terms(formula2)
+                term.labels.f2<-attr(terms.f2,"term.labels")
+                terms.f2<-paste(term.labels.f2,collapse=" + ")
+                formula2<-reformulate(paste(terms.f2,"+", K,collapse=" + "))
+            }
+        Z<-DM(formula2,newdata,0,NROW(newdata),object$Zknots,object$storeMeanVectorZ,object$storeIndicatorZ)$yX
         Z<-Z[,-1]
-        fitV<-matrix(0,nrow=object$nSamples,ncol=NROW(newdata))
+        fitV<-matrix(0,nrow=object$nSamples,ncol=NROW(newdata))     
 		alphaFN <- file.path(paste(object$DIR,"BNSP.alpha.txt",sep="")) 
         aFile<-file(alphaFN,open="r")
 		sigma2FN <- file.path(paste(object$DIR,"BNSP.sigma2.txt",sep="")) 
@@ -815,8 +870,9 @@ predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction
 		for (k in 1:NROW(newdata))
 		    QM<-rbind(QM,quantile(sample.Pred[,(1+object$nSamples*(k-1)):(object$nSamples*k)],probs=c((1-level)/2,1-(1-level)/2),na.rm=TRUE))
 		predictions<-cbind(fit,QM)
+		colnames(predictions) <- c("fit", "lwr", "upr")
 	}
-	return(predictions)
+	return(data.frame(predictions))
 }
 
 print.mvrm <- function(x,  digits = 5, ...) {
@@ -828,10 +884,14 @@ print.mvrm <- function(x,  digits = 5, ...) {
   D<-as.data.frame(mvrm2mcmc(x,"delta"))
   colnames(G)<- colnames(x$X)[-1] 
   colnames(D)<- colnames(x$Z)[-1] 
-  cat("\nMean model: marginal probabilities of term inclusion:\n")
-  print(apply(G,2,mean), digits=5)
-  cat("\nVariance model: marginal probabilities of term inclusion:\n")
-  print(apply(D,2,mean), digits=5)
+  if (x$LG > 0){
+      cat("\nMean model: marginal probabilities of term inclusion:\n")
+      print(apply(G,2,mean), digits=5)
+  }
+  if (x$LD > 0){
+      cat("\nVariance model: marginal probabilities of term inclusion:\n")
+      print(apply(D,2,mean), digits=5)
+  }
 }	
 
 summary.mvrm <- function(object, nModels = 5, digits = 5, ...) {
@@ -851,8 +911,11 @@ summary.mvrm <- function(object, nModels = 5, digits = 5, ...) {
   G<-as.data.frame(mvrm2mcmc(object,"gamma"))
   D<-as.data.frame(mvrm2mcmc(object,"delta"))
   colnames(G)<- sub(" ",".",paste("mean",colnames(object$X)[-1])) 
-  colnames(D)<- sub(" ",".",paste("var",colnames(object$Z)[-1])) 
-  g<-count(cbind(G,D))
+  if (object$LD > 0) colnames(D)<- sub(" ",".",paste("var",colnames(object$Z)[-1])) 
+  if (object$LG > 0 && object$LD > 0) Joint<-cbind(G,D)
+  if (object$LG > 0 && object$LD == 0) Joint<-G
+  if (object$LG == 0 && object$LD > 0) Joint<-D
+  g<-count(Joint)
   g<-g[order(g$freq,decreasing=TRUE),]
   rownames(g)<-seq(1,NROW(g))
   g$prob<-100*g$freq/sum(g$freq)
@@ -861,4 +924,3 @@ summary.mvrm <- function(object, nModels = 5, digits = 5, ...) {
   cat("Displaying", nModels, "models of the",NROW(g),"visited\n")
   cat(nModels,"models account for",sub(" ","",paste(g$cumulative[nModels],"%")),"of the posterior mass\n")
 }
-

@@ -101,7 +101,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     int XiLoop = 1;
     if (family==5) XiLoop = 2;
     int move, NCCPi, NDCPi, NDVPi; 
-
+    NDVPi = 0; 
     //Tolerance level
     double tol = 0.00001; //tolerance level for eigen values when inverting matrices
     double tol2 = 12.0; //tolerance for integral limits
@@ -208,6 +208,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     double XiC[nRespPars];
     double XiP[nRespPars];
     double XiLC, XiLP, cyC, cyP, cymoC, cymoP, Acp, NAcp, DAcp; //MH  step
+    NAcp = 0.0; DAcp = 0.0;
     double nuh[ncomp][p]; // to store nu
     double nuSInu, nuSIxmm; //nu^T S^-1 nu and nu^T SI (x-mu)
     double storenuSInu[ncomp]; // to store nu^T Sigma^(-1) nu
@@ -216,9 +217,12 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     double temp, temp2;
     int temp3;
     double lower[NDV];
-    double upper[NDV];
-    double lowerX[NDC];
-    double upperX[NDC];
+    double upper[NDV];    
+    int NDCTemp;
+    NDCTemp = NDC;
+    if (NDC == 0) NDCTemp = NDC + 1; 
+    double lowerX[NDCTemp];
+    double upperX[NDCTemp];
     double Lower, Upper;    
     int dimP = NDV*(NDV+3)/2+1;//params of conditional distribution of latent | continuous variables +1 for det
     double params[dimP]; 
@@ -243,17 +247,17 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     gsl_vector *U3 = gsl_vector_alloc(p); //
     gsl_vector *yxstar = gsl_vector_alloc(NDV); //next to impute latent var in initialization
     gsl_vector *CondMean = gsl_vector_calloc(NDV);
-    gsl_vector *CondMean2 = gsl_vector_calloc(NDC);
     gsl_matrix *PartMean = gsl_matrix_alloc(NDV,NCC); //to become the mean of y^*|(cotinious var)
-    gsl_matrix *PartMean2 = gsl_matrix_alloc(NDC,NCC); //to become the mean of x^*|(cotinious covs)
     gsl_matrix *CondCov = gsl_matrix_alloc(NDV,NDV); //cov mat of y^*|(cotinious var)
-    gsl_matrix *CondCov2 = gsl_matrix_alloc(NDC,NDC); //cov mat of x^*|(cotinious var)
     gsl_matrix *Ehp = gsl_matrix_alloc(totran,totran);//proposed random Wishart matrices
     gsl_matrix *Dhp = gsl_matrix_alloc(totran,totran);//D_h^(p) from above decomposition
     gsl_matrix *SigmaShp = gsl_matrix_alloc(totran,totran);  //Sigma_h^*^(p) from above decomposition
     gsl_matrix *SigmaSH = gsl_matrix_alloc(totran,totran);  //Sigma_h^* after updating step
     gsl_matrix *Th = gsl_matrix_alloc(p,p);  //Cop Th
-
+    //gsl_vector *CondMean2 = gsl_vector_calloc(NDCTemp); 
+    //gsl_matrix *PartMean2 = gsl_matrix_alloc(NDCTemp,NCC); //to become the mean of x^*|(cotinious covs)
+    //gsl_matrix *CondCov2 = gsl_matrix_alloc(NDCTemp,NDCTemp); //cov mat of x^*|(cotinious var)
+     
     // GSL Matrix and vector views
     gsl_matrix_view Dg2, nu, Eht, Dht, SigmaSht, SigmaSht2, SigmaSht3, ThCopy;
     gsl_vector_view nu2, tothv, XmMview, Ci, MUSTAR;
@@ -1123,8 +1127,9 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     gsl_matrix_free(nTDi);
     gsl_vector_free(vecZero); gsl_vector_free(vecZero2);
     gsl_vector_free(Z); gsl_vector_free(U1); gsl_vector_free(U2); gsl_vector_free(U3);
-    gsl_vector_free(CondMean); gsl_vector_free(CondMean2); gsl_vector_free(yxstar);
-    gsl_matrix_free(PartMean); gsl_matrix_free(PartMean2); gsl_matrix_free(CondCov); gsl_matrix_free(CondCov2);
+    gsl_vector_free(CondMean); gsl_vector_free(yxstar);
+    gsl_matrix_free(PartMean); gsl_matrix_free(CondCov); 
     gsl_matrix_free(Ehp); gsl_matrix_free(Dhp); gsl_matrix_free(SigmaShp);
     gsl_matrix_free(SigmaSH); gsl_matrix_free(Th);
+    //gsl_vector_free(CondMean2); gsl_matrix_free(PartMean2); gsl_matrix_free(CondCov2);
 }

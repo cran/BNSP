@@ -410,12 +410,17 @@ pred<-seq(with(simD,min(X))+0.1,with(simD,max(X))-0.1,length.out=30)
 npred<-length(pred)
 # fit1 and fit2 define the same model but with different numbers of
 # components and posterior samples
-fit1 <- dpmj(cbind(Y,(E-Y))~X, Fcdf="binomial", data=simD, ncomp=30, sweeps=120,
-             burn=100, sampler="truncated", Xpred=pred, offsetPred=30)
+fit1 <- dpmj(cbind(Y,(E-Y))~X, Fcdf="binomial", data=simD, ncomp=10, sweeps=20,
+             burn=10, sampler="truncated", Xpred=pred, offsetPred=30)
 \donttest{fit2 <- dpmj(cbind(Y,(E-Y))~X, Fcdf="binomial", data=simD, ncomp=50, sweeps=5000,
                burn=1000, sampler="truncated", Xpred=pred, offsetPred=30)
 plot(with(simD,X),with(simD,Y)/with(simD,E))
 lines(pred,fit2$medianReg/30,col=3,lwd=2)}
+# with discrete covariate
+simD<-data.frame(simD,Xd=sample(c(0,1),300,replace=TRUE))
+pred<-c(0,1)
+fit3 <- dpmj(cbind(Y,(E-Y))~Xd, Fcdf="binomial", data=simD, ncomp=10, sweeps=20,
+             burn=10, sampler="truncated", Xpred=pred, offsetPred=30)
 }
 
 \keyword{nonparametric}

@@ -93,6 +93,13 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     int NDV = NDC + 1; //number of discrete variables    
     int NCC = p - NDC; //number of continuous covariates
     int totran = p + 1; // number of random variables
+    
+    int NDCTemp, NCCTemp;
+    NDCTemp = NDC;
+    if (NDCTemp == 0) NDCTemp += 1;
+    NCCTemp = NCC;
+    if (NCCTemp == 0) NCCTemp += 1;  
+    
     int ncomp = ncomp1[0]; //number of clusters/components
     int npred = npred1[0]; //number of predictions
     int nRespPars = 1; // number of parameters in response pmf
@@ -218,9 +225,6 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     int temp3;
     double lower[NDV];
     double upper[NDV];    
-    int NDCTemp;
-    NDCTemp = NDC;
-    if (NDC == 0) NDCTemp = NDC + 1; 
     double lowerX[NDCTemp];
     double upperX[NDCTemp];
     double Lower, Upper;    
@@ -280,8 +284,8 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     for (j = 0; j < nRespPars; j++) 
         prec[j] = 1.0;        
     //Bases for vector and matrix views
-    double baseXmM[NCC]; // to view x-muh
-    double baseXmM2[NCC]; // to view x-muh
+    double baseXmM[NCCTemp]; // to view x-muh
+    double baseXmM2[NCCTemp]; // to view x-muh
     double baseSigmaSh[totran*totran]; //to view one row of SigmaSh at a time
     double baseDh[totran*totran]; //to view one row of Dh at a time
     double baseEh[totran*totran]; //to view one row of Eh at a time

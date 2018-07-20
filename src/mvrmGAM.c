@@ -102,7 +102,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     int ND = ND1[0];
 
     //Tolerance level 
-    double tol = 0.01; 
+    double tol = 0.001;//0.01; 
     
     //Declare variables for loops:
     int sw, i, j, k;
@@ -196,6 +196,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     for (j = 0; j < NG; j++)
         for (k = 0; k < vecLG[j]; k++)
             indexG[j][k] = k;
+            
     //Delta indeces: for shuffling
     int *indexD[ND];
     for (j = 0; j < ND; j++)
@@ -341,7 +342,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
 	                gammaP[cusumVecLG[j]+k] = vecGammaP[j][k];	            	            
 	            NPJ = 0;
                 for (k = 0; k < vecLG[j]; k++)
-                    {NPJ += vecGammaP[j][k];}
+                    NPJ += vecGammaP[j][k];
 	            NgammaP = Ngamma - vecNgamma[j] + NPJ; 
 	            SPP = SPcalc(n,1,tol,yTilde,gammaP,NgammaP,LG,ceta,X,LPV,&Q2);
                 Acp = exp((-SPP+SPC)/(2*sigma2))*pow(ceta+1,0.5*(vecNgamma[j]-NPJ));
@@ -480,7 +481,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
 	            if (f > FUL) f = FUL;
             }            
             sigma2P = sigma2 + gsl_ran_gaussian(r,sqrt(f));
-            while (sigma2P < 0) sigma2P = sigma2 + gsl_ran_gaussian(r,sqrt(f));
+            while (sigma2P <= 0) sigma2P = sigma2 + gsl_ran_gaussian(r,sqrt(f));
             Acp = exp(-0.5*n*log(sigma2P/sigma2) + (SPC/2)*(1/sigma2-1/sigma2P) + 
                   (sigma2-sigma2P)/(2*phi2sigma));
 	        unifRV = gsl_ran_flat(r,0.0,1.0);

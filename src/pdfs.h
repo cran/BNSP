@@ -56,7 +56,7 @@ int MultiNormalPDF(unsigned dim, const double *x, void *parameters, unsigned fdi
     int i, j, k;
     double mu[dim];
     double vars[dim];
-    double covs[ncovs];
+    double covs[ncovs+1];//add 1 to avoid problems with dim 0
     double logdet, Q, logval;
     for (i = 0; i < dim; i++) 
         mu[i] = params[i];    

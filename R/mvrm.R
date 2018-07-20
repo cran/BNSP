@@ -96,6 +96,7 @@ DM<-function(formula,data,mm,ns,knots=NULL,meanVector,indicator){
         y<-with(data,eval(trms[[2]])) 
         n<-length(y)
 	} else n<-ns    
+    sti<-NULL #smooth term indicator
     if (!is.null(nFactors)){
         whereSpecials <- unique(unlist(apply(attr(trms,"factors")[unlist(attr(trms,"specials")), ,drop = F] > 0,1,which)))
         if (length(whereSpecials) < nFactors){
@@ -107,32 +108,37 @@ DM<-function(formula,data,mm,ns,knots=NULL,meanVector,indicator){
                 trms3<-NULL
 		    }
 		    X<-model.matrix(trms2,data=data)
+		    sti<-c(sti,rep(0,dim(X)[2])) 
 	    }else{ 
             X<-matrix(1,ncol=1,nrow=n)
+            sti<-c(sti,rep(0,dim(X)[2]))
             colnames(X)<-"(Intercept)"
 			trms3<-delete.response(trms)
 	    }
-        if (!is.null(trms3)) 
+        if (!is.null(trms3)){ 
             for (i in 1:dim(attr(trms3,"factors"))[2]){ 
                 XK<-with(data,eval(trms3[i][[2]]))        
                 X<-cbind(X,XK$X)
                 Rknots[[i]] <- XK$knots
+                sti<-c(sti,rep(1,dim(XK$X)[2]))
 			}
+		}
     }else if (attr(trms,"response") && mm){ 
-        X<-model.matrix(trms,data=data)    
+        X<-model.matrix(trms,data=data)
+        sti<-c(sti,rep(1,dim(X)[2]))    
 	}else{ 
         X<-matrix(1,ncol=1,nrow=n)
         colnames(X)<-"(Intercept)"
+        sti<-c(sti,rep(1,dim(X)[2]))
 	}
-	#print("From dm")
-	#print(head(X))	
-	
 	if (missing(meanVector)) meanVector<-apply(as.matrix(X),2,mean)
 	if (missing(indicator)){ 
 	    unique.values<-unlist(lapply(apply(X,2,unique),length))
-	    indicator<-which(unique.values<=2 & unique.values<=n)
+	    dscr<-c(unique.values<=2 & unique.values<=n)
 	}
-			
+	#print("dscr")
+	#print(dscr)
+	
 	#main<-colnames(X)
 	#print(main)
 	#main<-main[main %in% colnames(data)]
@@ -142,7 +148,10 @@ DM<-function(formula,data,mm,ns,knots=NULL,meanVector,indicator){
 	#fact<-main[is.F]
 	#indicator<-sort(c(indicator,which(colnames(X)==fact)))
 	#print(indicator)	
-		
+	
+	indicator <- which(dscr==1 & sti==0)
+	#print("indicator")
+	#print(indicator)
 	X[,-indicator] <- X[,-indicator] - matrix(1,nrow=n)%*%matrix(meanVector[-indicator],nrow=1)     
     
     if (mm) {Ret<-as.matrix(cbind(y,X))}
@@ -239,7 +248,8 @@ mvrm <- function(formula,data,sweeps,burn=0,thin=1,seed,StorageDir,
     LD<-NCOL(Z)-1 
     vecLD<-table(gZ)
     cusumVecLD<-c(0,cumsum(vecLD))
-    MVLD<-max(cusumVecLD)
+    if (LD==0) MVLD <- 0
+    if (LD > 0) MVLD<-max(vecLD)
     #Prior for c.beta
     sp<-strsplit(c.betaPrior,"IG\\(")
     sp<-strsplit(sp[[1]][2],"\\)")
@@ -336,7 +346,7 @@ mvrm <- function(formula,data,sweeps,burn=0,thin=1,seed,StorageDir,
                 data=data,X=X,Xknots=Xknots,Z=Z,Zknots=Zknots,LG=LG,LD=LD,
                 mcpar=c(as.integer(burn+1),as.integer(seq(from=burn+1,by=thin,length.out=nSamples)[nSamples]),as.integer(thin)),
                 nSamples=nSamples,storeMeanVectorX=storeMeanVectorX,storeMeanVectorZ=storeMeanVectorZ,
-                #f=out[[17]][1],g=out[[18]][1],h=out[[19]],
+                f=out[[17]][1],g=out[[18]][1],h=out[[19]][1:ND],
                 DIR=StorageDir,deviance=out[[33]][1]/nSamples,nullDeviance=-2*logLik(lm(Y ~ 1)),
                 storeIndicatorX=storeIndicatorX,storeIndicatorZ=storeIndicatorZ)
     class(fit) <- 'mvrm'
@@ -441,8 +451,8 @@ plot.mvrm <- function(x, model="mean", term, intercept=TRUE, grid=30,
     is.D[indicator]<-1     	
     if (count==2 && static && model=="both") par(mfrow=c(1,2))
 	ML<-VL<-NULL
-    if (MEAN) ML<-sort(unique(unlist(lapply(label2,grep,colnames(mvrmObj$X)))))
-    if (STDEV) VL<-sort(unique(unlist(lapply(label2,grep,colnames(mvrmObj$Z)))))
+    if (MEAN) ML<-sort(unique(unlist(lapply(label2,grep,colnames(mvrmObj$X[,-1])))))+1
+    if (STDEV) VL<-sort(unique(unlist(lapply(label2,grep,colnames(mvrmObj$Z[,-1])))))+1
     if (length(c(ML,VL))==0) stop("no matching variables")
     #if (length(ML)==1 && MEAN==1) stop("to plot 1-dim parameter use function plot()")
     #if (length(VL)==1 && STDEV==1) stop("to plot 1-dim parameter use function plot()")

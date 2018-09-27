@@ -289,7 +289,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     double baseSigmaSh[totran*totran]; //to view one row of SigmaSh at a time
     double baseDh[totran*totran]; //to view one row of Dh at a time
     double baseEh[totran*totran]; //to view one row of Eh at a time
-    double baseC[totran - NDV]; // to view all continuous variables
+    double baseC[NCCTemp]; // to view all continuous variables
     double baseMUS[totran]; // to view means of all variables
 
     //Predictions
@@ -453,10 +453,10 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
             s = gsl_ran_flat(r,1.0,100000);
             rwish(s,totran,DFEhp,&Eht.matrix,Ehp);
             gsl_matrix_scale(&Eht.matrix, (double) DFEhp);
-            decomposeEtoDS(NDV,totran-NDV,Ehp,Dhp,SigmaShp);
-            logPostPdfDSigmaP = logPostPdfDSigma(Dhp,SigmaShp,Ehp,Vinv,Sh,NDV,totran-NDV,nmembers[h],eta);
-            logPostPdfDSigmaT = logPostPdfDSigma(&Dht.matrix,&SigmaSht.matrix,&Eht.matrix,Vinv,Sh,NDV,totran-NDV,nmembers[h],eta);
-            logTransR = logtrnsR(&Eht.matrix,Ehp,NDV,totran-NDV,DFEhp);
+            decomposeEtoDS(NDV,NCC,Ehp,Dhp,SigmaShp);
+            logPostPdfDSigmaP = logPostPdfDSigma(Dhp,SigmaShp,Ehp,Vinv,Sh,NDV,NCC,nmembers[h],eta);
+            logPostPdfDSigmaT = logPostPdfDSigma(&Dht.matrix,&SigmaSht.matrix,&Eht.matrix,Vinv,Sh,NDV,NCC,nmembers[h],eta);
+            logTransR = logtrnsR(&Eht.matrix,Ehp,NDV,NCC,DFEhp);
             logAcp = logPostPdfDSigmaP - logPostPdfDSigmaT + logTransR;
             Acp = exp(logAcp);
             if (Acp > 1.0) Acp = 1.0;
@@ -650,7 +650,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                     for (k = 0; k < p; k++)
                         baseMUS[k+1] = muh[h][k];
                     MUSTAR = gsl_vector_view_array(baseMUS,totran);                 
-                    for (k = 0; k < (totran-NDV); k++) 
+                    for (k = 0; k < NCC; k++) 
                         baseC[k] = X[NDC*n+i];                    
                     Ci = gsl_vector_view_array(baseC,NCC);                                        
                     MNCondParams2of2(NDV,NCC,&MUSTAR.vector,&Ci.vector,PartMean,CondMean,params);                                        

@@ -19,7 +19,7 @@ pi.muPrior="Beta(1,1)",pi.sigmaPrior="Beta(1,1)",sigmaPrior="HN(2)",...)
 for smooth effects \code{y ~ sm(x) | sm(z)}. The package uses the extended formula notation, where on the right of \code{~} 
 we define two models: on the right of \code{|} is the mean model and on the left is the variance model.}
 
-\item{data}{a required data frame.}
+\item{data}{data frame.}
 
 \item{sweeps}{total number of posterior samples, including those discarded in burn-in period 
 (see argument \code{burn}) and those discarded by the thinning process 
@@ -166,7 +166,7 @@ Papageorgiou, G. (2018). BNSP: an R Package for fitting Bayesian regression mode
 require(np)
 require(ggplot2)
 data(cps71)
-model <- logwage ~ sm(age,nknots=30,bs="rd") | sm(age,nknots=30,bs="rd")
+model <- logwage ~ sm(age,k=30,bs="rd") | sm(age,k=30,bs="rd")
 DIR<-getwd()
 m1<-mvrm(formula=model,data=cps71,sweeps=10,burn=5,thin=1,seed=1,StorageDir=DIR)
 \donttest{m2 <- mvrm(formula=model,data=cps71,sweeps=10000,burn=5000,thin=2, seed=1,StorageDir=DIR)  

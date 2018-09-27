@@ -6,13 +6,13 @@
 \description{Function used to define smooth effects in the mean and variance formulae of function \code{mvrm}. 
 The function is used internally to construct the design matrices.}
 
-\usage{sm(...,nknots=10,knots=NULL,bs="rd")}
+\usage{sm(...,k=10,knots=NULL,bs="rd")}
 
 \arguments{
 \item{...}{one or two covariates that the smooth term is a function of. If two covariates are used, 
 they may be both continuous or one continuous and one discrete. Discrete variables should be defined as \code{factor}
 in the \code{data} argument of the calling \code{mvrm} function.}
-\item{nknots}{the number of knots to be utilized in the basis function expansion.}
+\item{k}{the number of knots to be utilized in the basis function expansion.}
 \item{knots}{the knots to be utilized in the basis function expansion.}
 \item{bs}{a two letter character indicating the basis functions to be used. Currently, the options are
 \code{"rd"} that specifies radial basis functions and is available for univariate and bivariate smooths,

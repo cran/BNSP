@@ -282,8 +282,9 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     for (k = 0; k < LD; k++) 
         deltaP[k] = delta[k];
         
-    // - 3 - c_alpha
-    calpha = 110.0;//1/gsl_ran_gamma(r,alphaalpha,1/betaalpha);
+    // - 3 - c_alpha, 1/gsl_ran_gamma(r,alphaalpha,1/betaalpha);
+    if (alphaalpha > 1.0) calpha = betaalpha/(alphaalpha-1);
+    else calpha = 110.0;
     
     // - 4 - sigma2, alpha, LPV, sigma2t, QFC
     sigma2 = 1.0;
@@ -471,8 +472,11 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
         
         // - 3 - sigma2
         //Rprintf("%i %s \n",sw,"sigma2");
-		if (HN==0) sigma2 = 1/gsl_ran_gamma(r,alphasigma+0.5*n,1/(betasigma+0.5*SPC));
-        else if (HN==1){
+		if (HN==0){ 
+		    sigma2 = 1/gsl_ran_gamma(r,alphasigma+0.5*n,1/(betasigma+0.5*SPC));
+		    for (i = 0; i < n; i++)
+                sigma2z[i] = sigma2*exp(LPV[i]);
+		}else if (HN==1){
             if ((sw % batchL)==0 && WB > 0){ 
 	            if (acceptSigma2 > 0.25 && f < FUL) f += MIN(0.01,1/sqrt(WB)) * f; 
 	            if (acceptSigma2 <= 0.25 && f > FLL) f -= MIN(0.01,1/sqrt(WB)) * f;

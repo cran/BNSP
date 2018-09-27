@@ -1,6 +1,6 @@
 useDynLib(BNSP,.registration = TRUE)
 
-import(stats,ggplot2,plot3D,threejs,coda,cubature,Formula,plyr)
+import(stats,ggplot2,plot3D,threejs,coda,cubature,Formula,plyr,mgcv)
 
 importFrom("grDevices", "rainbow")
 importFrom("graphics", "par")
@@ -10,7 +10,7 @@ importFrom("gridExtra","grid.arrange")
 export(dpmj)
 S3method(print,bnp)
 
-export(mvrm,sm,mvrm2mcmc)
+export(mvrm,sm,mvrm2mcmc,s,te,ti)
 S3method(plot,mvrm)
 S3method(predict,mvrm)
 S3method(print,mvrm)

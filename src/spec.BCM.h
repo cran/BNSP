@@ -264,8 +264,7 @@ void setBaseZBSgh(int T, int d, int H, int h, int LG, int gamma[H][LG], int *com
 	    }
 	}
 }
-
-
+     
 //Creates the base for matrix Z Tilta_Gamma_h. 
 //Inputes: 1. Time points 2. dimension 3. number of surfaces 4. surface 5. LG 6. matrix of gammas 7. compAlloc 
 //8. nmembers 9. All bases 10.linear predictors for variance 11. output of function - only vizible bases.
@@ -288,14 +287,13 @@ void setBaseZtgh(int T, int d, int H, int h, int LG, int gamma[H][LG], int Ngamm
 	}
     for (t = 0; t < T; t++)
         for (i = 0; i < nmembers; i++)
-            for (j = 0; j < 
-            (Ngamma+1); j++)
+            for (j = 0; j < (Ngamma+1); j++)
                 BaseZtgh[j+i*(Ngamma+1)+t*nmembers*(Ngamma+1)] *= exp(-LPV[t]/2);//*BaseZBSg[j+i*(Ngamma+1)+t*nmembers*(Ngamma+1)];
 }
 
 //The likelihood of theta_h with eta_h integrated out, Sh.                
 double SPh(int T, int d, int H, int h, double tol, double *thetaTilde, int LG, int gamma[H][LG], int Ngamma,
-           int *compAlloc, int nmembers, double ceta, double *AllBases, double *LPV, double * qf2){
+           int *compAlloc, int nmembers, double ceta, double *AllBases, double *LPV, double *qf2){
     double vizZt[(T*nmembers)*(Ngamma+1)];
     double vizThetaTild[T*nmembers];
     double S, qf1;
@@ -524,4 +522,11 @@ void compAllocVtoCompAlloc(int G, int p, int *compAllocV, int * compAlloc){
     //Rprintf("\n");
     
     //gsl_matrix_free(R);
+}
+
+double FisherTr(double r, int I){
+	double comp;
+	if (I==0) comp = r;
+	if (I==1) comp = 0.5*log((1+r)/(1-r));
+	return(r);
 }

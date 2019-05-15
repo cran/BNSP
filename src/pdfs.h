@@ -300,9 +300,8 @@ double logPostPdfDSigma(gsl_matrix *D, gsl_matrix *Sigma, gsl_matrix *Eh, gsl_ma
     return(result);
 }
 
-//Joint posterior pdf of D and R based in IW prior: log of
-//|D|^(num1/2) |E|^(-num2/2) |K|^(num3/2) etr(-0.5*E^{-1}*M) 
-double logPropPdfDR(gsl_matrix *D, gsl_matrix *E, gsl_matrix *M, gsl_matrix *K, int p, double num1, double num2, double num3){
+//Computes log of |D|^(num1/2) |E|^(-num2/2) |K|^(num3/2) etr(-num4*E^{-1}*M/2) where D is diagonal 
+double logPropPdfDR(gsl_matrix *D, gsl_matrix *E, gsl_matrix *M, gsl_matrix *K, int p, double num1, double num2, double num3, double num4){
     int i;
     double temp, detD, detE, detK, trace, result;
     gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc(p);
@@ -314,29 +313,28 @@ double logPropPdfDR(gsl_matrix *D, gsl_matrix *E, gsl_matrix *M, gsl_matrix *K, 
     gsl_matrix *VDVT = gsl_matrix_alloc(p,p);
 
     detD = 1.0;
-    if (num1 > 0) 
+    if (fabs(num1) > 0) 
         for (i = 0; i < p; i++) 
-	    detD *= gsl_matrix_get(D,i,i);
+	        detD *= gsl_matrix_get(D,i,i);
     
     gsl_matrix_memcpy(CopyE,E);
     gsl_eigen_symmv(CopyE,eval,evec,w);
-
     detE = 1.0;
     for (i=0; i < p; i++){
         temp = gsl_vector_get(eval,i);
         detE *= temp;
-        gsl_matrix_set(EigenE,i,i,1/temp);
+        if (fabs(num4) > 0) gsl_matrix_set(EigenE,i,i,1/temp);
     }
-    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,evec,EigenE,0.0,VD);
-    gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,VD,evec,0.0,VDVT);
-    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,VDVT,M,0.0,VD);
-
     trace = 0.0;
-    for (i = 0; i < p; i++) 
-        trace += gsl_matrix_get(VD,i,i);
-
+    if (fabs(num4) > 0){
+        gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,evec,EigenE,0.0,VD);
+        gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,VD,evec,0.0,VDVT);
+        gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,VDVT,M,0.0,VD);    
+        for (i = 0; i < p; i++) 
+            trace += gsl_matrix_get(VD,i,i);
+    }
     detK = 1.0;
-    if (num3 > 0){
+    if (abs(num3) > 0){
         gsl_eigen_symmv_workspace * w2 = gsl_eigen_symmv_alloc(p);
         gsl_matrix *CopyK = gsl_matrix_alloc(p,p);
         gsl_vector *eval2 = gsl_vector_alloc(p);
@@ -350,7 +348,7 @@ double logPropPdfDR(gsl_matrix *D, gsl_matrix *E, gsl_matrix *M, gsl_matrix *K, 
         gsl_eigen_symmv_free(w2); gsl_matrix_free(CopyK); gsl_vector_free(eval2); gsl_matrix_free(evec2);   
     }
     
-    result = (num1/2.0)*log(detD) + (num3/2.0)*log(detK) - (num2/2.0)*log(detE) - 0.5*trace;
+    result = (num1/2.0)*log(detD) + (num3/2.0)*log(detK) - (num2/2.0)*log(detE) - num4*0.5*trace;
 
     gsl_eigen_symmv_free(w); gsl_matrix_free(CopyE); gsl_vector_free(eval); gsl_matrix_free(evec);
     gsl_matrix_free(EigenE); gsl_matrix_free(VD); gsl_matrix_free(VDVT);        

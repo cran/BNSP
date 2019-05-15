@@ -1,0 +1,14 @@
+citHeader("To cite BNSP in publications use:")
+  
+citEntry(entry="Article",
+         title = "BNSP: an R Package for Fitting Bayesian Semiparametric Regression Models and Variable Selection",
+         author = personList(as.person("Georgios Papageorgiou")),
+         year = 2018,
+         journal = "The R Journal",
+         volume = "10/2",
+         pages = "526--548",
+         textVersion = 
+         paste("Papageorgiou, G. (2018)",
+               "BNSP: an R Package for Fitting Bayesian Semiparametric Regression Models and Variable Selection",
+               "The R Journal, 10, 2, pp526--548")
+)

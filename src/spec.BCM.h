@@ -51,13 +51,20 @@ double SPcalc(int T, int d, double tol, double *thetaTilde, int *gamma, int Ngam
     thetaTild = gsl_vector_view_array(thetaTilde,T*d);
     gsl_blas_ddot(&thetaTild.vector,&thetaTild.vector,&qf1);
     S = qf1;
+    //Rprintf("%f\n",qf1);
     setBaseZtg(T,d,gamma,Ngamma,LG,AllBases,LPV,vizZt);
 	Ztg = gsl_matrix_view_array(vizZt,T*d,Ngamma+1);
 	ZtgTZtg = gsl_matrix_submatrix(ZTZ,0,0,Ngamma+1,Ngamma+1);
     gsl_blas_dgemm(CblasTrans,CblasNoTrans,1.0,&Ztg.matrix,&Ztg.matrix,0.0,&ZtgTZtg.matrix);
     ZtgTZtgInv = gsl_matrix_submatrix(ZTZinv,0,0,Ngamma+1,Ngamma+1);
 	gsl_matrix_memcpy(&ZtgTZtgInv.matrix,&ZtgTZtg.matrix);
+    //print_matrix(&ZtgTZtgInv.matrix);
     ginv(Ngamma+1,tol,&ZtgTZtgInv.matrix);
+    //print_matrix(&ZtgTZtgInv.matrix);
+    //Rprintf("%f %f %f %f %f \n",gsl_matrix_get(&ZtgTZtgInv.matrix,1,0),gsl_matrix_get(&ZtgTZtgInv.matrix,1,1),
+    //                            gsl_matrix_get(&ZtgTZtgInv.matrix,1,2),gsl_matrix_get(&ZtgTZtgInv.matrix,1,3),
+    //                            gsl_matrix_get(&ZtgTZtgInv.matrix,1,4));
+    
     ZtgTtT = gsl_vector_subvector(ZtTtT,0,Ngamma+1);
     gsl_blas_dgemv(CblasTrans,1.0,&Ztg.matrix,&thetaTild.vector,0.0,&ZtgTtT.vector);
 	ZZIZtV = gsl_vector_subvector(ZZIZt,0,Ngamma+1);
@@ -87,18 +94,14 @@ void proposeBlockInd(unsigned long int s, int *vecInd, int L, int B, int BS, int
     for (i = 0; i < (B*BS); i++)
         NBC += vecInd[shufInd[i]];
     for (i = ((B+1)*BS); i < L; i++)
-        NBC += vecInd[shufInd[i]];
-    
+        NBC += vecInd[shufInd[i]];    
     denom = gsl_sf_beta((double) (NBC+c),(double) (L-TBS-NBC+d));
-
     for (i = 0; i < (TBS+1); i++)
         priorProbs[i] = gsl_sf_choose(TBS,i) *
             gsl_sf_beta((double) (NBC+i+c),(double) (L-NBC-i+d))/denom;
-
     gsl_ran_multinomial(r,TBS+1,1,priorProbs,vecNS);
     NS = 0;
     while(vecNS[NS]==0) NS++;
-
     for (i = 0; i < TBS; i++) proposal[i] = 0;
     for (i = 0; i < NS; i++) proposal[i] = 1;
     gsl_ran_shuffle(r,proposal,TBS,sizeof (int));
@@ -243,6 +246,7 @@ void DeltaAlphaHat(int T, int d, double tol, double *LPV, double *sqRes, int *de
     gsl_blas_dgemv(CblasNoTrans,1.0,V,&smallD.vector,0.0,alphaHat);
     gsl_matrix_free(I); gsl_matrix_free(V);
 }
+
 
 //Clustering on the correlations
 
@@ -524,9 +528,229 @@ void compAllocVtoCompAlloc(int G, int p, int *compAllocV, int * compAlloc){
     //gsl_matrix_free(R);
 }
 
+//Fisher transformation
 double FisherTr(double r, int I){
 	double comp;
 	if (I==0) comp = r;
 	if (I==1) comp = 0.5*log((1+r)/(1-r));
-	return(r);
+	return(comp);
+}
+
+// St^* = sum_{i=1}^n_t y_{it} y_{it}^T. Inputs are: vec of all responses sorted by id and time, 
+// time vec, length of Y, time of interest, dim of Yit, store St^* 
+void computeStStar(double *Y, int *time, int N, int t, int p, gsl_matrix *StStar){
+    int i;
+    int c = 0;
+    double Yit[p];
+    gsl_matrix_view YitVec;    
+    gsl_matrix_set_zero(StStar);  
+    for (i = 0; i < N; i++){       
+        if (time[i]==t) Yit[c++] = Y[i];
+        if (c == p){
+		    c=0;
+		    YitVec = gsl_matrix_view_array(Yit,p,1);
+            gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,&YitVec.matrix,&YitVec.matrix,1.0,StStar);      
+		}         
+    }    
+}
+
+//Sets up X_{i,gamma} tilde transpose columnwise. Inputs are: 1. dim of y-vec, 2. number of sampling units, 3. sampling unit,
+// 4. length of gamma, 5. N(gamma) total, 6. LPV, 7. X matrix: one row per sampling unit, 8. gamma matrix, 9.vec to store
+void setXigammaStarT(int p, int m, int i, int LG, int Ngamma, double sigma2ij[m][p], double *X, int gamma[p][LG], double *base){
+    int j, k, move;    
+    move = 0;    
+    for (k = 0; k < p; k++)
+        for (j = 0; j < (LG+1); j++)
+            if ((j==0) || (j>0 && gamma[k][j-1]==1)) base[k*(Ngamma+p)+move++] = X[i*(LG+1)+j]/sqrt(sigma2ij[i][k]);
+}
+
+// Function S for multivariate responses: dim of response, # sampling units, length of gammas per regression, tol, ceta,
+// total Ngamma, vec of all Y-tilde, LPV, X = [X1,X2,...Xm], gamma mat, R^(-1), Sstar.  
+double ScalcMult(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, 
+                 int gamma[p][LG], gsl_matrix *Ri, gsl_matrix *St, double *qf2){
+    int i, k;
+    double S;
+    double trace = 0.0;
+    double Yi[p];
+    double base[p*(Ngamma+p)];                                      
+    for (k = 0; k < (p*(Ngamma+p)); k++) 
+        base[k] = 0;
+    gsl_matrix *XRi = gsl_matrix_alloc(Ngamma+p,p); 
+    gsl_matrix *XRiX = gsl_matrix_calloc(Ngamma+p,Ngamma+p);
+    gsl_matrix *RiS = gsl_matrix_alloc(p,p);
+    gsl_vector *XRiY = gsl_vector_calloc(Ngamma+p);
+    gsl_vector *AB = gsl_vector_alloc(Ngamma+p);                    
+    gsl_matrix_view Xig;
+    gsl_vector_view YiVec;                        
+    for (i = 0; i < m; i++){
+	    for (k = 0; k < p; k++)        
+            Yi[k] = Ytilde[i*p+k];
+    	YiVec = gsl_vector_view_array(Yi,p);		
+        setXigammaStarT(p,m,i,LG,Ngamma,sigma2ij,X,gamma,base);
+	    Xig = gsl_matrix_view_array(base,p,(Ngamma+p));	           
+        if (0==1){  
+            Rprintf("%s %i \n", "base:", i);
+            for (k = 0; k < (p*(Ngamma+p)); k++)
+                Rprintf(" %f ", base[k]);                
+			//print_matrix(&Xig.matrix);
+		}
+        gsl_blas_dgemm(CblasTrans,CblasNoTrans,1.0,&Xig.matrix,Ri,0.0,XRi);
+        gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,XRi,&Xig.matrix,1.0,XRiX);
+        gsl_blas_dgemv(CblasNoTrans,1.0,XRi,&YiVec.vector,1.0,XRiY);
+	}
+	//print_matrix(XRiX);
+	ginv(Ngamma+p,tol,XRiX);
+	//print_matrix(XRiX);
+	//Rprintf("%f %f %f %f %f \n",gsl_matrix_get(XRiX,1,0)/0.014,gsl_matrix_get(XRiX,1,1)/0.014,
+    //                            gsl_matrix_get(XRiX,1,2)/0.014,gsl_matrix_get(XRiX,1,3)/0.014,
+    //                            gsl_matrix_get(XRiX,1,4)/0.014);
+	
+	//Rprintf("%f %f %f %f %f \n",gsl_matrix_get(XRiX,1,0)*0.014,gsl_matrix_get(XRiX,1,1)*0.014,
+    //                            gsl_matrix_get(XRiX,1,2)*0.014,gsl_matrix_get(XRiX,1,3)*0.014,
+    //                            gsl_matrix_get(XRiX,1,4)*0.014);
+	
+		        
+	gsl_blas_dgemv(CblasTrans,1.0,XRiX,XRiY,0.0,AB);
+	
+	gsl_blas_ddot(XRiY,AB,qf2);
+	S = -(ceta/(1+ceta))*(*qf2);
+    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,Ri,St,0.0,RiS);	            
+    for (i = 0; i < p; i++) 
+        trace += gsl_matrix_get(RiS,i,i);
+    //print_matrix(Ri);print_matrix(St);
+    //Rprintf("%f \n",trace);		            
+    S += trace;		            
+    gsl_matrix_free(XRi); gsl_matrix_free(XRiX); gsl_matrix_free(RiS); 
+    gsl_vector_free(XRiY); gsl_vector_free(AB); 
+    //Rprintf("%s %f %f %f %f \n","from func: ",S,ceta,trace,qf2);
+    return(S);
+}
+
+// Function that computes tr(R^{-1} sum_{i=1}^m (Ytil_i-Xtil_i^* beta^*)(Ytil_i-Xtil_i^* beta^*)^T) for multivariate responses
+double NormalQuadr(int p, int m, int LG, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, 
+                   int gamma[p][LG], gsl_matrix *Ri, double *beta){        
+    int i, k;
+    double trace = 0.0;
+    double Yi[p];
+    double base[p*(Ngamma+p)];                                      
+    for (k = 0; k < (p*(Ngamma+p)); k++) base[k] = 0;
+    gsl_matrix *St = gsl_matrix_calloc(p,p);     
+    gsl_matrix *RiS = gsl_matrix_alloc(p,p);
+    gsl_matrix *XBeta = gsl_matrix_alloc(p,1);                    
+    gsl_matrix_view YiVec, Xig, Beta;                            
+    Beta = gsl_matrix_view_array(beta,(Ngamma+p),1);        
+    for (i = 0; i < m; i++){
+	    for (k = 0; k < p; k++)        
+            Yi[k] = Ytilde[i*p+k];
+    	YiVec = gsl_matrix_view_array(Yi,p,1);		
+        setXigammaStarT(p,m,i,LG,Ngamma,sigma2ij,X,gamma,base);
+	    Xig = gsl_matrix_view_array(base,p,(Ngamma+p));	         	              
+		gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,&Xig.matrix,&Beta.matrix,0.0,XBeta);
+		gsl_matrix_sub(&YiVec.matrix,XBeta);		
+		gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,&YiVec.matrix,&YiVec.matrix,1.0,St);        
+	}
+    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,Ri,St,0.0,RiS);	            
+    for (i = 0; i < p; i++) 
+        trace += gsl_matrix_get(RiS,i,i);        
+    gsl_matrix_free(St); gsl_matrix_free(RiS); gsl_matrix_free(XBeta); 
+    return(trace);
+}
+
+// Function that computes the posterior mean and variance of \ubeta: dim of response, # sampling units, length of gammas per regression, tol, ceta,
+// total Ngamma, vec of all Y-tilde, LPV, X = [X1,X2,...Xm], gamma mat, R^(-1), mean, var.  
+void postMeanVarEta2(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, 
+                       int gamma[p][LG], gsl_matrix *Ri, gsl_vector *MeanEta, gsl_matrix *varEta){
+    int i, k;
+    double Yi[p];
+    double base[p*(Ngamma+p)];
+    for (k = 0; k < (p*(Ngamma+p)); k++) 
+        base[k] = 0;                                                     
+    gsl_matrix *XRi = gsl_matrix_alloc(Ngamma+p,p); 
+    gsl_matrix *XRiX = gsl_matrix_calloc(Ngamma+p,Ngamma+p);
+    gsl_vector *XRiY = gsl_vector_calloc(Ngamma+p);                        
+    gsl_matrix_view Xig;
+    gsl_vector_view YiVec;                        
+    for (i = 0; i < m; i++){	    
+	    for (k = 0; k < p; k++)        
+            Yi[k] = Ytilde[i*p+k];
+    	YiVec = gsl_vector_view_array(Yi,p);		
+        setXigammaStarT(p,m,i,LG,Ngamma,sigma2ij,X,gamma,base);
+	    Xig = gsl_matrix_view_array(base,p,Ngamma+p);	           
+	    
+	    //if (i<2) print_matrix(&Xig.matrix);
+	    
+        gsl_blas_dgemm(CblasTrans,CblasNoTrans,1.0,&Xig.matrix,Ri,0.0,XRi);
+        gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,XRi,&Xig.matrix,1.0,XRiX);
+        gsl_blas_dgemv(CblasNoTrans,1.0,XRi,&YiVec.vector,1.0,XRiY);
+	}
+	ginv(Ngamma+p,tol,XRiX);	        
+    gsl_matrix_memcpy(varEta,XRiX);
+    gsl_matrix_scale(varEta,ceta/(1+ceta));
+    gsl_blas_dgemv(CblasNoTrans,1.0,varEta,XRiY,0.0,MeanEta);
+    gsl_matrix_free(XRi); gsl_matrix_free(XRiX); gsl_vector_free(XRiY);
+}
+
+//Sets up X_{gamma} transpose. Inputs are: dim of y-vec, number of sampling units, length of gamma, 
+// N(gamma) total, X matrix: on row per sampling unit, gamma matrix, vec to store
+void setBaseXg(int p, int m, int LG, int Ngamma, double *X, int gamma[p][LG], double *base){
+    int i, j, k, move;        
+    for (i = 0; i < m; i++){
+        move = 0;
+        for (k = 0; k < p; k++)
+            for (j = 0; j < (LG+1); j++)
+                if ((j==0) || (j>0 && gamma[k][j-1]==1)) base[i*p*(Ngamma+p)+k*(Ngamma+p)+move++] = X[i*(LG+1)+j];   
+	}
+}
+
+//Compute vector of squared residuals
+void cSqRes2(int p, int m, int LG, int gamma[p][LG], int Ngamma, double *X, gsl_vector *MeanEta, double *Y, double *sqRes){
+    int i;
+    double BaseXg[m*p*(Ngamma+p)];    
+    for (i = 0; i < (m*p*(Ngamma+p)); i++) 
+        BaseXg[i] = 0;                                     
+    gsl_vector *yHat = gsl_vector_alloc(p*m);
+    gsl_matrix_view Z;
+    setBaseXg(p,m,LG,Ngamma,X,gamma,BaseXg);
+	Z = gsl_matrix_view_array(BaseXg,m*p,Ngamma+p);
+	
+	//for (i = 0; i < (Ngamma+p); i++)
+      //  Rprintf("%s %f \n",gsl_matrix_get(&Z.matrix,,)); 	
+	
+    gsl_blas_dgemv(CblasNoTrans,1.0,&Z.matrix,MeanEta,0.0,yHat);
+    for (i = 0; i < (p*m); i++){
+        sqRes[i] = pow(Y[i] - yHat->data[i*yHat->stride],2);
+        //if (i<5) Rprintf("%i %f %f %f \n",i,theta[i],thetaHat->data[i*thetaHat->stride],sqRes[i]);
+    }
+    gsl_vector_free(yHat);
+}
+
+//Compute alpha^hat_delta and Delta_delta
+void DeltaAlphaHatExp(int m, int p, int l, double tol, double LPV[m][p], double *sqRes, int *delta, int Ndelta, 
+    int start, int end, double *AllBases, double sigma2, double sigma2ij[m][p], double calpha, gsl_matrix *D, gsl_vector *alphaHat){    
+    double base[m*Ndelta];
+    int i, j, move;
+    double vecd[m];
+    gsl_matrix *I = gsl_matrix_alloc(Ndelta,Ndelta);
+    gsl_matrix *V = gsl_matrix_alloc(Ndelta,m);
+    gsl_matrix_set_identity(I);
+    gsl_matrix_view Z;
+    gsl_vector_view smallD;    
+    for (i = 0; i < m; i++){                         
+        vecd[i] = log(sigma2) + LPV[i][l] + (sqRes[i*p+l] - sigma2ij[i][l])/sigma2ij[i][l];
+	    //Rprintf("%s %f %f %f %f \n","vec d: ",vecd[i],log(sigma2),LPV[i][l],sqRes[i*p+l]);
+	}
+    move = 0;    
+    for (i = 0; i < m; i++)
+        for (j = start; j < end; j++)
+            if (delta[j-start]==1) base[move++] = AllBases[m+j*m+i];    
+    Z = gsl_matrix_view_array(base,m,Ndelta);
+    //print_matrix(&Z.matrix);
+    gsl_blas_dgemm(CblasTrans,CblasNoTrans,1.0,&Z.matrix,&Z.matrix,0.0,D);
+    gsl_matrix_scale(I,1/calpha);
+    gsl_matrix_add(D,I);
+    ginv(Ndelta,tol,D);
+    gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,D,&Z.matrix,0.0,V);
+    smallD = gsl_vector_view_array(vecd,m);
+    gsl_blas_dgemv(CblasNoTrans,1.0,V,&smallD.vector,0.0,alphaHat);
+    gsl_matrix_free(I); gsl_matrix_free(V);
 }

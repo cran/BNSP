@@ -165,7 +165,7 @@ dpmj <- function(formula,Fcdf,data,offset,sampler="truncated",Xpred,offsetPred,
         StorageDir <- path.expand(StorageDir)
         ncharwd <- nchar(StorageDir)}
     if (!missing(StorageDir)) if (!(substr(StorageDir,ncharwd,ncharwd)=="/")) StorageDir <- paste(StorageDir,"/",sep="")
-    if (!missing(StorageDir)) if (!file.exists(StorageDir)) DIRC<-dir.create(StorageDir,recursive = TRUE)
+    if (!missing(StorageDir)) if (!dir.exists(StorageDir)) DIRC<-dir.create(StorageDir,recursive = TRUE)
     #if (!DIRC) stop("selected directory does not exist")
     if (missing(StorageDir)) {WF <- 0; StorageDir <- paste(getwd(),"/",sep="")}
     on.exit(if (WF==0) file.remove(paste(StorageDir,"BNSP.Sigmah.txt",sep=""),

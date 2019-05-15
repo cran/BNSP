@@ -1,25 +1,27 @@
-\name{mvrm}
-\alias{mvrm}
+\name{mmvrm}
+\alias{mmvrm}
 
-\title{Bayesian models for normally distributed responses and semiparametric
-       mean and variance regression models}
+\title{Bayesian semiparametric analysis of multivariate continuous responses with variable selection}
 
-\description{MCMC for normally distributed responses with additive models for the
-mean and variance functions, achieved via spike-slab priors for variable selection.
-See `Details' section for a full description of the model.}
+\description{Implements an MCMC algorithm for posterior sampling based on a semiparametric model for
+continuous multivariate responses and additive models for the mean and variance  functions. The model
+utilizes spike-slab priors for variable selection and regularization. See `Details' section for a full description
+of the model.}
 
 \usage{
-mvrm(formula,data,sweeps,burn=0,thin=1,seed,StorageDir,
-c.betaPrior="IG(0.5,0.5*n)",c.alphaPrior="IG(1.1,1.1)",
-pi.muPrior="Beta(1,1)",pi.sigmaPrior="Beta(1,1)",sigmaPrior="HN(2)",...)
+mmvrm(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
+c.betaPrior="IG(0.5,0.5*n*p)", pi.muPrior="Beta(1,1)", c.alphaPrior="IG(1.1,1.1)",
+sigma2Prior="HN(2)", pi.sigmaPrior="Beta(1,1)", mu.RPrior="N(0,1)",
+sigma.RPrior="HN(1)",corr.Model=c("common",nClust=1),DP.concPrior="Gamma(5,2)",
+tuneAlpha,tuneSigma2,tuneCb,tuneCa,tuneR,tuneSigma2R,tau,FT=1,...)
 }
 
 \arguments{
-\item{formula}{a formula defining the response and the covariates in the mean and variance models e.g. \code{y ~ x | z} or
-for smooth effects \code{y ~ sm(x) | sm(z)}. The package uses the extended formula notation, where on the right of \code{~}
-we define the mean and variance model.}
+\item{formula}{a formula defining the responses and the covariates in the mean and variance models e.g. \code{y1 | y2 ~ x | z} or
+for smooth effects \code{y1 | y2 ~ sm(x) | sm(z)}. The package uses the extended formula notation, where the responses are
+defined on the left of \code{~} and the mean and variance models on the right.}
 
-\item{data}{data frame.}
+\item{data}{a data frame.}
 
 \item{sweeps}{total number of posterior samples, including those discarded in burn-in period
 (see argument \code{burn}) and those discarded by the thinning process
@@ -34,31 +36,73 @@ we define the mean and variance model.}
 \item{StorageDir}{a required directory to store files with the posterior samples of models parameters.}
 
 \item{c.betaPrior}{The inverse Gamma prior of \eqn{c_{\beta}}.
-The default is "IG(0.5,0.5*n)", that is, an inverse Gamma with parameters \eqn{1/2} and
-\eqn{n/2}, where \eqn{n} is the sample size.}
-
-\item{c.alphaPrior}{The inverse Gamma prior of \eqn{c_{\alpha}}.
-The default is "IG(1.1,1.1)". Half-normal prior is also available, declared using "HN(a)", where "a"
-is a positive number.}
+The default is "IG(0.5,0.5*n*p)", that is, an inverse Gamma with parameters \eqn{1/2} and
+\eqn{np/2}, where \eqn{n} is the number of sampling units and \eqn{p} is the length of the response vector.}
 
 \item{pi.muPrior}{The Beta prior of \eqn{\pi_{\mu}}.
-The default is "Beta(1,1)".}
+The default is "Beta(1,1)". It can be of dimension \eqn{1}, of dimension \eqn{K} (as in (8) of the draft paper),
+or of dimension \eqn{pK}}
+
+\item{c.alphaPrior}{The inverse Gamma prior of \eqn{c_{\alpha}}.
+The default is "IG(1.1,1.1)". Half-normal priors are also available, declared using "HN(a)", where "a"
+is a positive number. It can be of dimension \eqn{1} or \eqn{p}.}
+
+\item{sigma2Prior}{The prior of \eqn{\sigma^2}.
+The default is "HN(2)", a half-normal prior for \eqn{\sigma} with variance equal to two,
+\eqn{\sigma \sim N(0,2) I[\sigma>0]}. Inverse Gamma priors are also available,
+declared using "IG(a,b)". It can be of dimension \eqn{1} or \eqn{p}.}
 
 \item{pi.sigmaPrior}{The Beta prior of \eqn{\pi_{\sigma}}.
-The default is "Beta(1,1)".}
+The default is "Beta(1,1)". It can be of dimension \eqn{1}, of dimension \eqn{Q} (as in (11) of the draft paper),
+or of dimension \eqn{pQ}}
 
-\item{sigmaPrior}{The prior of \eqn{\sigma^2}.
-The default is "HN(2)", a half-normal for \eqn{\sigma} with variance equal to two,
-\eqn{\sigma \sim N(0,2) I[\sigma>0]}.
-Inverse Gamma prior is also available, declared using "IG(a,b)".}
+\item{mu.RPrior}{The normal prior for \eqn{\mu_{R}}.
+The default is the standard normal distribution.}
+
+\item{sigma.RPrior}{The half normal prior for \eqn{\sigma_{R}}.
+The default is the half normal distribution with variance one.}
+
+\item{corr.Model}{Specifies the model for the correlation matric \eqn{R}.
+The three choices supported are "common", that specifies a common correlations model,
+"groupC", that specifies a grouped corelations model, and "groupV", that specifies
+a grouped variables model. When the model chosen is either "groupC" or "groupV" the upper
+limit on the number of clusters can also be specified, using corr.Model = c("groupC", nClust = d)
+or corr.Model = c("groupV", nClust = p). If the number of clusters is left unspecified,
+for the "groupV" model, it is taken to be \eqn{p}, the number of responses in the model.
+For the "groupV" model, it is taken to be \eqn{d = p(p-1)/2}.}
+
+\item{DP.concPrior}{The Gamma prior for the Dirichlet process concentration parameter.}
+
+\item{tuneAlpha}{Starting value of the tuning parameter for sampling regression coefficients
+\eqn{\alpha}, step 2 of the MCMC in the draft paper. Defaults at 5.}
+
+\item{tuneSigma2}{Starting value of the tuning parameter for sampling \eqn{\sigma^2_j}, step 3.
+Defaults at 1.}
+
+\item{tuneCb}{Starting value of the tuning parameter for sampling \eqn{c_{\beta}}, step 4.
+Defaults at 10.}
+
+\item{tuneCa}{Starting value of the tuning parameter for sampling \eqn{c_{\alpha j}}, step 5.
+Defaults at 1.}
+
+\item{tuneR}{Starting value of the tuning parameter for sampling correlation matrices, step 6.
+Defaults at \eqn{100(p+2)}.}
+
+\item{tuneSigma2R}{Starting value of the tuning parameter for sampling \eqn{\sigma_{R}^2}, step 9.
+Defaults at 1.}
+
+\item{tau}{The \eqn{tau} of the shadow prior. Defaults at 0.01.}
+
+\item{FT}{Binary indicator. If set equal to 1, the \eqn{g()} function that appears in (16) is taken
+to be the Fisher's z. If set equal to 0, \eqn{g()} is taken to be the identity function.}
 
 \item{...}{Other options that will be ignored.}
 }
 
-\details{Function \code{mvrm} returns samples from the posterior distributions of the parameters of
-a regression model with normally distributed responses and mean and variance functions modeled
-in terms of covariates. For instance, in the presence of two covariates in the mean model
-(\eqn{u_1, u_2}) and two in the variance model (\eqn{w_1, w_2}), we may choose to fit
+\details{Function \code{mmvrm} returns samples from the posterior distributions of the parameters of
+a regression model with normally distributed multivariate responses and mean and variance functions modeled
+in terms of covariates. For instance, in the presence of two responses (\eqn{y_1, y_2}) and two covariates
+in the mean model (\eqn{u_1, u_2}) and two in the variance model (\eqn{w_1, w_2}), we may choose to fit
 \deqn{
 \mu_u = \beta_0 + \beta_1 u_1 + f_{\mu}(u_2),}
 \deqn{
@@ -83,7 +127,6 @@ Indicators \eqn{\delta} that take value \eqn{\delta=1} if the associated coeffic
 \eqn{\alpha \neq 0} and \eqn{\delta = 0} if \eqn{\alpha = 0} for the variance function
 are defined analogously. We note that all coefficients in the mean and variance functions are
 subject to selection except the intercepts, \eqn{\beta_0} and \eqn{\alpha_0}.
-
 
 \emph{Prior specification:}
 
@@ -121,7 +164,7 @@ Lastly, for \eqn{\sigma^2} we consider inverse Gamma and half-normal priors
 }
 }
 
-\value{Function \code{mvrm} returns the following:
+\value{Function \code{mmvrm} returns the following:
 \item{call}{the matched call.}
 \item{formula}{model formula.}
 \item{seed}{the seed that was used (in case replication of the results is needed).}
@@ -148,9 +191,21 @@ indicator variables, and they are in the same order as the columns of design mat
 \item{delta.txt}{contains samples from the posterior of the vector of the indicators
 \eqn{\delta}. Rows represent posterior samples and columns represent the
 indicator variables, and they are in the same order as the columns of design matrix Z.}
-\item{sigma2.txt}{contains samples from the posterior of the error variance \eqn{\sigma^2}.}
+\item{sigma2.txt}{contains samples from the posterior of the error variance \eqn{\sigma^2} of each response.}
 \item{cbeta.txt}{contains samples from the posterior of \eqn{c_{\beta}}.}
 \item{calpha.txt}{contains samples from the posterior of \eqn{c_{\alpha}}.}
+\item{R.txt}{contains samples from the posterior of the correlation matrix \eqn{R}.}
+\item{theta.txt}{contains samples from the posterior of \eqn{\theta} of the shadow prior (probably not needed).}
+\item{muR.txt}{contains samples from the posterior of \eqn{\mu_R}.}
+\item{sigma2R.txt}{contains samples from the posterior of \eqn{\sigma^2_{R}}.}
+\item{deviance.txt}{contains the deviance, minus twice the log likelihood evaluated at the sampled values of the parameters.}
+In addition to the above, for models that cluster the correlations we have
+\item{compAlloc.txt}{The cluster at which the correlations were allocated, \eqn{\lambda_{kl}}. These are integers from zero to the specified number of clusters minus one.}
+\item{nmembers.txt}{The numbers of correlations assigned to each cluster.}
+\item{DPconc.txt}{Contains samples from the posterior of the Dirichlet process concentration parameter.}
+In addition to the above, for models that cluster the variables we have
+\item{compAllocV.txt}{The cluster at which the variables were allocated, \eqn{\lambda_{k}}. These are integers from zero to the specified number of clusters minus one.}
+\item{nmembersV.txt}{The numbers of variables assigned to each cluster.}
 }
 
 \references{

@@ -144,3 +144,19 @@ void decomposeEtoDS(int nres, int nconf, gsl_matrix *E, gsl_matrix *D, gsl_matri
         }
     }
 }
+
+//Computes |E|
+double det(int p, gsl_matrix *E){
+    int i;
+    double detE = 1.0;
+    gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc(p);
+    gsl_matrix *CopyE = gsl_matrix_alloc(p,p);
+    gsl_vector *eval = gsl_vector_alloc(p);
+    gsl_matrix *evec = gsl_matrix_alloc(p,p);
+    gsl_matrix_memcpy(CopyE,E);
+    gsl_eigen_symmv(CopyE,eval,evec,w);
+    for (i=0; i < p; i++)
+        detE *= gsl_vector_get(eval,i);
+    gsl_eigen_symmv_free(w); gsl_matrix_free(CopyE); gsl_vector_free(eval); gsl_matrix_free(evec);
+    return(detE);
+}

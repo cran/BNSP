@@ -1111,7 +1111,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
 
         }
         if (Iend == 1) sw -= 1;
-        if (sw==(sweeps-1) && (!((sw+1) % 500)==0)) Rprintf("%i %s \n",sw+1, "posterior samples...");
+        if ((sw==(sweeps-1)) && (!((sw+1) % 500)==0)) Rprintf("%i %s \n",sw+1, "posterior samples...");
     }//end of sw
     //Free up random number
     gsl_rng_free (r);

@@ -334,7 +334,7 @@ double logPropPdfDR(gsl_matrix *D, gsl_matrix *E, gsl_matrix *M, gsl_matrix *K, 
             trace += gsl_matrix_get(VD,i,i);
     }
     detK = 1.0;
-    if (abs(num3) > 0){
+    if (fabs(num3) > 0){
         gsl_eigen_symmv_workspace * w2 = gsl_eigen_symmv_alloc(p);
         gsl_matrix *CopyK = gsl_matrix_alloc(p,p);
         gsl_vector *eval2 = gsl_vector_alloc(p);

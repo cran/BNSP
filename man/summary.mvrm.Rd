@@ -8,13 +8,14 @@ Provides basic information from an mvrm fit.
 }
 
 \usage{
-\method{summary}{mvrm}(object, nModels = 5, digits = 5, ...)
+\method{summary}{mvrm}(object, nModels = 5, digits = 5, printTuning = FALSE,...)
 }
 
 \arguments{
 \item{object}{an object of class "mvrm", usually a result of a call to \code{mvrm}.}
 \item{nModels}{integer number of models with the highest posterior probability to be displayed.}
 \item{digits}{the number of significant digits to use when printing.}
+\item{printTuning}{if set to TRUE, the starting and finishig values of the tuninf parameters are displayed.}
 \item{...}{other arguments.}
 }
 

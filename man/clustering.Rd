@@ -10,7 +10,7 @@ Computes the similarity matrix.
 \usage{clustering(object,...)}
 
 \arguments{
-\item{object}{an object of class "mmvrm", usually a result of a call to \code{mmvrm}.}
+\item{object}{an object of class "mvrm", usually a result of a call to \code{mvrm}.}
 \item{...}{other arguments.}
 }
 

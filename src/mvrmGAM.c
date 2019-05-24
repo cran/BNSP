@@ -48,15 +48,18 @@
 #include "spec.BCM.h" 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define MAX_PATH 300
 
 void mvrmC(int *seed1, char **WorkingDir, int *WF1,
-         int *sweeps1, int *burn1, int *thin1,
-         double *Y, double *X, double *Z, int *n1, int *LG1, int *LD1,
-         double *blockSizeProb1, int *maxBSG1, double *blockSizeProb2, int *maxBSD1, 
-         double *f1, double *g1, double *h, double *fca1,
-         int *NG1, int *ND1, int *vecLG, int *vecLD, int *cusumVecLG, int *cusumVecLD, int *MVLD,
-         double *cetaParams, int *HNca1, double *calphaParams, double *pimu, double *pisigma,
-         int *HNsg1, double *sigmaParams, double *dev)
+           int *sweeps1, int *burn1, int *thin1,
+           double *Y, double *X, double *Z, int *n1, int *LG1, int *LD1,
+           double *blockSizeProb1, int *maxBSG1, double *blockSizeProb2, int *maxBSD1, 
+           double *fca1, double *f1, double *g1, double *h, 
+           int *NG1, int *ND1, int *vecLG, int *vecLD, int *cusumVecLG, int *cusumVecLD, int *MVLD,
+           double *cetaParams, int *HNca1, double *calphaParams, double *pimu, double *pisigma,
+           int *HNsg1, double *sigmaParams, double *dev,
+           int *cont, int *LASTgamma, int *LASTdelta, double *LASTalpha, double *LASTsigma2zk,           
+           double *LASTceta, double *LASTcalpha, int *LASTWB)
 {
     gsl_set_error_handler_off();
 
@@ -68,11 +71,10 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
 
     // Specify directory
     int WF = WF1[0]; // indicator: 1 = write files, 0 = no files.
-    const int MAX_PATH = 300;
     char path_name[MAX_PATH + 1];
 
     // Open files
-    FILE *out_file1, *out_file2, *out_file3, *out_file4, *out_file5, *out_file6, *out_file7;
+    FILE *out_file1, *out_file2, *out_file3, *out_file4, *out_file5, *out_file6, *out_file7, *out_file8;
 
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.gamma.txt");
     out_file1 = fopen(path_name, "wt");
@@ -88,6 +90,8 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     out_file6 = fopen(path_name, "wt");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.beta.txt");
     out_file7 = fopen(path_name, "wt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.deviance.txt");
+    out_file8 = fopen(path_name, "a");
     
     // Sweeps, burn-in period, thin
     int sweeps = sweeps1[0]; 
@@ -161,7 +165,6 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     double sigma2;
     double calpha;
     double ceta;
-    double deviance = 0;
 
     // Declare other quantities
     int move;
@@ -175,7 +178,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     double sqResC[n];
     double sqResP[n];
     double Acp, unifRV, QFC, QFP, detR,
-           logMVNormC, logMVNormP, SPC, SPP, sigma2P;
+           logMVNormC, logMVNormP, SPC, SPP, sigma2P, dev0, dev1;
     double cetahat, Sprime, SDprime, elPrime, elDPrime, Q2, cetaP, calphaP;
     
     //For selecting block size gamma_B or delta_B
@@ -255,54 +258,74 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     double FCAUL = 200;
 
     // Sampler initialization
-    // - 1 - Vec of gammas
+    
+    // - 1 - Gamma    
+    if (cont[0]==1)
+        for (k = 0; k < LG; k++)
+            gamma[k] = LASTgamma[k];
+
+    if (cont[0]==0)        
+        for (k = 0; k < LG; k++)
+            gamma[k] = 1; //gsl_ran_bernoulli(r,cmu/(cmu+dmu)); 
+    
     for (j = 0; j < NG; j++)
-        for (k = 0; k < vecLG[j]; k++)
-            vecGamma[j][k] = 1; //gsl_ran_bernoulli(r,cmu/(cmu+dmu)); 
+	    for (k = 0; k < vecLG[j]; k++)
+	        vecGamma[j][k] = gamma[cusumVecLG[j]+k];     
+    
     for (j = 0; j < NG; j++){
 	    vecNgamma[j] = 0;
         for (k = 0; k < vecLG[j]; k++)
             vecNgamma[j] += vecGamma[j][k];
     }
-	for (j = 0; j < NG; j++)
-	    for (k = 0; k < vecLG[j]; k++)
-	        gamma[cusumVecLG[j]+k] = vecGamma[j][k];
+    
 	Ngamma = 0;
 	for (j = 0; j < NG; j++)
-	    Ngamma += vecNgamma[j]; 
+	    Ngamma += vecNgamma[j];
+	     
     for (k = 0; k < LG; k++) 
         gammaP[k] = gamma[k];
+        
     NgammaP = Ngamma;
         
-    // - 2 - Vec of delta
+    // - 2 - Delta & Alpha
+    if (cont[0]==1)
+        for (k = 0; k < LD; k++){
+            delta[k] = LASTdelta[k];
+            alpha[k] = LASTalpha[k];
+		}
+
+    if (cont[0]==0)        
+        for (k = 0; k < LD; k++){
+            delta[k] = 0; //gsl_ran_bernoulli(r,csigma[j]/(csigma[j]+dsigma[j]));
+            alpha[k] = 0;
+		}
+    
     for (j = 0; j < ND; j++)
-        for (k = 0; k < vecLD[j]; k++)
-            vecDelta[j][k] = 0; //gsl_ran_bernoulli(r,csigma[j]/(csigma[j]+dsigma[j]));
+	    for (k = 0; k < vecLD[j]; k++)
+	        vecDelta[j][k] = delta[cusumVecLD[j]+k];
+            
     for (j = 0; j < ND; j++){
 	    vecNdelta[j] = 0;
         for (k = 0; k < vecLD[j]; k++)
             vecNdelta[j] += vecDelta[j][k];
     }
-    for (j = 0; j < ND; j++)
-	    for (k = 0; k < vecLD[j]; k++)
-	        delta[cusumVecLD[j]+k] = vecDelta[j][k];        
-    Ndelta = 0;
+      
+    Ndelta = 0;    
     for (j = 0; j < ND; j++)
         Ndelta += vecNdelta[j];
-    for (k = 0; k < LD; k++) 
-        deltaP[k] = delta[k];
-        
-    // - 3 - c_alpha, 1/gsl_ran_gamma(r,alphaalpha,1/betaalpha);
-    calpha = 110.0;
-    if (HNca==0 && alphaalpha > 1.0) calpha = betaalpha/(alphaalpha-1);
-    if (HNca==1) calpha = sqrt(2*phi2calpha/M_PI);
+    for (k = 0; k < LD; k++){ 
+        deltaP[k] = delta[k];    
+        alphaPD[k] = alpha[k];
+	}
+                
+    // - 3 - sigma2, 
+    if (cont[0]==1)       
+        sigma2 = LASTsigma2zk[0];
+
+    if (cont[0]==0)
+        sigma2 = 1.0;
     
-    // - 4 - sigma2, alpha, LPV, sigma2t, QFC
-    sigma2 = 1.0;
-    for (k = 0; k < LD; k++){
-        if (delta[k]==0) alpha[k] = 0.0;
-        else alpha[k] = gsl_ran_gaussian(r,sqrt(calpha)); 
-    }
+    // - 4 - LPV, sigma2t, QFC  LPV, sigma2ij, Ytilde, St      
     for (i = 0; i < n; i++){
         LPV[i] = 0.0;
         for (k = 0; k < LD; k++)
@@ -312,23 +335,30 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     }                
     QFC = 0.0;
     for (k = 0; k < LD; k++)
-        QFC += pow(alpha[k],2);
-    for (k = 0; k < LD; k++)
-        alphaPD[k] = alpha[k];
+        QFC += pow(alpha[k],2);    
     
     // - 5 - c_eta
-    ceta = 1;
-    cetahat = ceta; //starting value is the current value
-    SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
-    elPrime = 99.9;
-    while(elPrime > 0.000000001 || -elPrime > 0.000000001){
-        Sprime = -Q2/pow(cetahat+1,2);
-        SDprime = 2*Q2/pow(cetahat+1,3);
-        elPrime = -0.5*(Ngamma+1)/(cetahat+1)-Sprime/(2*sigma2)-(alphaeta+1)/cetahat+betaeta/pow(cetahat,2);
-        elDPrime = 0.5*(Ngamma+1)/(pow(cetahat+1,2))-SDprime/(2*sigma2)+(alphaeta+1)/pow(cetahat,2)-2*betaeta/pow(cetahat,3);
-        cetahat -= elPrime / elDPrime;
+    if (cont[0]==0){
+        ceta = 1;
+        cetahat = ceta; //starting value is the current value
+        SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
+        elPrime = 99.9;
+        while(elPrime > 0.000000001 || -elPrime > 0.000000001){
+            Sprime = -Q2/pow(cetahat+1,2);
+            SDprime = 2*Q2/pow(cetahat+1,3);
+            elPrime = -0.5*(Ngamma+1)/(cetahat+1)-Sprime/(2*sigma2)-(alphaeta+1)/cetahat+betaeta/pow(cetahat,2);
+            elDPrime = 0.5*(Ngamma+1)/(pow(cetahat+1,2))-SDprime/(2*sigma2)+(alphaeta+1)/pow(cetahat,2)-2*betaeta/pow(cetahat,3);
+            cetahat -= elPrime / elDPrime;
+        }
+        ceta = cetahat; 
     }
-    ceta = cetahat; 
+    if (cont[0]==1) ceta = LASTceta[0];
+    
+    // - 6 - c_alpha, 1/gsl_ran_gamma(r,alphaalpha,1/betaalpha);
+    calpha = 110.0;
+    if (HNca==0 && alphaalpha > 1.0) calpha = betaalpha/(alphaalpha-1);
+    if (HNca==1) calpha = sqrt(2*phi2calpha/M_PI);
+    if (cont[0]==1) calpha = LASTcalpha[0];
       
     //#############################################SAMPLER
     for (sw = 0; sw < sweeps; sw++){
@@ -336,6 +366,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
         if (((sw+1) % 1000)==0) Rprintf("%i %s \n",sw+1, "posterior samples...");
            
 	    modf(sw/batchL,&WB);
+	    WB += LASTWB[0];
        	 
        	SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2); 
        	//Rprintf("%s %i %i %f %f %f \n","before gamma: ",sw,2*Ngamma,2*SPC,2*Q2,ceta);
@@ -630,8 +661,16 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
             detR = 0.0;
             for (i = 0; i < n; i++)
                 detR += LPV[i];
-            deviance += SPC/sigma2 + (Ngamma+1)*log(ceta+1) + n*log(sigma2) + detR + n*log(2*M_PI); 
-            
+            dev0 = SPC/sigma2 + (Ngamma+1)*log(ceta+1) + n*log(sigma2) + detR + n*log(2*M_PI); 
+            dev[0] += dev0;
+
+            cSqRes(n,1,gamma,Ngamma,LG,X,&subMeanEta.vector,Y,sqResC);
+            SPP = 0;
+            for (i = 0; i < n; i++)
+                SPP += sqResC[i]/exp(LPV[i]);
+            dev1 = SPP/sigma2 + n*log(2*M_PI) + n*log(sigma2) + detR;
+            dev[1] += dev1;
+                        
             //Rprintf("%s %f %f %f %f %f \n","deviance:",deviance,n*log(2*M_PI),n*log(sigma2)+detR,
             //(Ngamma+1)*log(ceta+1),SPC/sigma2);
             
@@ -654,15 +693,18 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
             for (k = 0; k < LG; k++)
                 if (gamma[k]==1) fprintf(out_file7, "%f ", eta[move++]); else fprintf(out_file7, "%f ", 0.0);                
             fprintf (out_file7, "\n");
+            fprintf(out_file8, "%f %f \n", dev0, dev1);
         }
         // If sw needs to be printed
-        if (sw==(sweeps-1) && (!(sweeps % 1000)==0)) Rprintf("%i %s \n",sweeps, "posterior samples...");
+        if ((sw==(sweeps-1)) && (!(sweeps % 1000)==0)) Rprintf("%i %s \n",sweeps, "posterior samples...");
     }//end of sw
-    //Update adaptive parameters & deviance
+    //Update adaptive parameters
     f1[0] = f;
     g1[0] = g;
-    dev[0] = deviance;
     fca1[0] = fca;
+    
+    //Update LASTWB
+    LASTWB[0] = WB;
 
     //Free up random number generator
     gsl_rng_free (r);
@@ -670,7 +712,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     //Close files
     fclose(out_file1); fclose(out_file2); fclose(out_file3);
     fclose(out_file4); fclose(out_file5); fclose(out_file6);
-    fclose(out_file7);
+    fclose(out_file7); fclose(out_file8);
 
     //Free up gsl matrices
     gsl_matrix_free(varEta); gsl_vector_free(meanEta); gsl_matrix_free(D); gsl_vector_free(alphaHat); 

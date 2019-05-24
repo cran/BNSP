@@ -7,14 +7,14 @@
 
 \title{Bayesian non- and semi-parametric model fitting}
 
-\description{Markov chain Monte Carlo algorithms for non- and semi-parametric models: 1. Dirichlet process mixture models with function \code{dpmj} and 2. spike-slab variable selection in mean/variance regression models with function \code{mvrm}.}
+\description{Markov chain Monte Carlo algorithms for non- and semi-parametric models: 1. Dirichlet process mixture models with function \code{dpmj} and 2. spike-slab variable selection in multivariate mean/variance regression models with function \code{mvrm}.}
 
 \details{
 \tabular{ll}{
 Package: \tab BNSP\cr
 Type: \tab Package\cr
-Version: \tab 2.0.9\cr
-Date: \tab 2019-02-04\cr
+Version: \tab 2.1.0\cr
+Date: \tab 2019-05-24\cr
 License: \tab GPL (>=2)\cr}
 
 This program is free software; you can redistribute it and/or
@@ -40,9 +40,12 @@ Maintainer: Georgios Papageorgiou <gpapageo@gmail.com>}
 \section{Acknowledgments}{This work was partly supported by the Medical Research Council grant number G09018401.}
 
 \references{
+Papageorgiou, G. and Marshall, B.C. (2019). Bayesian semiparametric analysis of multivariate continuous responses, with variable selection. arXiv:1905.08393 [stat.ME].
+
+Papageorgiou, G. (2018). BNSP: an R Package for fitting Bayesian semiparametric regression models and variable selection. The R Journal, 10(2):526-548.
+
 Papageorgiou, G. (2018). Bayesian density regression for discrete outcomes. arXiv:1603.09706v3 [stat.ME]. 
 
-Papageorgiou, G. (2018). BNSP: an R Package for Fitting Bayesian Semiparametric Regression Models and Variable Selection. arXiv:1804.10939 [stat.OT]
-
 Papageorgiou, G., Richardson, S. and Best, N. (2015). Bayesian nonparametric models for spatially indexed data of mixed type.
-Journal of the Royal Statistical Society: Series B (Statistical Methodology), 77:973-999.}
+Journal of the Royal Statistical Society: Series B (Statistical Methodology), 77:973-999.
+}

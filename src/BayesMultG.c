@@ -1,4 +1,4 @@
-/* BMGLSS.c Bayesian Multivariate GAMLSS 
+/* BayesMultG.c Bayesian Nonparametric Multivariate Regression 
  * Copyright (C) 2018  Georgios Papageorgiou, gpapageo@gmail.com
  * 
  * This program is free software; you can redistribute it and/or
@@ -67,6 +67,7 @@ extern double NormalQuadr(int p, int m, int LG, int Ngamma, double *Ytilde, doub
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define MAX_PATH 300
 
 void  multg(int *seed1, char **WorkingDir, int *WF1,
             int *sweeps1, int *burn1, int *thin1,
@@ -83,7 +84,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
             double *LASTmuR, double *LASTsigma2R, double *LASTceta, double *LASTcalpha, int *LASTcompAlloc, 
             double *LASTalphaDP, int *LASTsw, double *LASTDE, int *LASTWB)
 {
-    //gsl_set_error_handler_off();
+    gsl_set_error_handler_off();
 
     // Random number generator initialization
     int seed = seed1[0]; //random number generator seed
@@ -93,13 +94,12 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
 
     // Specify directory
     int WF = WF1[0]; // indicator: 1 = write files, 0 = no files.
-    const int MAX_PATH = 300;
     char path_name[MAX_PATH + 1];
 
     // Open files
     FILE *out_file1, *out_file2, *out_file3, *out_file4, *out_file5, *out_file6,
          *out_file7, *out_file8, *out_file9, *out_file10, *out_file11, *out_file12, 
-         *out_file13, *out_file14, *out_file15, *out_file16, *out_file17;
+         *out_file13, *out_file14, *out_file15;
 
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.gamma.txt");
     out_file1 = fopen(path_name, "a");
@@ -111,7 +111,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
     out_file4 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.R.txt");
     out_file5 = fopen(path_name, "a");
-    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.theta.txt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.DE.txt");
     out_file6 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.muR.txt");
     out_file7 = fopen(path_name, "a");
@@ -131,10 +131,6 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
     out_file14 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.DPconc.txt");
     out_file15 = fopen(path_name, "a");
-    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.test.txt");
-    out_file16 = fopen(path_name, "a");
-    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.DE.txt");
-    out_file17 = fopen(path_name, "a");
      
     // Sweeps, burn-in period, thin
     int sweeps = sweeps1[0]; //number of posterior samples
@@ -246,7 +242,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
     double sqResC[m*p];
     double sqResP[m*p];
     double logPropDRP, logPropDRC, priorLogR, logAcp, Acp, unifRV, QFC, QFD, detR, detS,
-           logMVNormC, logMVNormP, SPC, SPP, temp, sigma2RP, LR, trace, logLikP, logLikC, dev0, dev1;
+           logMVNormC, logMVNormP, SPC, SPP, temp, sigma2RP, logLikP, logLikC, dev0, dev1;
     int NPJ, NCJ; 
     double cetahat, Sprime, SDprime, elPrime, elDPrime, Q2, cetaP, calphaP;
     double rtilde[m*p];
@@ -485,7 +481,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
 			phi2G = calphaParams[move++];
 			calpha[k] = sqrt(2*phi2G/M_PI);
 		}
-		if (cont[0]==1) calpha[k] = LASTalpha[k];
+		if (cont[0]==1) calpha[k] = LASTcalpha[k];
     }
     
     // - 8 - Cluster allocation, alphaDP, Vdp & w
@@ -921,42 +917,42 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
             // - 7 - Update R 
             //Rprintf("%i %s \n",sw,"R");      
 	        if ((sw % batchL)==0 && WB > 0){ 
-	            fprintf(out_file16, "%i %f %f \n", sw, acceptR, tuneR[0]);
+	            //fprintf(out_file16, "%i %f %f \n", sw, acceptR, tuneR[0]);
 	            if (acceptR > 0.25 && tuneR[0] > RtLL) tuneR[0] -= MIN(0.01,1/sqrt(WB)) * tuneR[0]; 
 	            if (acceptR <= 0.25 && tuneR[0] < RtUL) tuneR[0] += MIN(0.01,1/sqrt(WB)) * tuneR[0];
 		        acceptR = 0.0;   
 	        } 
 	        
-	        fprintf(out_file16, "%s %i %.2f %f \n", "sw:", sw, tuneR[0], acceptR); 	        	        	        
+	        //fprintf(out_file16, "%s %i %.2f %f \n", "sw:", sw, tuneR[0], acceptR); 	        	        	        
 	        
 	        gsl_matrix_memcpy(PSIt,EtC);            
             gsl_matrix_scale(PSIt,tuneR[0]-p-1);	    
             gsl_matrix_add(PSIt,St2);            
             gsl_matrix_memcpy(CopyPSIt,PSIt);
             
-            fprintf(out_file16, "%s %f %f %f \n", "RtC scaled:", gsl_matrix_get(PSIt,0,0),gsl_matrix_get(PSIt,0,1),gsl_matrix_get(PSIt,1,1));           
+            //fprintf(out_file16, "%s %f %f %f \n", "RtC scaled:", gsl_matrix_get(PSIt,0,0),gsl_matrix_get(PSIt,0,1),gsl_matrix_get(PSIt,1,1));           
             
             ginv(p,tol,PSIt);
             
-            fprintf(out_file16, "%s %f %f %f \n", "inv:", gsl_matrix_get(PSIt,0,0),gsl_matrix_get(PSIt,0,1),gsl_matrix_get(PSIt,1,1));
+            //fprintf(out_file16, "%s %f %f %f \n", "inv:", gsl_matrix_get(PSIt,0,0),gsl_matrix_get(PSIt,0,1),gsl_matrix_get(PSIt,1,1));
             
             s = gsl_ran_flat(r,1.0,100000);
                       
             rwish(s,p,m+tuneR[0],PSIt,EtP);            
             
-            fprintf(out_file16, "%s %f %f %f \n", "rwish out:", gsl_matrix_get(EtP,0,0),gsl_matrix_get(EtP,0,1),gsl_matrix_get(EtP,1,1));
+            //fprintf(out_file16, "%s %f %f %f \n", "rwish out:", gsl_matrix_get(EtP,0,0),gsl_matrix_get(EtP,0,1),gsl_matrix_get(EtP,1,1));
             
             ginv(p,tol,EtP);            
             
-            fprintf(out_file16, "%s %f %f %f \n", "EtP:", gsl_matrix_get(EtP,0,0),gsl_matrix_get(EtP,0,1),gsl_matrix_get(EtP,1,1));
-            fprintf(out_file16, "%s %f %f %f \n", "EtC:", gsl_matrix_get(EtC,0,0),gsl_matrix_get(EtC,0,1),gsl_matrix_get(EtC,1,1));
+            //fprintf(out_file16, "%s %f %f %f \n", "EtP:", gsl_matrix_get(EtP,0,0),gsl_matrix_get(EtP,0,1),gsl_matrix_get(EtP,1,1));
+            //fprintf(out_file16, "%s %f %f %f \n", "EtC:", gsl_matrix_get(EtC,0,0),gsl_matrix_get(EtC,0,1),gsl_matrix_get(EtC,1,1));
             
             decomposeEtoDS(p,0,EtP,DtP,RtP); 
             
-            fprintf(out_file16, "%s %f %f \n", "DtP:", gsl_matrix_get(DtP,0,0),gsl_matrix_get(DtP,1,1));
-            fprintf(out_file16, "%s %f \n", "RtP:", gsl_matrix_get(RtP,0,1));
-            fprintf(out_file16, "%s %f %f \n", "DtC:", gsl_matrix_get(DtC,0,0),gsl_matrix_get(DtC,1,1));
-            fprintf(out_file16, "%s %f \n", "RtC:", gsl_matrix_get(RtC,0,1));
+            //fprintf(out_file16, "%s %f %f \n", "DtP:", gsl_matrix_get(DtP,0,0),gsl_matrix_get(DtP,1,1));
+            //fprintf(out_file16, "%s %f \n", "RtP:", gsl_matrix_get(RtP,0,1));
+            //fprintf(out_file16, "%s %f %f \n", "DtC:", gsl_matrix_get(DtC,0,0),gsl_matrix_get(DtC,1,1));
+            //fprintf(out_file16, "%s %f \n", "RtC:", gsl_matrix_get(RtC,0,1));
             
             priorLogR = 0.0;
             move = 0;
@@ -1020,8 +1016,8 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
             Acp = exp(logAcp);
             unifRV = gsl_ran_flat(r,0.0,1.0); 
                        
-if (1==1){  
-fprintf(out_file16, "%i %.2f | %f %f %f | %f %f %f | %f %f \n%f %f %f %f %f %f %f\n",
+if (1==0){  
+fprintf(out_file14, "%i %.2f | %f %f %f | %f %f %f | %f %f \n%f %f %f %f %f %f %f\n",
 sw, tuneR[0], 
 gsl_matrix_get(EtC,0,0),gsl_matrix_get(EtC,0,1),gsl_matrix_get(EtC,1,1),
 gsl_matrix_get(EtP,0,0),gsl_matrix_get(EtP,0,1),gsl_matrix_get(EtP,1,1),
@@ -1157,7 +1153,7 @@ Acp,logAcp,logPropDRP,logPropDRC,priorLogR,detR,SPP,SPC,tuneR[0]);
                 muR[h1] = temp*(sumtheta/sigma2R) + gsl_ran_gaussian(r,sqrt(temp));                             
                 for (k = 0; k < d; k++)
                     if (compAlloc[k]==h1) sstheta += pow(theta[k]-muR[h1],2);
-                fprintf(out_file16,"%s %i %i %f %f %i \n","muR: ",sw,h1,temp,sstheta,nmembers[h1]);				
+                //fprintf(out_file16,"%s %i %i %f %f %i \n","muR: ",sw,h1,temp,sstheta,nmembers[h1]);				
 			}
             
             // - 10 - sigma2_R
@@ -1197,7 +1193,7 @@ Acp,logAcp,logPropDRP,logPropDRC,priorLogR,detR,SPP,SPC,tuneR[0]);
             for (h1 = 0; h1 < H; h1++){
                 for (i = 0; i < d; i++){
                     pdh[h1][i] = w[h1] * gsl_ran_gaussian_pdf(theta[i]-muR[h1],sqrt(sigma2R));                   
-                    if ((sw - burn) >= 0 && 1==0) fprintf(out_file16,"%i %i %i %f \n",sw,h1,i,pdh[h1][i]);                                    
+                    //if ((sw - burn) >= 0 && 1==0) fprintf(out_file16,"%i %i %i %f \n",sw,h1,i,pdh[h1][i]);                                    
                 } 
             }
 
@@ -1291,18 +1287,18 @@ Acp,logAcp,logPropDRP,logPropDRC,priorLogR,detR,SPP,SPC,tuneR[0]);
                 if (sw==LASTsw[0]){                
                     for (k = 0; k < p; k++)
                         for (l = 0; l < p; l++)
-                            fprintf(out_file17, "%f ", gsl_matrix_get(DtC,k,l)); 
-                    fprintf(out_file17, "\n");
+                            fprintf(out_file6, "%f ", gsl_matrix_get(DtC,k,l)); 
+                    fprintf(out_file6, "\n");
                                     
                     for (k = 0; k < p; k++)
                         for (l = 0; l < p; l++)
-                            fprintf(out_file17, "%f ", gsl_matrix_get(EtC,k,l)); 
-                    fprintf(out_file17, "\n");			    
+                            fprintf(out_file6, "%f ", gsl_matrix_get(EtC,k,l)); 
+                    fprintf(out_file6, "\n");			    
 			    }
 
-                for (j = 0; j < d; j++) 
-                    fprintf(out_file6, "%f ", theta[j]); 
-                fprintf(out_file6, "\n");
+                //for (j = 0; j < d; j++) 
+                //    fprintf(out_file6, "%f ", theta[j]); 
+                //fprintf(out_file6, "\n");
              
                 for (j = 0; j < H; j++) 
                     fprintf(out_file7, "%0.10f ", muR[j]);  
@@ -1345,7 +1341,7 @@ Acp,logAcp,logPropDRP,logPropDRC,priorLogR,detR,SPP,SPC,tuneR[0]);
 			fprintf(out_file15, "%f \n", alphaDP);              
         }
         // If sw needs to be printed
-        if (sw==(sweeps-1) && (!(sweeps % 1000)==0)) Rprintf("%i %s \n",sweeps, "posterior samples...");
+        if ((sw==(sweeps-1)) && (!(sweeps % 1000)==0)) Rprintf("%i %s \n",sweeps, "posterior samples...");
     }//end of sw
     
     //Update LASTWB
@@ -1360,7 +1356,6 @@ Acp,logAcp,logPropDRP,logPropDRC,priorLogR,detR,SPP,SPC,tuneR[0]);
     fclose(out_file7); fclose(out_file8); fclose(out_file9);
     fclose(out_file10); fclose(out_file11); fclose(out_file12);
     fclose(out_file13); fclose(out_file14); fclose(out_file15);
-    fclose(out_file16); fclose(out_file17);
 
     //Free up gsl matrices
     gsl_matrix_free(PSIt); gsl_matrix_free(CopyPSIt);

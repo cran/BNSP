@@ -1,8 +1,8 @@
-mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
-                  c.betaPrior="IG(0.5,0.5*n*p)", pi.muPrior="Beta(1,1)", c.alphaPrior="IG(1.1,1.1)",
-                  sigma2Prior="HN(2)", pi.sigmaPrior="Beta(1,1)", mu.RPrior="N(0,1)",
-                  sigma.RPrior="HN(1)",corr.Model=c("common",nClust=1),DP.concPrior="Gamma(5,2)",
-                  tuneAlpha,tuneSigma2,tuneCb,tuneCa,tuneR,tuneSigma2R,tau,FT=1,...){
+mvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
+                 c.betaPrior="IG(0.5,0.5*n*p)", pi.muPrior="Beta(1,1)", c.alphaPrior="IG(1.1,1.1)",
+                 sigmaPrior="HN(2)", pi.sigmaPrior="Beta(1,1)", mu.RPrior="N(0,1)",
+                 sigma.RPrior="HN(1)",corr.Model=c("common",nClust=1),DP.concPrior="Gamma(5,2)",
+                 tuneAlpha,tuneSigma2,tuneCb,tuneCa,tuneR,tuneSigma2R,tau,FT=1,...){
     #Samples etc
     if (thin <= 0) thin <- 1
     thin <- as.integer(thin)
@@ -15,8 +15,7 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
 		nSamples <- length(seq(1,(sweeps-burn),by=thin))
 		LASTsw<-seq(burn,by=thin,length.out=nSamples)[nSamples]
 	}
-	LASTWB<-1
-	#print(LASTWB)
+	LASTWB<-1	
     # Match call
     call <- match.call(expand.dots = FALSE)
     call2 <- match.call.defaults()
@@ -62,7 +61,6 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
     which.SpecX<-XYK$which.Spec
     formula.termsX<-XYK$formula.terms
     togetherX<-XYK$together
-    #print(X)
     #
     ZK<-DM(formula=formula.v,data=data,n=n)
     Z<-ZK$X
@@ -73,7 +71,7 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
     vecLD<-table(ZK$assign)[-1]
     ND<-length(vecLD)
     cusumVecLD<-c(0,cumsum(vecLD))
-    if (LD==0) MVLD <- 1
+    MVLD <- 1
     if (LD > 0) MVLD<-max(vecLD)
     assignZ<-ZK$assign
     labelsZ<-ZK$labels
@@ -83,10 +81,6 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
     which.SpecZ<-ZK$which.Spec
     formula.termsZ<-ZK$formula.terms
     togetherZ<-ZK$together
-    #print(Z)
-    ##Dim fix
-    MVLD<-1
-    if (LD > 0) MVLD <-max(vecLD)
     #Prior for pi.mu
     if (!length(pi.muPrior)==1 && !length(pi.muPrior)==NG && !length(pi.muPrior)==(p*NG))
         stop("pi.muPrior has incorrect dimension")
@@ -127,7 +121,7 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
         if (sp[[1]][1] %in% specials){
             if (match(sp[[1]][1],specials)==1) HNca[k]<-1
             if (match(sp[[1]][1],specials)==2) HNca[k]<-0
-        } else stop("unrecognised prior for c.alpha_0k")
+        } else stop("unrecognised prior for c.alpha")
         sp<-strsplit(sp[[1]][2],"\\)")
         sp<-strsplit(sp[[1]][1],",")
         calphaParams<-c(calphaParams,as.numeric(sp[[1]]))
@@ -137,24 +131,24 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
         HNca<-rep(HNca,p)
 	}
     #Prior for sigma2_{zero k}
-    if (!length(sigma2Prior)==1 && !length(sigma2Prior)==p)
-        stop("sigma2Prior has incorrect dimension")
+    if (!length(sigmaPrior)==1 && !length(sigmaPrior)==p)
+        stop("sigmaPrior has incorrect dimension")
     specials<-c("HN","IG")
-    szkParams<-NULL
-    HNszk<-vector()
-    for (k in 1:length(sigma2Prior)){
-        sp<-strsplit(sigma2Prior[k],"\\(")
+    sigmaParams<-NULL
+    HNsg<-vector()
+    for (k in 1:length(sigmaPrior)){
+        sp<-strsplit(sigmaPrior[k],"\\(")
         if (sp[[1]][1] %in% specials){
-            if (match(sp[[1]][1],specials)==1) HNszk[k]<-1
-            if (match(sp[[1]][1],specials)==2) HNszk[k]<-0
-        } else stop("unrecognised prior for sigma^2_k")
+            if (match(sp[[1]][1],specials)==1) HNsg[k]<-1
+            if (match(sp[[1]][1],specials)==2) HNsg[k]<-0
+        } else stop("unrecognised prior for sigma^2")
         sp<-strsplit(sp[[1]][2],"\\)")
         sp<-strsplit(sp[[1]][1],",")
-        szkParams<-c(szkParams,as.numeric(sp[[1]]))
+        sigmaParams<-c(sigmaParams,as.numeric(sp[[1]]))
     }
-    if (length(sigma2Prior)==1){
-        szkParams<-rep(szkParams,p)
-        HNszk<-rep(HNszk,p)
+    if (length(sigmaPrior)==1){
+        sigmaParams<-rep(sigmaParams,p)
+        HNsg<-rep(HNsg,p)
 	}
 	#Prior for muR
 	sp<-strsplit(mu.RPrior,"N\\(")
@@ -167,11 +161,12 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
     sp<-strsplit(sp[[1]][1],",")
     Rparams<-c(Rparams,as.numeric(unlist(sp)))
     #Cor model
-    corModels<-c("common","groupC","groupV")
+    corModels<-c("common","groupC","groupV","uni")
     mcm<-match(corr.Model[1],corModels)
+    #if (p==1) mcm=1
+    if (p==2) mcm=1
     if (is.na(mcm)) stop("unrecognised correlation model")
     H <- G <- 1
-    if (p==2) mcm=1
     if (mcm==2){
         H<-as.numeric(corr.Model[2])
         if (H==1) {mcm<-1; warning("Common correlations model specified with nClust = 1")}
@@ -201,7 +196,7 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
     if (!missing(StorageDir)) if (!(substr(StorageDir,ncharwd,ncharwd)=="/")) StorageDir <- paste(StorageDir,"/",sep="")
     if (!missing(StorageDir)) if (!dir.exists(StorageDir)) dir.create(StorageDir, recursive = TRUE)
     if (missing(StorageDir)) stop("provide a storage directory via argument StorageDir")
-    FL <- c("gamma", "cbeta", "delta", "alpha", "R", "theta", "muR", "sigma2R", "calpha", "sigma2", "beta", "test",
+    FL <- c("gamma", "cbeta", "delta", "alpha", "R", "muR", "sigma2R", "calpha", "sigma2", "beta", 
             "compAlloc", "nmembers", "deviance", "DPconc",
             "compAllocV","nmembersV",
             "DE")
@@ -235,7 +230,19 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
     #Deviance
     deviance <- c(0,0)
     #Call C
-    if (mcm==1) out<-.C("mult",
+    if (mcm==4) {out<-.C("mvrmC",
+            as.integer(seed),as.character(StorageDir),as.integer(WF),
+            as.integer(sweeps),as.integer(burn),as.integer(thin),
+            as.double(Y),as.double(as.matrix(X)),as.double(as.matrix(Z)),as.integer(n),as.integer(LG),as.integer(LD),
+            as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
+            as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),
+            as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
+            as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
+            as.double(cetaParams),as.integer(HNca),as.double(calphaParams),as.double(pimu),as.double(pisigma),
+            as.integer(HNsg),as.double(sigmaParams),as.double(deviance),
+            as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
+            as.double(c(0)),as.integer(LASTWB))}
+    if (mcm==1) {out<-.C("mult",
             as.integer(seed),as.character(StorageDir),as.integer(WF),
             as.integer(sweeps),as.integer(burn),as.integer(thin),
             as.integer(n),as.integer(p),as.double(Y),as.double(t(as.matrix(X))),as.double(as.matrix(Z)),
@@ -246,11 +253,11 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
             as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),
             as.double(pimu),as.double(cetaParams),as.double(pisigma),
             as.integer(HNca),as.double(calphaParams),as.double(Rparams),
-            as.integer(HNszk),as.double(szkParams),as.double(tau),as.integer(FT),as.double(deviance),
+            as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),
             as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
             as.double(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
-            as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))
-    if (mcm==2) out<-.C("multg",
+            as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))}
+    if (mcm==2) {out<-.C("multg",
             as.integer(seed),as.character(StorageDir),as.integer(WF),
             as.integer(sweeps),as.integer(burn),as.integer(thin),
             as.integer(n),as.integer(p),as.double(Y),as.double(t(as.matrix(X))),as.double(as.matrix(Z)),
@@ -261,12 +268,12 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
             as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),
             as.double(pimu),as.double(cetaParams),as.double(pisigma),
             as.integer(HNca),as.double(calphaParams),as.double(Rparams),
-            as.integer(HNszk),as.double(szkParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(H),
+            as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(H),
             as.double(DPparams), as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),
             as.double(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
             as.double(c(0)),as.integer(c(0)),as.double(c(0)),
-            as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))
-    if (mcm==3) out<-.C("multgv",
+            as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))}
+    if (mcm==3) {out<-.C("multgv",
             as.integer(seed),as.character(StorageDir),as.integer(WF),
             as.integer(sweeps),as.integer(burn),as.integer(thin),
             as.integer(n),as.integer(p),as.double(Y),as.double(t(as.matrix(X))),as.double(as.matrix(Z)),
@@ -277,26 +284,39 @@ mmvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
             as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),
             as.double(pimu),as.double(cetaParams),as.double(pisigma),
             as.integer(HNca),as.double(calphaParams),as.double(Rparams),
-            as.integer(HNszk),as.double(szkParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(G),
+            as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(G),
             as.double(DPparams),as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),
             as.double(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
             as.double(c(0)),as.integer(c(0)),as.double(c(0)),
-            as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))
+            as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))}
     #Output
-    loc<-25
+    loc1<-25
+    loc2<-41 
+    tuneSigma2Ra<-out[[loc1+0]][1]
+    tuneRa<-out[[loc1+5]][1]    
+    if (mcm==4) {
+		loc1<-16 
+		loc2<-35
+		tuneSigma2Ra<-tuneSigma2R 
+		tuneRa<-tuneR
+    }        
     fit <- list(call=call,call2=call2,formula=formula.save,seed=seed,p=p,d=p*(p-1)/2,
                 data=data,Y=Y,X=X,Xknots=Xknots,Z=Z,Zknots=Zknots,LG=LG,LD=LD,ND=ND,NG=NG,
                 mcpar=c(as.integer(burn+1),as.integer(seq(from=burn+1,by=thin,length.out=nSamples)[nSamples]),as.integer(thin)),
-                nSamples=nSamples,storeMeanVectorX=storeMeanVectorX,storeMeanVectorZ=storeMeanVectorZ,
-                tuneSigma2R=c(tuneSigma2R,out[[loc+0]][1]),tuneCa=c(tuneCa,out[[loc+1]][1:p]),tuneSigma2=c(tuneSigma2,out[[loc+2]][1:p]),
-                tuneCb=c(tuneCb,out[[loc+3]][1]),tuneAlpha=c(tuneAlpha,out[[loc+4]][1:(p*ND)]),tuneR=c(tuneR,out[[loc+5]][1]),
-                DIR=StorageDir,deviance=c(out[[41]][1:2]),nullDeviance=nullDeviance,
+                nSamples=nSamples,storeMeanVectorX=storeMeanVectorX,storeMeanVectorZ=storeMeanVectorZ,                
+                tuneSigma2R=c(tuneSigma2R,tuneSigma2Ra),
+                tuneCa=c(tuneCa,out[[loc1+1]][1:p]),            
+                tuneSigma2=c(tuneSigma2,out[[loc1+2]][1:p]),
+                tuneCb=c(tuneCb,out[[loc1+3]][1]),
+                tuneAlpha=c(tuneAlpha,out[[loc1+4]][1:(p*ND)]),
+                tuneR=c(tuneR,tuneRa),                
+                DIR=StorageDir,deviance=c(out[[loc2]][1:2]),nullDeviance=nullDeviance,            
                 storeIndicatorX=storeIndicatorX,storeIndicatorZ=storeIndicatorZ,assignX=assignX,
                 assignZ=assignZ,labelsX=labelsX,labelsZ=labelsZ,countX=countX,countZ=countZ,
                 varsX=varsX,varsZ=varsZ,varsY=varsY,is.Dx=is.Dx,is.Dz=is.Dz,which.SpecX=which.SpecX,
                 which.SpecZ=which.SpecZ,formula.termsX=formula.termsX,formula.termsZ=formula.termsZ,
-                togetherX=togetherX,togetherZ=togetherZ,HNca=HNca,H=H,G=G,mcm=mcm,out=out,totalSweeps=sweeps)
-    class(fit) <- 'mmvrm'
+                togetherX=togetherX,togetherZ=togetherZ,HNca=HNca,H=H,G=G,mcm=mcm,out=out,totalSweeps=sweeps)               
+    class(fit) <- 'mvrm'
     return(fit)
 }
 
@@ -310,12 +330,10 @@ continue <- function(object,sweeps,discard=FALSE,...){
         LASTsw<-seq(0,by=object$mcpar[3],length.out=nSamples)[nSamples]
 	}
     if (nSamples<=0) stop("problem with sweeps argument")
-    totalSweeps<-object$totalSweeps
     LASTWB <- floor(totalSweeps/50)+1
-    #print(LASTWB)
     totalSweeps<-object$totalSweeps + sweeps
     #Files
-    FL <- c("gamma", "cbeta", "delta", "alpha", "R", "theta", "muR", "sigma2R", "calpha", "sigma2", "beta", "test",
+    FL <- c("gamma", "cbeta", "delta", "alpha", "R", "muR", "sigma2R", "calpha", "sigma2", "beta", 
             "compAlloc", "nmembers", "deviance", "DPconc",
             "compAllocV","nmembersV",
             "DE")
@@ -328,44 +346,55 @@ continue <- function(object,sweeps,discard=FALSE,...){
     alpha <- paste(object$DIR, paste("BNSP",FL[4], "txt",sep="."),sep="/")
     alpha <- scan(alpha,what=numeric(),n=object$p*object$LD,quiet=TRUE,skip=object$nSamples-1)
     R <- paste(object$DIR, paste("BNSP",FL[5], "txt",sep="."),sep="/")
-    R <- scan(R,what=numeric(),n=object$p^2,quiet=TRUE,skip=object$nSamples-1)
-    muR <- paste(object$DIR, paste("BNSP",FL[7], "txt",sep="."),sep="/")
-    muR <- scan(muR,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)
-    sigma2R <- paste(object$DIR, paste("BNSP",FL[8], "txt",sep="."),sep="/")
-    sigma2R <- scan(sigma2R,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)
-    calpha <- paste(object$DIR, paste("BNSP",FL[9], "txt",sep="."),sep="/")
+    if (file.exists(R)) R <- scan(R,what=numeric(),n=object$p^2,quiet=TRUE,skip=object$nSamples-1)
+    muR <- paste(object$DIR, paste("BNSP",FL[6], "txt",sep="."),sep="/")
+    if (file.exists(muR)) muR <- scan(muR,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)
+    sigma2R <- paste(object$DIR, paste("BNSP",FL[7], "txt",sep="."),sep="/")
+    if (file.exists(sigma2R)) sigma2R <- scan(sigma2R,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)
+    calpha <- paste(object$DIR, paste("BNSP",FL[8], "txt",sep="."),sep="/")
     calpha <- scan(calpha,what=numeric(),n=object$p,quiet=TRUE,skip=object$nSamples-1)
-    sigma2 <- paste(object$DIR, paste("BNSP",FL[10], "txt",sep="."),sep="/")
-    sigma2 <- scan(sigma2,what=numeric(),n=object$p,quiet=TRUE,skip=object$nSamples-1)
-    DE <- paste(object$DIR, paste("BNSP",FL[19], "txt",sep="."),sep="/")
-    DE <- scan(DE,what=numeric(),n=2*object$p^2,quiet=TRUE,skip=0)
-    compAlloc <- paste(object$DIR, paste("BNSP",FL[13], "txt",sep="."),sep="/")
+    sigma2 <- paste(object$DIR, paste("BNSP",FL[9], "txt",sep="."),sep="/")
+    sigma2 <- scan(sigma2,what=numeric(),n=object$p,quiet=TRUE,skip=object$nSamples-1)    
+    compAlloc <- paste(object$DIR, paste("BNSP",FL[11], "txt",sep="."),sep="/")
     if (file.exists(compAlloc)) compAlloc <- scan(compAlloc,what=numeric(),n=object$d,quiet=TRUE,skip=object$nSamples-1)
-    DPconc <- paste(object$DIR, paste("BNSP",FL[16], "txt",sep="."),sep="/")
+    DPconc <- paste(object$DIR, paste("BNSP",FL[14], "txt",sep="."),sep="/")
     if (file.exists(DPconc)) DPconc <- scan(DPconc,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)
-    compAllocV <- paste(object$DIR, paste("BNSP",FL[17], "txt",sep="."),sep="/")
+    compAllocV <- paste(object$DIR, paste("BNSP",FL[15], "txt",sep="."),sep="/")
     if (file.exists(compAllocV)) compAllocV <- scan(compAllocV,what=numeric(),n=object$p,quiet=TRUE,skip=object$nSamples-1)
+    DE <- paste(object$DIR, paste("BNSP",FL[17], "txt",sep="."),sep="/")
+    if (file.exists(DE)) DE <- scan(DE,what=numeric(),n=2*object$p^2,quiet=TRUE,skip=0)
     if (discard==TRUE){
         for (i in 1:length(FL)){
             oneFile <- paste(object$DIR, paste("BNSP",FL[i], "txt",sep="."),sep="/")
             if (file.exists(oneFile)) file.remove(oneFile)
 	    }
 	}
-	oneFile <- paste(object$DIR, paste("BNSP",FL[length(FL)], "txt",sep="."),sep="/")
-    if (file.exists(oneFile)) file.remove(oneFile)
     #Deviance & nSamples
     deviance<-c(0,0)
-    if (discard==FALSE) deviance<-as.double(object$out[[41]])
+    if (discard==FALSE) deviance<-as.double(object$deviance)
     if (discard==TRUE) {object$nSamples<-0; object$mcpar[1]<-1}
     #Tuning
-    loc<-25
-    tuneSigma2R<-object$out[[loc+0]][1]
-    tuneCa<-object$out[[loc+1]][1:object$p]
-    tuneSigma2<-object$out[[loc+2]][1:object$p]
-    tuneCb<-object$out[[loc+3]][1]
-    tuneAlpha<-object$out[[loc+4]][1:(object$p*object$ND)]
-    tuneR<-object$out[[loc+5]][1]
+    tuneSigma2R<-object$tuneSigma2R[2]
+    tuneCa<-object$tuneCa[(object$p+1):(2*object$p)]
+    tuneSigma2<-object$tuneSigma2[(object$p+1):(2*object$p)]    
+    tuneCb<-object$tuneCb[2]
+    tuneAlpha<-object$tubeAlpha[(object$p*object$ND+1):(2*object$p*object$ND)]
+    tuneR<-object$tuneR[2]                   
 	#Call C
+	if (object$mcm==4) {out<-.C("mvrmC",
+            as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
+            as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),            
+            as.double(object$out[[7]]),as.double(object$out[[8]]),as.double(object$out[[9]]),as.integer(object$out[[10]]),
+            as.integer(object$out[[11]]),as.integer(object$out[[12]]),as.double(object$out[[13]]),
+            as.integer(object$out[[14]]),as.double(object$out[[15]]),as.integer(object$out[[16]]),                                   
+            as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),
+            as.integer(object$out[[21]]),as.integer(object$out[[22]]),as.integer(object$out[[23]]),
+            as.integer(object$out[[24]]),as.integer(object$out[[25]]),as.integer(object$out[[26]]),
+            as.integer(object$out[[27]]),as.double(object$out[[28]]),as.integer(object$out[[29]]),
+            as.double(object$out[[30]]),as.double(object$out[[31]]),as.double(object$out[[32]]),
+            as.integer(object$out[[33]]),as.double(object$out[[34]]),as.double(object$out[[35]]),                               
+            as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(cbeta),
+            as.double(calpha),as.integer(LASTWB))}
     if (object$mcm==1) out<-.C("mult",
             as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
             as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),
@@ -373,9 +402,9 @@ continue <- function(object,sweeps,discard=FALSE,...){
             as.integer(object$out[[12]]),as.integer(object$out[[13]]),
             as.double(object$out[[14]]),as.integer(object$out[[15]]),as.double(object$out[[16]]),as.integer(object$out[[17]]),
             as.integer(object$out[[18]]),as.integer(object$out[[19]]),as.integer(object$out[[20]]),as.integer(object$out[[21]]),
-            as.integer(object$out[[22]]),as.integer(object$out[[23]]),as.integer(object$out[[24]]),
-            as.double(object$out[[25]]),as.double(object$out[[26]]),as.double(object$out[[27]]),as.double(object$out[[28]]),as.double(object$out[[29]]),
-            as.double(object$out[[30]]), as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
+            as.integer(object$out[[22]]),as.integer(object$out[[23]]),as.integer(object$out[[24]]),            
+            as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),
+            as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
             as.integer(object$out[[34]]),as.double(object$out[[35]]),as.double(object$out[[36]]),
             as.integer(object$out[[37]]),as.double(object$out[[38]]),as.double(object$out[[39]]),as.integer(object$out[[40]]),as.double(deviance),
             as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(R),
@@ -389,7 +418,7 @@ continue <- function(object,sweeps,discard=FALSE,...){
             as.double(object$out[[14]]),as.integer(object$out[[15]]),as.double(object$out[[16]]),as.integer(object$out[[17]]),
             as.integer(object$out[[18]]),as.integer(object$out[[19]]),as.integer(object$out[[20]]),as.integer(object$out[[21]]),
             as.integer(object$out[[22]]),as.integer(object$out[[23]]),as.integer(object$out[[24]]),
-            as.double(object$out[[25]]),as.double(object$out[[26]]),as.double(object$out[[27]]),as.double(object$out[[28]]),as.double(object$out[[29]]),as.double(object$out[[30]]),
+            as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),            
             as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
             as.integer(object$out[[34]]),as.double(object$out[[35]]),as.double(object$out[[36]]),
             as.integer(object$out[[37]]),as.double(object$out[[38]]),as.double(object$out[[39]]),as.integer(object$out[[40]]),as.double(deviance),as.integer(object$out[[42]]),as.double(object$out[[43]]),
@@ -404,36 +433,49 @@ continue <- function(object,sweeps,discard=FALSE,...){
             as.double(object$out[[14]]),as.integer(object$out[[15]]),as.double(object$out[[16]]),as.integer(object$out[[17]]),
             as.integer(object$out[[18]]),as.integer(object$out[[19]]),as.integer(object$out[[20]]),as.integer(object$out[[21]]),
             as.integer(object$out[[22]]),as.integer(object$out[[23]]),as.integer(object$out[[24]]),
-            as.double(object$out[[25]]),as.double(object$out[[26]]),as.double(object$out[[27]]),as.double(object$out[[28]]),as.double(object$out[[29]]),
-            as.double(object$out[[30]]),as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
+            as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),
+            as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
             as.integer(object$out[[34]]),as.double(object$out[[35]]),as.double(object$out[[36]]),
             as.integer(object$out[[37]]),as.double(object$out[[38]]),as.double(object$out[[39]]),as.integer(object$out[[40]]),as.double(deviance),as.integer(object$out[[42]]),as.double(object$out[[43]]),
             as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(R),
             as.double(muR),as.double(sigma2R),as.double(cbeta),as.double(calpha),
             as.integer(compAlloc),as.double(DPconc),as.integer(c(LASTsw)),as.double(c(DE)),as.integer(LASTWB))
     #Output
+    loc1<-25
+    loc2<-41 
+    tuneSigma2Ra<-out[[loc1+0]][1]
+    tuneRa<-out[[loc1+5]][1]    
+    if (object$mcm==4) {
+		loc1<-16 
+		loc2<-35
+		tuneSigma2Ra<-tuneSigma2R 
+		tuneRa<-tuneR
+    }                       
     fit <- list(call=object$call,call2=object$call2,formula=object$formula,seed=object$seed,p=object$p,d=object$d,
                 data=object$data,Y=object$Y,X=object$X,Xknots=object$Xknots,Z=object$Z,Zknots=object$Zknots,LG=object$LG,LD=object$LD,ND=object$ND,NG=object$NG,
                 mcpar=c(as.integer(object$mcpar[1]),as.integer(seq(from=object$mcpar[1],by=object$mcpar[3],length.out=(nSamples+object$nSamples))[nSamples+object$nSamples]),as.integer(object$mcpar[3])),
                 nSamples=nSamples+object$nSamples,
-                storeMeanVectorX=object$storeMeanVectorX,storeMeanVectorZ=object$storeMeanVectorZ,
-                tuneSigma2R=c(tuneSigma2R,out[[loc+0]][1]),tuneCa=c(tuneCa,out[[loc+1]][1:object$p]),tuneSigma2=c(tuneSigma2,out[[loc+2]][1:object$p]),
-                tuneCb=c(tuneCb,out[[loc+3]][1]),tuneAlpha=c(tuneAlpha,out[[loc+4]][1:(object$p*object$ND)]),tuneR=c(tuneR,out[[loc+5]][1]),
-                DIR=object$DIR,deviance=c(out[[41]][1:2]),nullDeviance=object$nullDeviance,
+                storeMeanVectorX=object$storeMeanVectorX,storeMeanVectorZ=object$storeMeanVectorZ,                                
+                tuneSigma2R=c(tuneSigma2R,tuneSigma2Ra),
+                tuneCa=c(tuneCa,out[[loc1+1]][1:object$p]),            
+                tuneSigma2=c(tuneSigma2,out[[loc1+2]][1:object$p]),
+                tuneCb=c(tuneCb,out[[loc1+3]][1]),
+                tuneAlpha=c(tuneAlpha,out[[loc1+4]][1:(object$p*object$ND)]),
+                tuneR=c(tuneR,tuneRa),                                
+                DIR=object$DIR,deviance=c(out[[loc2]][1:2]),nullDeviance=object$nullDeviance,
                 storeIndicatorX=object$storeIndicatorX,storeIndicatorZ=object$storeIndicatorZ,assignX=object$assignX,
                 assignZ=object$assignZ,labelsX=object$labelsX,labelsZ=object$labelsZ,countX=object$countX,countZ=object$countZ,
                 varsX=object$varsX,varsZ=object$varsZ,varsY=object$varsY,is.Dx=object$is.Dx,is.Dz=object$is.Dz,which.SpecX=object$which.SpecX,
                 which.SpecZ=object$which.SpecZ,formula.termsX=object$formula.termsX,formula.termsZ=object$formula.termsZ,
                 togetherX=object$togetherX,togetherZ=object$togetherZ,HNca=object$HNca,H=object$H,G=object$G,mcm=object$mcm,out=out,
                 totalSweeps=totalSweeps)
-    class(fit) <- 'mmvrm'
+    class(fit) <- 'mvrm'
     return(fit)
 }
 
-mmvrm2mcmc <- function(mmvrmObj,labels){
-    mvrmObj <- mmvrmObj
+mvrm2mcmc <- function(mvrmObj,labels){
     all.labels <- c("alpha","calpha","cbeta","delta","beta","gamma","sigma2")
-    more.labels1 <- c("muR","sigma2R","R","theta")
+    more.labels1 <- c("muR","sigma2R","R")
     more.labels2 <- c("compAlloc","nmembers","DPconc")
     more.labels3 <- c("compAllocV","nmembersV","deviance")
     all.labels<-c(all.labels,more.labels1,more.labels2,more.labels3)
@@ -442,86 +484,98 @@ mmvrm2mcmc <- function(mmvrmObj,labels){
 	p<-mvrmObj$p
 	R<-NULL
     if (any(mtch==1) && mvrmObj$LD > 0){
-        file <- paste(mmvrmObj$DIR,"BNSP.alpha.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LD*p,
-           dimnames=list(c(),paste("alpha",rep(colnames(mvrmObj$Z)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LD),sep="."))))
+        file <- paste(mvrmObj$DIR,"BNSP.alpha.txt",sep="")
+        if (file.exists(file)){ 
+           if (mvrmObj$p > 1) names1<-paste("alpha",rep(colnames(mvrmObj$Z)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LD),sep=".")
+           if (mvrmObj$p == 1) names1<-paste("alpha",colnames(mvrmObj$Z)[-1],sep=".")
+           R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LD*p,dimnames=list(c(),names1)))
+	   }
     }
     if (any(mtch==2)){
-        file <- paste(mmvrmObj$DIR,"BNSP.calpha.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,
-                                  dimnames=list(c(),paste(rep("c_alpha",p),mvrmObj$varsY,sep="."))))
+        file <- paste(mvrmObj$DIR,"BNSP.calpha.txt",sep="")
+        if (file.exists(file)){ 
+            if (mvrmObj$p > 1) names1<-paste(rep("c_alpha",p),mvrmObj$varsY,sep=".")
+            if (mvrmObj$p == 1) names1<-"c_alpha"
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,dimnames=list(c(),names1)))
+		}
     }
     if (any(mtch==3)){
-       file <- paste(mmvrmObj$DIR,"BNSP.cbeta.txt",sep="")
-       if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=1,dimnames=list(c(),c("c_beta"))))
+       file <- paste(mvrmObj$DIR,"BNSP.cbeta.txt",sep="")
+       if (file.exists(file)) 
+           R<-cbind(R,matrix(unlist(read.table(file)),ncol=1,dimnames=list(c(),c("c_beta"))))
     }
     if (any(mtch==4) && mvrmObj$LD > 0){
-        file <- paste(mmvrmObj$DIR,"BNSP.delta.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LD*p,
-           dimnames=list(c(),paste(rep(paste("delta",seq(1,mvrmObj$LD),sep="_"),p),rep(mvrmObj$varsY,each=mvrmObj$LD),sep="."))))
+        file <- paste(mvrmObj$DIR,"BNSP.delta.txt",sep="")
+        if (file.exists(file)){ 
+            if (mvrmObj$p > 1) names1<-paste("delta",rep(colnames(mvrmObj$Z)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LD),sep=".")
+            if (mvrmObj$p == 1) names1<-paste("delta",colnames(mvrmObj$Z)[-1],sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LD*p,dimnames=list(c(),names1)))
+	    }
     }
     if (any(mtch==5)){
-        file <- paste(mmvrmObj$DIR,"BNSP.beta.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*(mvrmObj$LG+1),
-           dimnames=list(c(),paste("beta",rep(colnames(mvrmObj$X),p),rep(mvrmObj$varsY,each=mvrmObj$LG+1),sep="."))))
+        file <- paste(mvrmObj$DIR,"BNSP.beta.txt",sep="")
+        if (file.exists(file)){ 
+            if (mvrmObj$p > 1) names1<-paste("beta",rep(colnames(mvrmObj$X),p),rep(mvrmObj$varsY,each=mvrmObj$LG+1),sep=".")
+            if (mvrmObj$p == 1) names1<-paste("beta",colnames(mvrmObj$X),sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*(mvrmObj$LG+1),dimnames=list(c(),names1)))
+		}
     }
     if (any(mtch==6) && mvrmObj$LG > 0){
-        file <- paste(mmvrmObj$DIR,"BNSP.gamma.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*mvrmObj$LG,
-           dimnames=list(c(),paste(rep(paste("gamma",seq(1,mvrmObj$LG),sep="_"),p),rep(mvrmObj$varsY,each=mvrmObj$LG),sep="."))))
+        file <- paste(mvrmObj$DIR,"BNSP.gamma.txt",sep="")
+        if (file.exists(file)){ 
+            if (mvrmObj$p > 1) names1<-paste("gamma",rep(colnames(mvrmObj$X)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LG+1),sep=".")
+            if (mvrmObj$p == 1) names1<-paste("gamma",colnames(mvrmObj$X)[-1],sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*mvrmObj$LG,dimnames=list(c(),names1)))
+		}
     }
     if (any(mtch==7)){
-        file <- paste(mmvrmObj$DIR,"BNSP.sigma2.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,
-                          dimnames=list(c(),paste(rep("sigma^2",p),mvrmObj$varsY,sep="."))))
+        file <- paste(mvrmObj$DIR,"BNSP.sigma2.txt",sep="")
+        if (file.exists(file)) 
+            if (mvrmObj$p > 1) names1<-paste(rep("sigma2",p),mvrmObj$varsY,sep=".")
+            if (mvrmObj$p == 1) names1<-"sigma2"
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,dimnames=list(c(),names1)))
 	}
-	if (any(mtch==8)){
+	if (any(mtch==8) && mvrmObj$p >1){
 		names <- paste("muR of cluster",seq(1,mvrmObj$H),sep=" ")
 		if (mvrmObj$H==1) names <- "muR"
-	    file <- paste(mmvrmObj$DIR,"BNSP.muR.txt",sep="")
+	    file <- paste(mvrmObj$DIR,"BNSP.muR.txt",sep="")
         if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),nrow=mvrmObj$nSamples,
                 dimnames=list(c(),names)))
     }
-    if (any(mtch==9)){
-        file <- paste(mmvrmObj$DIR,"BNSP.sigma2R.txt",sep="")
+    if (any(mtch==9) && mvrmObj$p >1){
+        file <- paste(mvrmObj$DIR,"BNSP.sigma2R.txt",sep="")
         if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=1,dimnames=list(c(),c("sigma2R"))))
 	}
 	subset <- rep(seq(1,p),each=p) < rep(seq(1,p),p)
 	cor.names <- paste(rep(seq(1,p),each=p),rep(seq(1,p),p),sep="")
-    if (any(mtch==10)){
-        file <- paste(mmvrmObj$DIR,"BNSP.R.txt",sep="")
+    if (any(mtch==10) && mvrmObj$p >1){
+        file <- paste(mvrmObj$DIR,"BNSP.R.txt",sep="")
         if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*p,
                  dimnames=list(c(),paste("cor",cor.names,sep=".")))[,subset,drop=FALSE])
     }
-    if (any(mtch==11)){
-        file <- paste(mmvrmObj$DIR,"BNSP.theta.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$d,
-                          dimnames=list(c(),paste("theta",cor.names[subset],sep="."))))
-	}
-	if (any(mtch==12)){
-	    file <- paste(mmvrmObj$DIR,"BNSP.compAlloc.txt",sep="")
-	    if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mmvrmObj$d,
+	if (any(mtch==11)){
+	    file <- paste(mvrmObj$DIR,"BNSP.compAlloc.txt",sep="")
+	    if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$d,
 	                           dimnames=list(c(),paste("clustering of cor",cor.names[subset],sep="."))))
 	}
-    if (any(mtch==13)){
-        file <- paste(mmvrmObj$DIR,"BNSP.nmembers.txt",sep="")
-        if (file.exists(file))R<-cbind(R,matrix(unlist(read.table(file)),ncol=mmvrmObj$H,dimnames=list(c(),paste("elements in cor cluster ",seq(1,mmvrmObj$H)))))
+    if (any(mtch==12)){
+        file <- paste(mvrmObj$DIR,"BNSP.nmembers.txt",sep="")
+        if (file.exists(file))R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$H,dimnames=list(c(),paste("elements in cor cluster ",seq(1,mvrmObj$H)))))
     }
-    #if (any(mtch==14)) R<-cbind(R,matrix(unlist(read.table(paste(mmvrmObj$DIR,"BNSP.probs.txt",sep=""))),ncol=mmvrmObj$H,dimnames=list(c(),seq(1,mmvrmObj$H))))
-    if (any(mtch==14)){
-        file <- paste(mmvrmObj$DIR,"BNSP.DPconc.txt",sep="")
+    if (any(mtch==13)){
+        file <- paste(mvrmObj$DIR,"BNSP.DPconc.txt",sep="")
         if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=1,dimnames=list(c(),c("DPconc"))))
     }
+    if (any(mtch==14)){
+        file <- paste(mvrmObj$DIR,"BNSP.compAllocV.txt",sep="")
+        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$p,dimnames=list(c(),paste("clustering of ",mvrmObj$varsY))))
+	}
     if (any(mtch==15)){
-        file <- paste(mmvrmObj$DIR,"BNSP.compAllocV.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mmvrmObj$p,dimnames=list(c(),paste("clustering of ",mmvrmObj$varsY))))
+        file <- paste(mvrmObj$DIR,"BNSP.nmembersV.txt",sep="")
+        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$G,dimnames=list(c(),paste("elements in var cluster ",seq(1,mvrmObj$G)))))
 	}
-    if (any(mtch==16)){
-        file <- paste(mmvrmObj$DIR,"BNSP.nmembersV.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mmvrmObj$G,dimnames=list(c(),paste("elements in var cluster ",seq(1,mmvrmObj$G)))))
-	}
-	if (any(mtch==17)){
-       file <- paste(mmvrmObj$DIR,"BNSP.deviance.txt",sep="")
+	if (any(mtch==16)){
+       file <- paste(mvrmObj$DIR,"BNSP.deviance.txt",sep="")
        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=2,dimnames=list(c(),c("marginal deviance","full deviance"))))
     }
 	if (!is.null(R)){
@@ -905,13 +959,13 @@ quiet <- function(x) {
     invisible(force(x))
 }
 
-plot.mmvrm<-function(x, model, term, response, intercept=TRUE, grid=30,
+plot.mvrm<-function(x, model, term, response, intercept=TRUE, grid=30,
                     centre=mean, quantiles=c(0.1, 0.9), static=TRUE,
                     centreEffects=FALSE,plotOptions=list(),nrow,ask=FALSE,...)
 {
     oldpar <- NULL
     on.exit(par(oldpar))
-
+    #
     if (missing(response)) response <- c(1:x$p)
     if (max(response) > x$p) stop("argument response exceeds the number of responses");
     if (missing(model)) model<-"both"
@@ -928,31 +982,23 @@ plot.mmvrm<-function(x, model, term, response, intercept=TRUE, grid=30,
 		if (MEAN)
         for (i in termM){
             plotOptions <- list(ggtitle(paste("mean of", x$varsY[[r]])),plotOptions)
-
             my_plots[[count]] <- plot2(x, model="mean", term=i, response=r, intercept=intercept, grid=grid,
                   centre=centre, quantiles=quantiles, static=static,
                   centreEffects=centreEffects, plotOptions=plotOptions)
-
             if (ask==TRUE) print(my_plots[[count]])
-
             if (count==1)
                 oldpar <- c(oldpar, par(ask=ask))
-
             count <- count + 1
         }
         if (STDEV)
         for (i in termSD){
             plotOptions <- list(ggtitle(paste("stdev of", x$varsY[[r]])),plotOptions)
-
             my_plots[[count]] <- plot2(x, model = "stdev", term=i, response=r, intercept=intercept, grid=grid,
                   centre=centre, quantiles=quantiles, static=static,
                   centreEffects=centreEffects, plotOptions=plotOptions)
-
             if (ask==TRUE) print(my_plots[[count]])
-
             if (count==1)
                 oldpar <- c(oldpar, par(ask=ask))
-
             count <- count + 1
         }
 	}
@@ -960,23 +1006,23 @@ plot.mmvrm<-function(x, model, term, response, intercept=TRUE, grid=30,
 }
 
 plotCorr <- function(x, term="R", centre=mean, quantiles=c(0.1, 0.9), ...){
-    mmvrmObj<-x
-    if (mmvrmObj$p == 1) stop("doesn't apply for univariate response")
+    mvrmObj<-x
+    if (mvrmObj$p == 1) stop("doesn't apply for univariate response")
     if (length(quantiles)==1) quantiles <- c(quantiles,1-quantiles)
     if (length(quantiles) > 2) stop("up to two quantiles")
     if (!is.null(quantiles)) quantiles <- unique(sort(quantiles))
     if (!is.null(quantiles)) par(mfrow=c(1,2))
     mt<-match(term,c("R","muR"))
     if (is.na(mt)) stop("unrecognised term");
-    if (mt==1) R<-mmvrm2mcmc(mmvrmObj,"R")
+    if (mt==1) R<-mvrm2mcmc(mvrmObj,"R")
     if (mt==2){
-        muR<-mmvrm2mcmc(mmvrmObj,"muR")
-        if (mmvrmObj$mcm == 1) return(plot(tanh(muR)))
-        compAlloc <- matrix(0,nrow=mmvrmObj$nSamples,ncol=mmvrmObj$d)
-        compAllocFile <- paste(mmvrmObj$DIR, paste("BNSP","compAlloc","txt",sep="."),sep="/")
-        if (file.exists(compAllocFile)) compAlloc<-mmvrm2mcmc(mmvrmObj,"compAlloc")
-        R <- sapply(1:mmvrmObj$d,
-                    function(i) muR[cbind(1:mmvrmObj$nSamples,compAlloc[,i]+1)])
+        muR<-mvrm2mcmc(mvrmObj,"muR")
+        if (mvrmObj$mcm == 1) return(plot(tanh(muR)))
+        compAlloc <- matrix(0,nrow=mvrmObj$nSamples,ncol=mvrmObj$d)
+        compAllocFile <- paste(mvrmObj$DIR, paste("BNSP","compAlloc","txt",sep="."),sep="/")
+        if (file.exists(compAllocFile)) compAlloc<-mvrm2mcmc(mvrmObj,"compAlloc")
+        R <- sapply(1:mvrmObj$d,
+                    function(i) muR[cbind(1:mvrmObj$nSamples,compAlloc[,i]+1)])
         if (x$out[[40]]==1) R <- tanh(R)
 	}
     ec <- diag(rep(1,x$p))
@@ -986,7 +1032,7 @@ plotCorr <- function(x, term="R", centre=mean, quantiles=c(0.1, 0.9), ...){
     corrplot.mixed(ec,lower.col="black")
     if (!is.null(quantiles)){
         q<-apply(R,2,quantile,probs=quantiles)
-        ci<-diag(1,mmvrmObj$p)
+        ci<-diag(1,mvrmObj$p)
         ci[lower.tri(ci)] <- q[2,]
         ci[upper.tri(ci)]<-t(ci)[upper.tri(ci)]
         ci[lower.tri(ci)] <- q[1,]
@@ -997,29 +1043,29 @@ plotCorr <- function(x, term="R", centre=mean, quantiles=c(0.1, 0.9), ...){
 }
 
 histCorr <- function(x, term="R", plotOptions=list(), ...){
-    mmvrmObj<-x
-    if (mmvrmObj$p == 1) stop("doesn't apply for univariate response")
+    mvrmObj<-x
+    if (mvrmObj$p == 1) stop("doesn't apply for univariate response")
     mt<-match(term,c("R","muR"))
     if (is.na(mt)) stop("unrecognised term");
-    if (mt==1) R<-mmvrm2mcmc(mmvrmObj,"R")
+    if (mt==1) R<-mvrm2mcmc(mvrmObj,"R")
     if (mt==2){
-        muR<-mmvrm2mcmc(mmvrmObj,"muR")
-        if (mmvrmObj$mcm == 1) return(plot(tanh(muR)))
-        compAlloc <- matrix(0,nrow=mmvrmObj$nSamples,ncol=mmvrmObj$d)
-        compAllocFile <- paste(mmvrmObj$DIR, paste("BNSP","compAlloc","txt",sep="."),sep="/")
-        if (file.exists(compAllocFile)) compAlloc<-mmvrm2mcmc(mmvrmObj,"compAlloc")
-        R <- sapply(1:mmvrmObj$d,
-                    function(i) muR[cbind(1:mmvrmObj$nSamples,compAlloc[,i]+1)])
+        muR<-mvrm2mcmc(mvrmObj,"muR")
+        if (mvrmObj$mcm == 1) return(plot(tanh(muR)))
+        compAlloc <- matrix(0,nrow=mvrmObj$nSamples,ncol=mvrmObj$d)
+        compAllocFile <- paste(mvrmObj$DIR, paste("BNSP","compAlloc","txt",sep="."),sep="/")
+        if (file.exists(compAllocFile)) compAlloc<-mvrm2mcmc(mvrmObj,"compAlloc")
+        R <- sapply(1:mvrmObj$d,
+                    function(i) muR[cbind(1:mvrmObj$nSamples,compAlloc[,i]+1)])
         if (x$out[[40]]==1) R <- tanh(R)
 	}
-    r<-rep(rep(seq(1,mmvrmObj$p-1),times=seq(mmvrmObj$p-1,1)),each=mmvrmObj$nSample)
-    c<-rep(unlist(mapply(seq,seq(2,mmvrmObj$p),mmvrmObj$p)),each=mmvrmObj$nSample)
+    r<-rep(rep(seq(1,mvrmObj$p-1),times=seq(mvrmObj$p-1,1)),each=mvrmObj$nSample)
+    c<-rep(unlist(mapply(seq,seq(2,mvrmObj$p),mvrmObj$p)),each=mvrmObj$nSample)
     df<-data.frame(cor=c(R),r=r,c=c)
     pp<-ggplot(df) + geom_histogram(aes(x=cor),binwidth=0.01) + facet_wrap(r~c) + plotOptions #facet_grid(r~c)
     return(pp)
 }
 
-predict.mmvrm <- function(object,newdata,interval=c("none","credible","prediction"),level=0.95,nSamples=100, ...){
+predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction"),level=0.95,nSamples=100, ...){
     if (missing(newdata) || is.null(newdata)) newdata<-object$data
     if (length(newdata)==0) stop("no data found")
     #if (length(response) > object$p) stop(paste("`response' is a vector of up to", object$p,"integers"))
@@ -1099,13 +1145,13 @@ predict.mmvrm <- function(object,newdata,interval=c("none","credible","predictio
 	return(data.frame(predictions))
 }
 
-print.mmvrm <- function(x,  digits = 5, ...) {
+print.mvrm <- function(x,  digits = 5, ...) {
     cat("\nCall:\n")
     print(x$call)
     cat("\n")
     cat(x$nSamples,"posterior samples\n")
-    G<-as.data.frame(mmvrm2mcmc(x,"gamma"))
-    D<-as.data.frame(mmvrm2mcmc(x,"delta"))
+    G<-as.data.frame(mvrm2mcmc(x,"gamma"))
+    D<-as.data.frame(mvrm2mcmc(x,"delta"))
     colnames(G)<- rep(colnames(x$X)[-1],x$p)
     colnames(D)<- rep(colnames(x$Z)[-1],x$p)
     if (x$LG > 0){
@@ -1130,7 +1176,7 @@ print.mmvrm <- function(x,  digits = 5, ...) {
     }
 }
 
-summary.mmvrm <- function(object, nModels = 5, digits = 5, printTuning = FALSE, ...) {
+summary.mvrm <- function(object, nModels = 5, digits = 5, printTuning = FALSE, ...) {
     cat("\nSpecified model for the mean and variance:\n")
     print(object$formula, showEnv = FALSE)
     cat("\nSpecified priors:\n")
@@ -1148,8 +1194,8 @@ summary.mmvrm <- function(object, nModels = 5, digits = 5, printTuning = FALSE, 
     print(deviance, digits = digits)
     if ((nModels > 0) && ((object$LG+object$LD) > 0)){
       cat("\nJoint mean/variance model posterior probabilities\n\n")
-      G<-as.data.frame(mmvrm2mcmc(object,"gamma"))
-      D<-as.data.frame(mmvrm2mcmc(object,"delta"))
+      G<-as.data.frame(mvrm2mcmc(object,"gamma"))
+      D<-as.data.frame(mvrm2mcmc(object,"delta"))
       if (object$LG > 0) colnames(G)<-paste(rep(sub(" ",".",paste("mean",colnames(object$X)[-1])),object$p))#,rep(seq(1,p),each=object$LG),sep=".")
       if (object$LD > 0) colnames(D)<- paste(rep(sub(" ",".",paste("var",colnames(object$Z)[-1])),object$p))#,rep(seq(1,p),each=object$LD),sep=".")
       for (k in 1:object$p){

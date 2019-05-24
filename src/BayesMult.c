@@ -1,7 +1,6 @@
 /* BayesMult.c Bayesian Nonparametric Multivariate Regression
- * [consider another algorithm for R]
  * Copyright (C) 2018  Georgios Papageorgiou, gpapageo@gmail.com
- * [considers R updating as in BayesCorM]
+ * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
@@ -45,9 +44,8 @@
 #include "sampling.h"
 #include "other.functions.h"
 #include "mathm.h"
-#include "spec.BCM.h"
 */
-extern void   computeStStar(double *Y, int *time, int N, int t, int p, gsl_matrix *StStar);
+extern void   computeStStar(double *Y, int *time, int N, int t, int p, gsl_matrix *StStar); 
 extern void   ginv(int p, double tol, gsl_matrix *A);
 extern double FisherTr(double r, int I);
 extern double ScalcMult(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, gsl_matrix *St, double *qf2);
@@ -61,10 +59,14 @@ extern void   rwish(unsigned long int s, int p, double n, gsl_matrix *scale, gsl
 extern void   decomposeEtoDS(int nres, int nconf, gsl_matrix *E, gsl_matrix *D, gsl_matrix *S);
 extern double logPropPdfDR(gsl_matrix *D, gsl_matrix *E, gsl_matrix *M, gsl_matrix *K, int p, double num1, double num2, double num3, double num4);
 extern double det(int p, gsl_matrix *E);
+extern void allocation(unsigned long int s, int n, int ncomp, double Prob[ncomp][n], int *compAlloc, int sw);
+extern void findNmembers(int n, int ncomp, int *compAlloc, int *nmembers);
+extern double updateAlpha(unsigned long int s, int n, int ncomp, double a, double b, double TruncAlpha, int *nmembers, double alpha);
 extern double NormalQuadr(int p, int m, int LG, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, double *beta);
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define MAX_PATH 300
 
 void   mult(int *seed1, char **WorkingDir, int *WF1,
             int *sweeps1, int *burn1, int *thin1,
@@ -81,7 +83,7 @@ void   mult(int *seed1, char **WorkingDir, int *WF1,
             double *LASTR, double *LASTmuR, double *LASTsigma2R,
             double *LASTceta, double *LASTcalpha, int *LASTsw, double *LASTDE, int *LASTWB)
 {
-    //gsl_set_error_handler_off();
+    gsl_set_error_handler_off();
 
     // Random number generator initialization
     int seed = seed1[0]; //random number generator seed
@@ -91,13 +93,11 @@ void   mult(int *seed1, char **WorkingDir, int *WF1,
 
     // Specify directory
     int WF = WF1[0]; // indicator: 1 = write files, 0 = no files.
-    const int MAX_PATH = 300;
     char path_name[MAX_PATH + 1];
 
     // Open files
     FILE *out_file1, *out_file2, *out_file3, *out_file4, *out_file5, *out_file6,
-         *out_file7, *out_file8, *out_file9, *out_file10, *out_file11, *out_file12,
-         *out_file13, *out_file14;
+         *out_file7, *out_file8, *out_file9, *out_file10, *out_file11, *out_file12;
 
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.gamma.txt");
     out_file1 = fopen(path_name, "a");
@@ -109,7 +109,7 @@ void   mult(int *seed1, char **WorkingDir, int *WF1,
     out_file4 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.R.txt");
     out_file5 = fopen(path_name, "a");
-    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.theta.txt");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.deviance.txt");
     out_file6 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.muR.txt");
     out_file7 = fopen(path_name, "a");
@@ -120,13 +120,9 @@ void   mult(int *seed1, char **WorkingDir, int *WF1,
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.sigma2.txt");
     out_file10 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.beta.txt");
-    out_file11 = fopen(path_name, "a");
-    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.test.txt");
-    out_file12 = fopen(path_name, "a");
+    out_file11 = fopen(path_name, "a");    
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.DE.txt");
-    out_file13 = fopen(path_name, "a");
-    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.deviance.txt");
-    out_file14 = fopen(path_name, "a");
+    out_file12 = fopen(path_name, "a");
 
     // Sweeps, burn-in period, thin
     int sweeps = sweeps1[0]; //number of posterior samples
@@ -224,7 +220,7 @@ void   mult(int *seed1, char **WorkingDir, int *WF1,
     double sqResC[m*p];
     double sqResP[m*p];
     double logPropDRP, logPropDRC, priorLogR, logAcp, Acp, unifRV, QFC, QFD, detR, detS,
-           logMVNormC, logMVNormP, SPC, SPP, temp, sigma2RP, LR, trace, logLikP, logLikC, dev0, dev1;
+           logMVNormC, logMVNormP, SPC, SPP, temp, sigma2RP, logLikP, logLikC, dev0, dev1;
     int NPJ, NCJ;
     double cetahat, Sprime, SDprime, elPrime, elDPrime, Q2, cetaP, calphaP;
     double rtilde[m*p];
@@ -461,7 +457,7 @@ void   mult(int *seed1, char **WorkingDir, int *WF1,
 			phi2G = calphaParams[move++];
 			calpha[k] = sqrt(2*phi2G/M_PI);
 		}
-		if (cont[0]==1) calpha[k] = LASTalpha[k];
+		if (cont[0]==1) calpha[k] = LASTcalpha[k];
     }
 
     //#############################################SAMPLER
@@ -877,50 +873,50 @@ void   mult(int *seed1, char **WorkingDir, int *WF1,
 
             computeStStar(rtilde,time,m*p,0,p,St2);
 
-            fprintf(out_file12, "%s %f %f %f \n", "St2 :", gsl_matrix_get(St2,0,0),gsl_matrix_get(St2,0,1),gsl_matrix_get(St2,1,1));
+            //fprintf(out_file12, "%s %f %f %f \n", "St2 :", gsl_matrix_get(St2,0,0),gsl_matrix_get(St2,0,1),gsl_matrix_get(St2,1,1));
 
             // - 7 - Update R
             //Rprintf("%i %s \n",sw,"R");
 	        if ((sw % batchL)==0 && WB > 0){
-	            fprintf(out_file12, "%i %f %f \n", sw, acceptR, tuneR[0]);
+	            //fprintf(out_file12, "%i %f %f \n", sw, acceptR, tuneR[0]);
 	            if (acceptR > 0.25 && tuneR[0] > RtLL) tuneR[0] -= MIN(0.01,1/sqrt(WB)) * tuneR[0];
 	            if (acceptR <= 0.25 && tuneR[0] < RtUL) tuneR[0] += MIN(0.01,1/sqrt(WB)) * tuneR[0];
 		        acceptR = 0.0;
 	        }
 
-	        fprintf(out_file12, "%s %i %.2f %f \n", "sw:", sw, tuneR[0], acceptR);
+	        //fprintf(out_file12, "%s %i %.2f %f \n", "sw:", sw, tuneR[0], acceptR);
 
 	        gsl_matrix_memcpy(PSIt,EtC);
             gsl_matrix_scale(PSIt,tuneR[0]-p-1);
             gsl_matrix_add(PSIt,St2);
             gsl_matrix_memcpy(CopyPSIt,PSIt);
 
-            fprintf(out_file12, "%s %f %f %f \n", "RtC scaled:", gsl_matrix_get(PSIt,0,0),gsl_matrix_get(PSIt,0,1),gsl_matrix_get(PSIt,1,1));
+            //fprintf(out_file12, "%s %f %f %f \n", "RtC scaled:", gsl_matrix_get(PSIt,0,0),gsl_matrix_get(PSIt,0,1),gsl_matrix_get(PSIt,1,1));
 
             ginv(p,tol,PSIt);
 
-            fprintf(out_file12, "%s %f %f %f \n", "inv:", gsl_matrix_get(PSIt,0,0),gsl_matrix_get(PSIt,0,1),gsl_matrix_get(PSIt,1,1));
+            //fprintf(out_file12, "%s %f %f %f \n", "inv:", gsl_matrix_get(PSIt,0,0),gsl_matrix_get(PSIt,0,1),gsl_matrix_get(PSIt,1,1));
 
             s = gsl_ran_flat(r,1.0,100000);
 
             rwish(s,p,m+tuneR[0],PSIt,EtP);
 
-            fprintf(out_file12, "%s %f %f %f \n", "rwish out:", gsl_matrix_get(EtP,0,0),gsl_matrix_get(EtP,0,1),gsl_matrix_get(EtP,1,1));
+            //fprintf(out_file12, "%s %f %f %f \n", "rwish out:", gsl_matrix_get(EtP,0,0),gsl_matrix_get(EtP,0,1),gsl_matrix_get(EtP,1,1));
 
             ginv(p,tol,EtP);
 
-            fprintf(out_file12, "%s %f %f %f \n", "EtP:", gsl_matrix_get(EtP,0,0),gsl_matrix_get(EtP,0,1),gsl_matrix_get(EtP,1,1));
-            fprintf(out_file12, "%s %f %f %f \n", "EtC:", gsl_matrix_get(EtC,0,0),gsl_matrix_get(EtC,0,1),gsl_matrix_get(EtC,1,1));
+            //fprintf(out_file12, "%s %f %f %f \n", "EtP:", gsl_matrix_get(EtP,0,0),gsl_matrix_get(EtP,0,1),gsl_matrix_get(EtP,1,1));
+            //fprintf(out_file12, "%s %f %f %f \n", "EtC:", gsl_matrix_get(EtC,0,0),gsl_matrix_get(EtC,0,1),gsl_matrix_get(EtC,1,1));
 
             //gsl_matrix_set(EtP,1,0,0);
             //gsl_matrix_set(EtP,0,1,0);
 
             decomposeEtoDS(p,0,EtP,DtP,RtP);
 
-            fprintf(out_file12, "%s %f %f \n", "DtP:", gsl_matrix_get(DtP,0,0),gsl_matrix_get(DtP,1,1));
-            fprintf(out_file12, "%s %f \n", "RtP:", gsl_matrix_get(RtP,0,1));
-            fprintf(out_file12, "%s %f %f \n", "DtC:", gsl_matrix_get(DtC,0,0),gsl_matrix_get(DtC,1,1));
-            fprintf(out_file12, "%s %f \n", "RtC:", gsl_matrix_get(RtC,0,1));
+            //fprintf(out_file12, "%s %f %f \n", "DtP:", gsl_matrix_get(DtP,0,0),gsl_matrix_get(DtP,1,1));
+            //fprintf(out_file12, "%s %f \n", "RtP:", gsl_matrix_get(RtP,0,1));
+            //fprintf(out_file12, "%s %f %f \n", "DtC:", gsl_matrix_get(DtC,0,0),gsl_matrix_get(DtC,1,1));
+            //fprintf(out_file12, "%s %f \n", "RtC:", gsl_matrix_get(RtC,0,1));
 
             priorLogR = 0.0;
             move = 0;
@@ -984,7 +980,7 @@ void   mult(int *seed1, char **WorkingDir, int *WF1,
             Acp = exp(logAcp);
             unifRV = gsl_ran_flat(r,0.0,1.0);
 
-if (1==1){
+if (1==0){
 fprintf(out_file12, "%i %.2f | %f %f %f | %f %f %f | %f %f \n%f %f %f %f %f %f %f\n",
 sw, tuneR[0],
 gsl_matrix_get(EtC,0,0),gsl_matrix_get(EtC,0,1),gsl_matrix_get(EtC,1,1),
@@ -1117,18 +1113,18 @@ logPropDRC,logPropDRP,priorLogR,detR,SPP,SPC,Acp);
                 if (sw==LASTsw[0]){
                     for (k = 0; k < p; k++)
                         for (l = 0; l < p; l++)
-                            fprintf(out_file13, "%f ", gsl_matrix_get(DtC,k,l));
-                    fprintf(out_file13, "\n");
+                            fprintf(out_file12, "%f ", gsl_matrix_get(DtC,k,l));
+                    fprintf(out_file12, "\n");
 
                     for (k = 0; k < p; k++)
                         for (l = 0; l < p; l++)
-                            fprintf(out_file13, "%f ", gsl_matrix_get(EtC,k,l));
-                    fprintf(out_file13, "\n");
+                            fprintf(out_file12, "%f ", gsl_matrix_get(EtC,k,l));
+                    fprintf(out_file12, "\n");
 			    }
 
-                for (j = 0; j < d; j++)
-                    fprintf(out_file6, "%f ", theta[j]);
-                fprintf(out_file6, "\n");
+                //for (j = 0; j < d; j++)
+                //    fprintf(out_file6, "%f ", theta[j]);
+                //fprintf(out_file6, "\n");
 
                 fprintf(out_file7, "%0.10f \n", muR);
 
@@ -1151,15 +1147,14 @@ logPropDRC,logPropDRP,priorLogR,detR,SPP,SPC,Acp);
             }
             fprintf (out_file11, "\n");
 
-            fprintf(out_file14, "%f %f \n", dev0, dev1);
+            fprintf(out_file6, "%f %f \n", dev0, dev1);
         }
         // If sw needs to be printed
-        if (sw==(sweeps-1) && (!(sweeps % 1000)==0)) Rprintf("%i %s \n",sweeps, "posterior samples...");
+        if ((sw==(sweeps-1)) && (!(sweeps % 1000)==0)) Rprintf("%i %s \n",sweeps, "posterior samples...");
     }//end of sw
 
     //Update LASTWB
     LASTWB[0] = WB;
-
 
     //Free up random number generator
     gsl_rng_free (r);
@@ -1169,7 +1164,6 @@ logPropDRC,logPropDRP,priorLogR,detR,SPP,SPC,Acp);
     fclose(out_file4); fclose(out_file5); fclose(out_file6);
     fclose(out_file7); fclose(out_file8); fclose(out_file9);
     fclose(out_file10); fclose(out_file11); fclose(out_file12);
-    fclose(out_file13);fclose(out_file14);
 
     //Free up gsl matrices
     gsl_matrix_free(PSIt); gsl_matrix_free(CopyPSIt);

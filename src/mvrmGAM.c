@@ -6,7 +6,7 @@
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful, 
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -38,13 +38,13 @@
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_roots.h>
 #include <gsl/gsl_multiset.h>
-
-//#include "matalg.h"
-//#include "pdfs.h"
-//#include "sampling.h"
-//#include "other.functions.h"
-//#include "mathm.h"
-
+/*
+#include "matalg.h"
+#include "pdfs.h"
+#include "sampling.h" 
+#include "other.functions.h"
+#include "mathm.h"
+*/
 #include "spec.BCM.h" 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
@@ -54,15 +54,15 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
            int *sweeps1, int *burn1, int *thin1,
            double *Y, double *X, double *Z, int *n1, int *LG1, int *LD1,
            double *blockSizeProb1, int *maxBSG1, double *blockSizeProb2, int *maxBSD1, 
-           double *fca1, double *f1, double *g1, double *h, 
+           double *tuneCa, double *tuneSigma2, double *tuneCb, double *tuneAlpha, 
            int *NG1, int *ND1, int *vecLG, int *vecLD, int *cusumVecLG, int *cusumVecLD, int *MVLD,
            double *cetaParams, int *HNca1, double *calphaParams, double *pimu, double *pisigma,
            int *HNsg1, double *sigmaParams, double *dev,
            int *cont, int *LASTgamma, int *LASTdelta, double *LASTalpha, double *LASTsigma2zk,           
            double *LASTceta, double *LASTcalpha, int *LASTWB)
 {
-    gsl_set_error_handler_off();
-
+    gsl_set_error_handler_off(); 
+  
     // Random number generator initialization
     int seed = seed1[0]; 
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
@@ -109,7 +109,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     double tol = 0.00000001;//0.01;  
     
     //Declare variables for loops:
-    int sw, i, j, k;
+    int sw, i, j, k, move;
 
     // Prior parameters
       //c.eta
@@ -120,13 +120,15 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     double dmu[NG];
     double csigma[ND];
     double dsigma[ND];     
+    move=0;
     for (k = 0; k < NG; k++){
-        cmu[k] = pimu[k];
-        dmu[k] = pimu[k+NG];
+        cmu[k] = pimu[move++];
+        dmu[k] = pimu[move++];
 	}    
+	move=0;
     for (k = 0; k < ND; k++){
-        csigma[k] = pisigma[k];
-        dsigma[k] = pisigma[k+ND];
+        csigma[k] = pisigma[move++];
+        dsigma[k] = pisigma[move++];
 	}    
       //sigma2
     int HNsg=HNsg1[0];
@@ -138,13 +140,11 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     int HNca=HNca1[0];
     double phi2calpha;  //for half normal prior
     double alphaalpha, betaalpha; //for IG prior
-    if (HNca==1) phi2calpha=calphaParams[0];
-    else if (HNca==0) {alphaalpha = calphaParams[0]; betaalpha = calphaParams[1];} 
-    
-    //Tuning papameters
-    double f = f1[0];
-    double g = g1[0];
-    double fca = fca1[0];
+    if (HNca==1){ 
+        phi2calpha = calphaParams[0]; alphaalpha = -99; betaalpha = -99;
+	}else{
+		alphaalpha = calphaParams[0]; betaalpha = calphaParams[1]; phi2calpha = -99;
+	} 
 
     // Declare quantities of interest
     double eta[LG+1];
@@ -167,7 +167,6 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     double ceta;
 
     // Declare other quantities
-    int move;
     double yTilde[n];
     double yTildeP[n];
     double sigma2zP[n];  
@@ -241,7 +240,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     
     double acceptCeta = 0.0;
     double GLL = 0.01;
-    double GUL = 200;
+    double GUL = 100;
     
     double acceptSigma2 = 0.0;
     double FLL = 0.01;
@@ -260,13 +259,13 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     // Sampler initialization
     
     // - 1 - Gamma    
-    if (cont[0]==1)
+    if (cont[0]==1){
         for (k = 0; k < LG; k++)
             gamma[k] = LASTgamma[k];
-
-    if (cont[0]==0)        
+    }else{        
         for (k = 0; k < LG; k++)
             gamma[k] = 1; //gsl_ran_bernoulli(r,cmu/(cmu+dmu)); 
+	}
     
     for (j = 0; j < NG; j++)
 	    for (k = 0; k < vecLG[j]; k++)
@@ -288,17 +287,17 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     NgammaP = Ngamma;
         
     // - 2 - Delta & Alpha
-    if (cont[0]==1)
+    if (cont[0]==1){
         for (k = 0; k < LD; k++){
             delta[k] = LASTdelta[k];
             alpha[k] = LASTalpha[k];
 		}
-
-    if (cont[0]==0)        
+    }else{        
         for (k = 0; k < LD; k++){
             delta[k] = 0; //gsl_ran_bernoulli(r,csigma[j]/(csigma[j]+dsigma[j]));
             alpha[k] = 0;
 		}
+	}
     
     for (j = 0; j < ND; j++)
 	    for (k = 0; k < vecLD[j]; k++)
@@ -319,11 +318,11 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
 	}
                 
     // - 3 - sigma2, 
-    if (cont[0]==1)       
+    if (cont[0]==1){       
         sigma2 = LASTsigma2zk[0];
-
-    if (cont[0]==0)
+	}else{ 
         sigma2 = 1.0;
+	}
     
     // - 4 - LPV, sigma2t, QFC  LPV, sigma2ij, Ytilde, St      
     for (i = 0; i < n; i++){
@@ -351,8 +350,9 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
             cetahat -= elPrime / elDPrime;
         }
         ceta = cetahat; 
-    }
-    if (cont[0]==1) ceta = LASTceta[0];
+    }else{
+        ceta = LASTceta[0];
+	}
     
     // - 6 - c_alpha, 1/gsl_ran_gamma(r,alphaalpha,1/betaalpha);
     calpha = 110.0;
@@ -393,6 +393,8 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
 	            SPP = SPcalc(n,1,tol,yTilde,gammaP,NgammaP,LG,ceta,X,LPV,&Q2); 
                 Acp = exp((-SPP+SPC)/(2*sigma2))*pow(ceta+1,0.5*(vecNgamma[j]-NPJ));
                 unifRV = gsl_ran_flat(r,0.0,1.0);            
+	            //if (j==1) Rprintf("%s %i %i %i | %i %i | %f | %f %f %f %f %f %f \n","gamma: ",
+	            //sw,j,block,gamma[j],NPJ,Acp,SPC,SPP,ceta,sigma2,cmu[j],dmu[j]);
 	            if (Acp > unifRV){
                     for (k = 0; k < vecLG[j]; k++){
 	                    gamma[cusumVecLG[j]+k] = gammaP[cusumVecLG[j]+k];
@@ -430,11 +432,11 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
                         
         for (j = 0; j < ND; j++){
 		    if ((sw % batchL)==0 && WB > 0){ 
-	            if (acceptAlpha[j] > 0.25 && h[j] < HUL) h[j] += MIN(0.01,1/sqrt(WB)) * h[j]; 
-	            if (acceptAlpha[j] <= 0.25 && h[j] > HLL) h[j] -= MIN(0.01,1/sqrt(WB)) * h[j];
+	            if (acceptAlpha[j] > 0.25 && tuneAlpha[j] < HUL) tuneAlpha[j] += MIN(0.01,1/sqrt(WB)) * tuneAlpha[j]; 
+	            if (acceptAlpha[j] <= 0.25 && tuneAlpha[j] > HLL) tuneAlpha[j] -= MIN(0.01,1/sqrt(WB)) * tuneAlpha[j];
 	            acceptAlpha[j] = 0.0;   
-	            if (h[j] < HLL) h[j] = HLL;
-	            if (h[j] > HUL) h[j] = HUL;
+	            if (tuneAlpha[j] < HLL) tuneAlpha[j] = HLL;
+	            if (tuneAlpha[j] > HUL) tuneAlpha[j] = HUL;
             }            
 		    gsl_ran_multinomial(r,maxBSD,1,blockSizeProbD,vecBSD);
             blockSize = 0;
@@ -465,7 +467,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
                     DeltaAlphaHat(n,1,tol,LPV,sqResC,deltaP,NPJ,cusumVecLD[j],cusumVecLD[j+1],
                                   Z,sigma2,sigma2z,calpha,&subD.matrix,&subAlphaHat.vector);              
                     subAlphaP = gsl_vector_subvector(alphaP,0,NPJ);
-                    gsl_matrix_scale(&subD.matrix,h[j]);
+                    gsl_matrix_scale(&subD.matrix,tuneAlpha[j]);
                     s = gsl_ran_flat(r,1.0,100000);
                     sampleMN(s,NPJ,&subAlphaP.vector,&subAlphaHat.vector,&subD.matrix,tol);
                     
@@ -506,7 +508,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
                     subD = gsl_matrix_submatrix(D,0,0,vecNdelta[j],vecNdelta[j]);
                     DeltaAlphaHat(n,1,tol,LPVP,sqResP,delta,vecNdelta[j],cusumVecLD[j],cusumVecLD[j+1],
                                   Z,sigma2,sigma2zP,calpha,&subD.matrix,&subAlphaHat.vector);              
-                    gsl_matrix_scale(&subD.matrix,h[j]);
+                    gsl_matrix_scale(&subD.matrix,tuneAlpha[j]);
                     move=0;
                     for (k = 0; k < vecLD[j]; k++)
                         if (vecDelta[j][k]==1) BaseSubAlpha[move++] = alpha[cusumVecLD[j]+k];
@@ -558,14 +560,14 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
                 sigma2z[i] = sigma2*exp(LPV[i]);
 		}else if (HNsg==1){
             if ((sw % batchL)==0 && WB > 0){ 
-	            if (acceptSigma2 > 0.25 && f < FUL) f += MIN(0.01,1/sqrt(WB)) * f; 
-	            if (acceptSigma2 <= 0.25 && f > FLL) f -= MIN(0.01,1/sqrt(WB)) * f;
+	            if (acceptSigma2 > 0.25 && tuneSigma2[0] < FUL) tuneSigma2[0] += MIN(0.01,1/sqrt(WB)) * tuneSigma2[0]; 
+	            if (acceptSigma2 <= 0.25 && tuneSigma2[0] > FLL) tuneSigma2[0] -= MIN(0.01,1/sqrt(WB)) * tuneSigma2[0];
 	            acceptSigma2 = 0.0;   
-	            if (f < FLL) f = FLL;
-	            if (f > FUL) f = FUL;
+	            if (tuneSigma2[0] < FLL) tuneSigma2[0] = FLL;
+	            if (tuneSigma2[0] > FUL) tuneSigma2[0] = FUL;
             }            
-            sigma2P = sigma2 + gsl_ran_gaussian(r,sqrt(f));
-            while (sigma2P <= 0) sigma2P = sigma2 + gsl_ran_gaussian(r,sqrt(f));
+            sigma2P = sigma2 + gsl_ran_gaussian(r,sqrt(tuneSigma2[0]));
+            while (sigma2P <= 0) sigma2P = sigma2 + gsl_ran_gaussian(r,sqrt(tuneSigma2[0]));
             Acp = exp(-0.5*n*log(sigma2P/sigma2) + (SPC/2)*(1/sigma2-1/sigma2P) + 
                   (sigma2-sigma2P)/(2*phi2sigma));
 	        unifRV = gsl_ran_flat(r,0.0,1.0);
@@ -585,11 +587,11 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
         // - 4 - c_eta 
 	    //Rprintf("%i %s \n",sw,"c_eta");
         if ((sw % batchL)==0 && WB > 0){ 
-	        if (acceptCeta > 0.25 && g < GUL) g += MIN(0.01,1/sqrt(WB)) * g; 
-	        if (acceptCeta <= 0.25 && g > GLL) g -= MIN(0.01,1/sqrt(WB)) * g;
+	        if (acceptCeta > 0.25 && tuneCb[0] < GUL) tuneCb[0] += MIN(0.01,1/sqrt(WB)) * tuneCb[0]; 
+	        if (acceptCeta <= 0.25 && tuneCb[0] > GLL) tuneCb[0] -= MIN(0.01,1/sqrt(WB)) * tuneCb[0];
 	        acceptCeta = 0.0;   
-	        if (g < GLL) g = GLL;
-	        if (g > GUL) g = GUL;
+	        if (tuneCb[0] < GLL) tuneCb[0] = GLL;
+	        if (tuneCb[0] > GUL) tuneCb[0] = GUL;
         }     
         cetahat = 1;//starting value for NR
         SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
@@ -604,22 +606,30 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
         
         //Rprintf("%s %f %f %f %f %f %f %f \n","ceta 1: ",cetahat,elPrime,SPC,Sprime,SDprime,Q2,sigma2);
         
-        cetaP = cetahat + gsl_ran_gaussian(r,sqrt(-g/elDPrime));
-	    while(cetaP < 0) cetaP = cetahat + gsl_ran_gaussian(r,sqrt(-g/elDPrime));	    
+        cetaP = cetahat + gsl_ran_gaussian(r,sqrt(-tuneCb[0]/elDPrime));
+	    while(cetaP < 0) cetaP = cetahat + gsl_ran_gaussian(r,sqrt(-tuneCb[0]/elDPrime));	    
 	    SPP = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,cetaP,X,LPV,&Q2);
 	    Acp = exp(-0.5*(Ngamma+1)*(log(cetaP+1)-log(ceta+1))+(-SPP+SPC)/(2*sigma2)-(alphaeta+1)*(log(cetaP)-log(ceta))
               + betaeta*(1/ceta-1/cetaP))*
-                gsl_ran_gaussian_pdf(ceta-cetahat,sqrt(-g/elDPrime))/
-                gsl_ran_gaussian_pdf(cetaP-cetahat,sqrt(-g/elDPrime));
+                gsl_ran_gaussian_pdf(ceta-cetahat,sqrt(-tuneCb[0]/elDPrime))/
+                gsl_ran_gaussian_pdf(cetaP-cetahat,sqrt(-tuneCb[0]/elDPrime));
 	    unifRV = gsl_ran_flat(r,0.0,1.0);
+
+//Rprintf("%s %i | %f %f | %f %f | %f %f %f %f | %f %i %f %f %f \n","cet1: ",
+//sw,Acp,unifRV,SPC,SPP,ceta,cetahat,sqrt(-tuneCb[0]/elDPrime),cetaP,Q2,Ngamma,tuneCb[0],elDPrime,acceptCeta);
+
+//Rprintf("%s %i | %f | %f %f | %f %f | %f %f \n","cet2: ",sw,
+//Acp,-0.5*(Ngamma+1)*(log(cetaP+1)-log(ceta+1)),(-SPP+SPC)/(2*sigma2),(alphaeta+1)*(log(cetaP)-log(ceta)),
+//betaeta*(1/ceta-1/cetaP),gsl_ran_gaussian_pdf(ceta-cetahat,sqrt(-tuneCb[0]/elDPrime)),
+//gsl_ran_gaussian_pdf(cetaP-cetahat,sqrt(-tuneCb[0]/elDPrime)));
+
+
         if (Acp > unifRV){
             ceta = cetaP;
             SPC=SPP;//probably not necessary
 	        acceptCeta += 1/((double)batchL);  
 	    }
 
-//Rprintf("%s %i %f %f %f %f %f %f %f %f %f %f %i %f %f\n","ceta 2: ",
-//sw,Acp,unifRV,SPC,SPP,ceta,cetahat,cetaP,Q2,alphaeta,betaeta,Ngamma,g,elDPrime);
 
 
 	    	    
@@ -630,18 +640,18 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
 		    //Rprintf("%s %i %f %f %i %f %f \n","calpha G: ",sw,alphaalpha,betaalpha,Ndelta,QFC,calpha);		    
 		}else if (HNca==1){
             if ((sw % batchL)==0 && WB > 0){ 
-	            if (acceptCa > 0.25 && fca < FCAUL) fca += MIN(0.01,1/sqrt(WB)) * fca; 
-	            if (acceptCa <= 0.25 && fca > FCALL) fca -= MIN(0.01,1/sqrt(WB)) * fca;
+	            if (acceptCa > 0.25 && tuneCa[0] < FCAUL) tuneCa[0] += MIN(0.01,1/sqrt(WB)) * tuneCa[0]; 
+	            if (acceptCa <= 0.25 && tuneCa[0] > FCALL) tuneCa[0] -= MIN(0.01,1/sqrt(WB)) * tuneCa[0];
 	            acceptCa = 0.0;   
-	            if (fca < FCALL) fca = FCALL;
-	            if (fca > FCAUL) fca = FCAUL;
+	            if (tuneCa[0] < FCALL) tuneCa[0] = FCALL;
+	            if (tuneCa[0] > FCAUL) tuneCa[0] = FCAUL;
             }            
-            calphaP = calpha + gsl_ran_gaussian(r,sqrt(fca));
-            while (calphaP <= 0) calphaP = calpha + gsl_ran_gaussian(r,sqrt(fca));            
+            calphaP = calpha + gsl_ran_gaussian(r,sqrt(tuneCa[0]));
+            while (calphaP <= 0) calphaP = calpha + gsl_ran_gaussian(r,sqrt(tuneCa[0]));            
             Acp = exp(-0.5*Ndelta*log(calphaP/calpha) + (QFC/2)*(1/calpha-1/calphaP) + 
                   (calpha-calphaP)/(2*phi2calpha));	        
 	        unifRV = gsl_ran_flat(r,0.0,1.0);
-	        //Rprintf("%s %i %f %i %f %f %f %f %f \n","calpha HN: ",sw,Acp,Ndelta,calphaP,calpha,QFC,phi2calpha,fca);
+	        //Rprintf("%s %i %f %i %f %f %f %f %f \n","calpha HN: ",sw,Acp,Ndelta,calphaP,calpha,QFC,phi2calpha,tuneCa[0]);
             if (Acp > unifRV){
                 calpha = calphaP;
 	            acceptCa += 1/((double)batchL);                  
@@ -698,10 +708,6 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
         // If sw needs to be printed
         if ((sw==(sweeps-1)) && (!(sweeps % 1000)==0)) Rprintf("%i %s \n",sweeps, "posterior samples...");
     }//end of sw
-    //Update adaptive parameters
-    f1[0] = f;
-    g1[0] = g;
-    fca1[0] = fca;
     
     //Update LASTWB
     LASTWB[0] = WB;

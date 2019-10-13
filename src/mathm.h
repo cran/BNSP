@@ -209,3 +209,52 @@ void MNCondParams2of2B(int L1, int L2, gsl_vector *mu, gsl_vector *W, gsl_matrix
     gsl_vector_free(Diff);
     gsl_vector_free(StoreCmean);
 }
+
+void MNCond(double tol, int start, int end, gsl_vector *mu, gsl_matrix *Sigma, double *W, gsl_vector *condMu, gsl_matrix *condSigma){    
+    int dim = mu->size;
+    int dimCond = end - start + 1;  
+    int r, c;
+    //Rprintf("%s %i %i \n","MNdims and maybe P:",dim,dimCond);
+    if ((dim-dimCond) > 0){
+        gsl_matrix *P = gsl_matrix_calloc(dim,dim);
+        gsl_matrix *perSigma = gsl_matrix_alloc(dim,dim);
+        gsl_matrix *perSigma2 = gsl_matrix_alloc(dim,dim);
+        gsl_vector *perMu = gsl_vector_alloc(dim);        
+        gsl_matrix *S12S22 = gsl_matrix_alloc(dimCond,dim-dimCond);                    
+        gsl_vector *Diff = gsl_vector_alloc(dim-dimCond);
+        gsl_vector_view Wvec;                        
+    	Wvec = gsl_vector_view_array(W,dim-dimCond);  
+    	//puts("W");
+    	//print_vector(&Wvec.vector);    
+        c = start;
+        for (r = 0; r < (end+1); r++){
+            P->data[r * P->tda + c] = 1;
+            c++;
+            if (c > end) c = 0;
+	    }
+        for (r = (end+1); r < dim; r++)
+		    P->data[r * P->tda + r] = 1;
+		//print_matrix(P);		
+        gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,P,Sigma,0.0,perSigma);
+        gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,perSigma,P,0.0,perSigma2);  
+        gsl_blas_dgemv(CblasNoTrans,1.0,P,mu,0.0,perMu); 
+        gsl_vector_memcpy(Diff,&Wvec.vector);
+        gsl_vector_view muw = gsl_vector_subvector(perMu,dimCond,dim-dimCond);   
+        gsl_vector_sub(Diff,&muw.vector);
+        gsl_matrix_view S11 = gsl_matrix_submatrix(perSigma2,0,0,dimCond,dimCond); 
+        gsl_matrix_view S22 = gsl_matrix_submatrix(perSigma2,dimCond,dimCond,dim-dimCond,dim-dimCond);    
+        gsl_matrix_view S12 = gsl_matrix_submatrix(perSigma2,0,dimCond,dimCond,dim-dimCond);    
+        ginv(dim-dimCond,tol,&S22.matrix);
+        gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,&S12.matrix,&S22.matrix,0.0,S12S22);
+        gsl_blas_dgemm(CblasNoTrans,CblasTrans,-1.0,S12S22,&S12.matrix,1.0,&S11.matrix);
+        gsl_blas_dgemv(CblasNoTrans,1.0,S12S22,Diff,0.0,condMu);        	
+	    gsl_matrix_memcpy(condSigma,&S11.matrix);
+        gsl_vector_view muy = gsl_vector_subvector(perMu,0,dimCond);
+        gsl_vector_add(condMu,&muy.vector);         
+        gsl_matrix_free(P); gsl_matrix_free(perSigma); gsl_matrix_free(perSigma2); gsl_vector_free(perMu);
+        gsl_matrix_free(S12S22); gsl_vector_free(Diff);  
+    }else{
+		gsl_matrix_memcpy(condSigma,Sigma);
+		gsl_vector_memcpy(condMu,mu);
+	}
+}

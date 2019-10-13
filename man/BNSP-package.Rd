@@ -13,8 +13,8 @@
 \tabular{ll}{
 Package: \tab BNSP\cr
 Type: \tab Package\cr
-Version: \tab 2.1.0\cr
-Date: \tab 2019-05-24\cr
+Version: \tab 2.1.1\cr
+Date: \tab 2019-10-13\cr
 License: \tab GPL (>=2)\cr}
 
 This program is free software; you can redistribute it and/or
@@ -44,7 +44,7 @@ Papageorgiou, G. and Marshall, B.C. (2019). Bayesian semiparametric analysis of 
 
 Papageorgiou, G. (2018). BNSP: an R Package for fitting Bayesian semiparametric regression models and variable selection. The R Journal, 10(2):526-548.
 
-Papageorgiou, G. (2018). Bayesian density regression for discrete outcomes. arXiv:1603.09706v3 [stat.ME]. 
+Papageorgiou, G. (2018). Bayesian density regression for discrete outcomes. Australian and New Zealand Journal of Statistics, arXiv:1603.09706v3 [stat.ME]. 
 
 Papageorgiou, G., Richardson, S. and Best, N. (2015). Bayesian nonparametric models for spatially indexed data of mixed type.
 Journal of the Royal Statistical Society: Series B (Statistical Methodology), 77:973-999.

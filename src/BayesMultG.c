@@ -43,7 +43,7 @@
 #include "pdfs.h"
 #include "sampling.h"
 #include "other.functions.h"
-#include "mathm.h"
+#include "mathm.h" 
 #include "spec.BCM.h"
 */
 extern void   computeStStar(double *Y, int *time, int N, int t, int p, gsl_matrix *StStar); 
@@ -66,7 +66,7 @@ extern double updateAlpha(unsigned long int s, int n, int ncomp, double a, doubl
 extern double NormalQuadr(int p, int m, int LG, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, double *beta);
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))   
 #define MAX_PATH 300
 
 void  multg(int *seed1, char **WorkingDir, int *WF1,
@@ -76,7 +76,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
             double *blockSizeProb1, int *maxBSG1, double *blockSizeProb2, int *maxBSD1,    
             int *NG1, int *ND1, int *vecLG, int *vecLD,  
             int *cusumVecLG, int *cusumVecLD, int *MVLD1,
-            double *tuneSigma2R, double *tuneCa, double *tuneSigma2, double *tuneCb, double *h, double *tuneR, 
+            double *tuneCa, double *tuneSigma2, double *tuneCb, double *tuneAlpha, double *tuneSigma2R, double *tuneR, 
             double *pimu, double *cetaParams, double *pisigma, int *HNca, double *calphaParams, 
             double *Rparams, int *HNszk, double *szkParams, 
             double *tau1, int *FT, double *dev, int *H1, double *DPparams,
@@ -85,7 +85,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
             double *LASTalphaDP, int *LASTsw, double *LASTDE, int *LASTWB)
 {
     gsl_set_error_handler_off();
-
+ 
     // Random number generator initialization
     int seed = seed1[0]; //random number generator seed
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
@@ -325,7 +325,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
     
     double acceptCeta = 0.0;
     double GLL = 0.01;
-    double GUL = 200;
+    double GUL = 100;
     
     double acceptSigma2R = 0.0;
     double F1LL = 0.001;//0.00000000001;
@@ -356,48 +356,48 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
         time[i] = 0;
     
     // - 1 - Gamma      
-    if (cont[0]==1)
+    if (cont[0]==1){
         for (j = 0; j < p; j++)
             for (k = 0; k < LG; k++)
                 gamma[j][k] = LASTgamma[k+j*LG];
-    
-    if (cont[0]==0)
+    }else{    
         for (j = 0; j < p; j++)
             for (k = 0; k < LG; k++)
                 gamma[j][k] = 1;
-                
+    }
+          
     Ngamma = 0;
     for (j = 0; j < p; j++)
         for (k = 0; k < LG; k++)
             Ngamma += gamma[j][k];
     
     // - 2 - Delta & Alpha
-    if (cont[0]==1)
+    if (cont[0]==1){
         for (j = 0; j < p; j++){
             for (k = 0; k < LD; k++){
                 delta[j][k] = LASTdelta[k+j*LD];
                 alpha[j][k] = LASTalpha[k+j*LD]; 
 		    }
 	    }
-    
-    if (cont[0]==0)
+    }else{
         for (j = 0; j < p; j++){
             for (k = 0; k < LD; k++){
                 delta[j][k] = 0;
                 alpha[j][k] = 0; 
 		    }
 	    }
+	}
 	
 	// - 3 - Sigma2zk
-    if (cont[0]==1)
+    if (cont[0]==1){
         for (j = 0; j < p; j++)
             sigma2zk[j] = LASTsigma2zk[j];
-	
-    if (cont[0]==0)
+	}else{    
         for (j = 0; j < p; j++)
             sigma2zk[j] = 1.0;
-       
-     // - 4 - LPV, sigma2ij, Ytilde, St          
+    }   
+    
+    // - 4 - LPV, sigma2ij, Ytilde, St          
     for (i = 0; i < m; i++){
 		for (j = 0; j < p; j++){
             LPV[i][j] = 0;
@@ -411,11 +411,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
     }
     computeStStar(Ytilde,time,m*p,0,p,St); 
     
-    // - 5 - R related
-    gsl_matrix_set_identity(RtC);
-    gsl_matrix_set_identity(DtC);
-    gsl_matrix_set_identity(EtC);
-      
+    // - 5 - R related         
     if (cont[0]==1){
         for (i = 0; i < p; i++){
 		    for (j = 0; j < p; j++){
@@ -424,6 +420,10 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
                 gsl_matrix_set(EtC,i,j,LASTDE[p*p+j+i*p]);
 			}
 		}
+	}else{
+		gsl_matrix_set_identity(RtC);
+        gsl_matrix_set_identity(DtC);
+        gsl_matrix_set_identity(EtC);	
 	}
         
     gsl_matrix_memcpy(RtCinv,RtC);
@@ -433,9 +433,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
         for (j = 0; j < H; j++) 
             muR[j] = 0.0; 
         sigma2R = 1.0; 
-    }
-    
-    if (cont[0]==1){
+    }else{
         for (j = 0; j < H; j++) 
             muR[j] = LASTmuR[0]; 
         sigma2R = LASTsigma2R[0]; 
@@ -464,8 +462,9 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
             cetahat -= elPrime / elDPrime;   
         }
         ceta = cetahat;
-    }
-    if (cont[0]==1) ceta = LASTceta[0]; 
+    }else{
+		ceta = LASTceta[0]; 
+	}
     
     //Rprintf("%s %f %f \n","SPC & ceta ",SPC,ceta);
         
@@ -592,11 +591,11 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
         for (l = 0; l < p; l++){ 			            
             for (j = 0; j < ND; j++){		        
 		        if ((sw % batchL)==0 && WB > 0){ 
-	                if (acceptAlpha[l][j] > 0.25 && h[ND*l+j] < HUL) h[ND*l+j] += MIN(0.01,1/sqrt(WB)) * h[ND*l+j]; 
-	                if (acceptAlpha[l][j] <= 0.25 && h[ND*l+j] > HLL) h[ND*l+j] -= MIN(0.01,1/sqrt(WB)) * h[ND*l+j];
+	                if (acceptAlpha[l][j] > 0.25 && tuneAlpha[ND*l+j] < HUL) tuneAlpha[ND*l+j] += MIN(0.01,1/sqrt(WB)) * tuneAlpha[ND*l+j]; 
+	                if (acceptAlpha[l][j] <= 0.25 && tuneAlpha[ND*l+j] > HLL) tuneAlpha[ND*l+j] -= MIN(0.01,1/sqrt(WB)) * tuneAlpha[ND*l+j];
 	                acceptAlpha[l][j] = 0.0;   
-	                if (h[ND*l+j] < HLL) h[ND*l+j] = HLL;
-	                if (h[ND*l+j] > HUL) h[ND*l+j] = HUL;
+	                if (tuneAlpha[ND*l+j] < HLL) tuneAlpha[ND*l+j] = HLL;
+	                if (tuneAlpha[ND*l+j] > HUL) tuneAlpha[ND*l+j] = HUL;
                 }                            
 		        
 		        for (k = 0; k < vecLD[j]; k++) 
@@ -631,7 +630,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
                         DeltaAlphaHatExp(m,p,l,tol,LPV,sqResC,vecDeltaP[j],NPJ,cusumVecLD[j],cusumVecLD[j+1], 
                                          Z,sigma2zk[l],sigma2ij,calpha[l],&subD.matrix,&subAlphaHat.vector);                        
                         subAlphaP = gsl_vector_subvector(alphaP,0,NPJ);                        
-                        gsl_matrix_scale(&subD.matrix,h[ND*l+j]);                        
+                        gsl_matrix_scale(&subD.matrix,tuneAlpha[ND*l+j]);                        
                         s = gsl_ran_flat(r,1.0,100000);
                         sampleMN(s,NPJ,&subAlphaP.vector,&subAlphaHat.vector,&subD.matrix,tol);                        
                         
@@ -702,7 +701,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
                         subD = gsl_matrix_submatrix(D,0,0,NCJ,NCJ);                        
                         DeltaAlphaHatExp(m,p,l,tol,LPVP,sqResP,vecDelta[j],NCJ,cusumVecLD[j],cusumVecLD[j+1], 
                                          Z,sigma2zk[l],sigma2ijP,calpha[l],&subD.matrix,&subAlphaHat.vector);                        
-                        gsl_matrix_scale(&subD.matrix,h[ND*l+j]);                        
+                        gsl_matrix_scale(&subD.matrix,tuneAlpha[ND*l+j]);                        
                         move=0;                        
                         for (k = 0; k < vecLD[j]; k++)
                             if (vecDelta[j][k]==1) BaseSubAlpha[move++] = alpha[l][cusumVecLD[j]+k]; 

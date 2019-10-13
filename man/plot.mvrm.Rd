@@ -9,7 +9,7 @@ This function plots estimated terms that appear in the mean and variance models.
 
 \usage{
 \method{plot}{mvrm}(x,model,term,response,intercept=TRUE,grid=30,centre=mean,
-quantiles=c(0.1, 0.9),static=TRUE,centreEffects=FALSE,plotOptions=list(), 
+quantiles=c(0.1, 0.9),contour=TRUE,static=TRUE,centreEffects=FALSE,plotOptions=list(), 
 nrow,ask=FALSE, ...)
 }
 
@@ -21,12 +21,19 @@ nrow,ask=FALSE, ...)
 \item{intercept}{specifies if an intercept should be included in the calculations.}
 \item{grid}{the length of the grid on which the term will be evaluated.}
 \item{centre}{a description of how the centre of the posterior should be measured. Usually \code{mean} or \code{median}.}
+
 \item{quantiles}{the quantiles to be used when plotting credible regions. 
 Plots without credible intervals may be obtained by setting this argument to NULL.}
+
+\item{contour}{relevant for 3D plots only. If \code{contour=TRUE} then \code{plot.mvrm} creates contour plots. 
+\code{contour=FALSE} is allowed only for creating one plot at a time. The plot can be static or dynamic. See argument `static'.}
+
 \item{static}{relevant for 3D plots only. If \code{static=TRUE} then \code{plot.mvrm} calls 
 function \code{ribbon3D} from package \code{plot3D} to create the plot. 
 If \code{static=FALSE} then \code{plot.mvrm} calls 
 function \code{scatterplot3js} from package \code{threejs} to create the plot.}
+
+
 \item{centreEffects}{if TRUE then the effects in the mean functions are centred around zero over the range of the 
 predictor while the effects in the variance function are scaled around one.}
 \item{plotOptions}{for plots of univariate smooth terms or for plots of bivariate smooth terms where one of the 

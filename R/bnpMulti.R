@@ -1,4 +1,6 @@
-mvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
+# mvrm, continue, mvrm2mcmc, plotCorr, histCorr, predict.mvrm, print.mvrm, summary.mvrm, clustering
+mvrm <- function(formula,data=list(),
+                 sweeps,burn=0,thin=1,seed,StorageDir,
                  c.betaPrior="IG(0.5,0.5*n*p)", pi.muPrior="Beta(1,1)", c.alphaPrior="IG(1.1,1.1)",
                  sigmaPrior="HN(2)", pi.sigmaPrior="Beta(1,1)", mu.RPrior="N(0,1)",
                  sigma.RPrior="HN(1)",corr.Model=c("common",nClust=1),DP.concPrior="Gamma(5,2)",
@@ -26,26 +28,27 @@ mvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
     p <- length(as.Formula(formula))[1]
     if (length(as.Formula(formula))[2] > 2) stop("more than two regression models provided")
     if (length(as.Formula(formula))[2] == 1) formula <- as.Formula(formula, ~1)
-    formula.save <- formula(formula)
+    #formula.save <- formula(formula)
+    formula.m<-formula(as.Formula(formula),lhs=1,rhs=1)
     formula.v<-formula(as.Formula(formula),lhs=0,rhs=2)
-    formula<-formula(as.Formula(formula),lhs=1,rhs=1)
     # Responses, design matrices, indicators
     Y<-NULL
     varsY<-list()
+    #mf <- model.frame(as.Formula(formula), data = data)
     for (i in 1:p){
-        trms<-terms.formula(formula(as.Formula(formula.save,~1),lhs=i,rhs=3))
+		trms<-terms.formula(formula(as.Formula(formula,~1),lhs=i,rhs=0))
         Y<-cbind(Y,with(data,eval(attr(trms,"variables")[[2]])))
-        varsY[[i]] <- attr(trms,"variables")[[2]]
+        varsY[[i]] <- as.character(attr(trms,"variables")[[2]])
     }
     # Null Deviance
     nullDeviance <- 0
-    for (i in 1:p) nullDeviance <- nullDeviance - 2 * logLik(lm(Y[,i] ~ 1))
-    # Response etc
-    Y<-c(t(Y))
-    n<-length(Y)/p
+    for (i in 1:p) 
+        nullDeviance <- nullDeviance - 2 * logLik(lm(Y[,i] ~ 1))
+    # Sample size
+    n<-length(c(Y))/p
     #
-    XYK<-DM(formula=formula,data=data,n=n)
-    X<-XYK$X
+    XYK<-DM(formula=formula.m,data=data,n=n)
+    X<-as.matrix(XYK$X)
     Xknots<-XYK$Rknots
     storeMeanVectorX<-XYK$meanVector
     storeIndicatorX<-XYK$indicator
@@ -60,10 +63,9 @@ mvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
     is.Dx<-XYK$is.D
     which.SpecX<-XYK$which.Spec
     formula.termsX<-XYK$formula.terms
-    togetherX<-XYK$together
     #
     ZK<-DM(formula=formula.v,data=data,n=n)
-    Z<-ZK$X
+    Z<-as.matrix(ZK$X)
     Zknots<-ZK$Rknots
     storeMeanVectorZ<-ZK$meanVector
     storeIndicatorZ<-ZK$indicator
@@ -80,7 +82,21 @@ mvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
     is.Dz<-ZK$is.D
     which.SpecZ<-ZK$which.Spec
     formula.termsZ<-ZK$formula.terms
-    togetherZ<-ZK$together
+    #Initialize covariance & correlation matrix
+    LASTDE <- LASTR <- LASTmuR <- LASTsigma2R <- 1   
+    if (p>1){
+        Res<-NULL
+        for (i in 1:p) 
+            Res<-cbind(Res,residuals(lm(Y[,i] ~ as.matrix(data[,unlist(varsX)]))))		
+        CR<-0.9*cov(Res)+0.1*diag(1,p)
+        D<-matrix(0,p,p)
+        diag(D)<-sqrt(diag(CR))
+        LASTDE<-c(c(D),c(CR))
+        LASTR<-cov2cor(CR)
+        LASTmuR<-mean(LASTR[upper.tri(LASTR)])
+        LASTsigma2R<-1
+        if (p > 2) LASTsigma2R<-var(LASTR[upper.tri(LASTR)])
+    }    
     #Prior for pi.mu
     if (!length(pi.muPrior)==1 && !length(pi.muPrior)==NG && !length(pi.muPrior)==(p*NG))
         stop("pi.muPrior has incorrect dimension")
@@ -91,7 +107,7 @@ mvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
         sp<-strsplit(sp[[1]][1],",")
         pimu<-c(pimu,as.numeric(sp[[1]]))
     }
-    if (length(pi.muPrior)==1) pimu<-rep(pimu,each=p*NG)
+    if (length(pi.muPrior)==1) pimu<-rep(pimu,p*NG)
     if (length(pi.muPrior)==NG) pimu<-rep(pimu,p)
     #Prior for c.beta
     sp<-strsplit(c.betaPrior,"IG\\(")
@@ -108,7 +124,7 @@ mvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
         sp<-strsplit(sp[[1]][1],",")
         pisigma<-c(pisigma,as.numeric(sp[[1]]))
     }
-    if (length(pi.sigmaPrior)==1) pisigma<-rep(pisigma,each=p*ND)
+    if (length(pi.sigmaPrior)==1) pisigma<-rep(pisigma,p*ND)
     if (length(pi.sigmaPrior)==ND) pisigma<-rep(pisigma,p)
     #Prior for c.alpha
     if (!length(c.alphaPrior)==1 && !length(c.alphaPrior)==p)
@@ -163,7 +179,7 @@ mvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
     #Cor model
     corModels<-c("common","groupC","groupV","uni")
     mcm<-match(corr.Model[1],corModels)
-    #if (p==1) mcm=1
+    if (p==1) mcm=4
     if (p==2) mcm=1
     if (is.na(mcm)) stop("unrecognised correlation model")
     H <- G <- 1
@@ -205,16 +221,16 @@ mvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
         if (file.exists(oneFile)) file.remove(oneFile)
 	}
     #Tuning Parameters
-    if (missing(tuneR)) tuneR<-100*(p+2)
-    tuneR[which(tuneR<p+2)]<-p+2
-    if (missing(tuneSigma2R)) tuneSigma2R<-1
     if (missing(tuneCa)) tuneCa<-rep(1,p)
     if (!length(tuneCa)==p) tuneCa<-rep(mean(tuneCa),p)
-    if (missing(tuneSigma2)) tuneSigma2<-rep(1,p)
+    if (missing(tuneSigma2)) tuneSigma2<-rep(0.5,p)
     if (!length(tuneSigma2)==p) tuneSigma2<-rep(mean(tuneSigma2),p)
-    if (missing(tuneCb)) tuneCb<-10
+    if (missing(tuneCb)) tuneCb<-20
     if (missing(tuneAlpha)) tuneAlpha<-rep(5,ND*p)
     if (!length(tuneAlpha)==(ND*p)) tuneAlpha<-rep(mean(tuneAlpha),ND*p)
+    if (missing(tuneSigma2R)) tuneSigma2R<-0.25
+    if (missing(tuneR)) tuneR<-40*(p+2)^3
+    tuneR[which(tuneR<p+2)]<-p+2
 	if (missing(tau)) tau = 0.01
     #Block size selection
     #if (missing(blockSizeProbG)){
@@ -231,91 +247,117 @@ mvrm <- function(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
     deviance <- c(0,0)
     #Call C
     if (mcm==4) {out<-.C("mvrmC",
-            as.integer(seed),as.character(StorageDir),as.integer(WF),
-            as.integer(sweeps),as.integer(burn),as.integer(thin),
-            as.double(Y),as.double(as.matrix(X)),as.double(as.matrix(Z)),as.integer(n),as.integer(LG),as.integer(LD),
-            as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
-            as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),
-            as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
-            as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
-            as.double(cetaParams),as.integer(HNca),as.double(calphaParams),as.double(pimu),as.double(pisigma),
-            as.integer(HNsg),as.double(sigmaParams),as.double(deviance),
-            as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
-            as.double(c(0)),as.integer(LASTWB))}
+        as.integer(seed),as.character(StorageDir),as.integer(WF),
+        as.integer(sweeps),as.integer(burn),as.integer(thin),
+        as.double(c(t(Y))),as.double(X),as.double(Z),as.integer(n),as.integer(LG),as.integer(LD),
+        as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
+        as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),
+        as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
+        as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
+        as.double(cetaParams),as.integer(HNca),as.double(calphaParams),as.double(pimu),as.double(pisigma),
+        as.integer(HNsg),as.double(sigmaParams),as.double(deviance),
+        as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
+        as.double(c(0)),as.integer(LASTWB))}
     if (mcm==1) {out<-.C("mult",
-            as.integer(seed),as.character(StorageDir),as.integer(WF),
-            as.integer(sweeps),as.integer(burn),as.integer(thin),
-            as.integer(n),as.integer(p),as.double(Y),as.double(t(as.matrix(X))),as.double(as.matrix(Z)),
-            as.integer(LG),as.integer(LD),
-            as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
-            as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
-            as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
-            as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),
-            as.double(pimu),as.double(cetaParams),as.double(pisigma),
-            as.integer(HNca),as.double(calphaParams),as.double(Rparams),
-            as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),
-            as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
-            as.double(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
-            as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))}
+        as.integer(seed),as.character(StorageDir),as.integer(WF),
+        as.integer(sweeps),as.integer(burn),as.integer(thin),
+        as.integer(n),as.integer(p),as.double(c(t(Y))),as.double(t(X)),as.double(Z),
+        as.integer(LG),as.integer(LD),
+        as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
+        as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
+        as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
+        as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneSigma2R),as.double(tuneR),
+        as.double(pimu),as.double(cetaParams),as.double(pisigma),
+        as.integer(HNca),as.double(calphaParams),as.double(Rparams),
+        as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),
+        as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(LASTR)),
+        as.double(c(LASTmuR)),as.double(c(LASTsigma2R)),as.double(c(0)),as.double(c(0)),
+        as.integer(c(LASTsw)),as.double(c(LASTDE)),as.integer(LASTWB))}
     if (mcm==2) {out<-.C("multg",
-            as.integer(seed),as.character(StorageDir),as.integer(WF),
-            as.integer(sweeps),as.integer(burn),as.integer(thin),
-            as.integer(n),as.integer(p),as.double(Y),as.double(t(as.matrix(X))),as.double(as.matrix(Z)),
-            as.integer(LG),as.integer(LD),
-            as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
-            as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
-            as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
-            as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),
-            as.double(pimu),as.double(cetaParams),as.double(pisigma),
-            as.integer(HNca),as.double(calphaParams),as.double(Rparams),
-            as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(H),
-            as.double(DPparams), as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),
-            as.double(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
-            as.double(c(0)),as.integer(c(0)),as.double(c(0)),
-            as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))}
+        as.integer(seed),as.character(StorageDir),as.integer(WF),
+        as.integer(sweeps),as.integer(burn),as.integer(thin),
+        as.integer(n),as.integer(p),as.double(c(t(Y))),as.double(t(X)),as.double(Z),
+        as.integer(LG),as.integer(LD),
+        as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
+        as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
+        as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
+        as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneSigma2R),as.double(tuneR),
+        as.double(pimu),as.double(cetaParams),as.double(pisigma),
+        as.integer(HNca),as.double(calphaParams),as.double(Rparams),
+        as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(H),
+        as.double(DPparams), as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),
+        as.double(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
+        as.double(c(0)),as.integer(c(0)),as.double(c(0)),
+        as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))}
     if (mcm==3) {out<-.C("multgv",
-            as.integer(seed),as.character(StorageDir),as.integer(WF),
-            as.integer(sweeps),as.integer(burn),as.integer(thin),
-            as.integer(n),as.integer(p),as.double(Y),as.double(t(as.matrix(X))),as.double(as.matrix(Z)),
-            as.integer(LG),as.integer(LD),
-            as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
-            as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
-            as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
-            as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),
-            as.double(pimu),as.double(cetaParams),as.double(pisigma),
-            as.integer(HNca),as.double(calphaParams),as.double(Rparams),
-            as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(G),
-            as.double(DPparams),as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),
-            as.double(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
-            as.double(c(0)),as.integer(c(0)),as.double(c(0)),
-            as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))}
+        as.integer(seed),as.character(StorageDir),as.integer(WF),
+        as.integer(sweeps),as.integer(burn),as.integer(thin),
+        as.integer(n),as.integer(p),as.double(c(t(Y))),as.double(t(X)),as.double(Z),
+        as.integer(LG),as.integer(LD),
+        as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
+        as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
+        as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
+        as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneSigma2R),as.double(tuneR),
+        as.double(pimu),as.double(cetaParams),as.double(pisigma),
+        as.integer(HNca),as.double(calphaParams),as.double(Rparams),
+        as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(G),
+        as.double(DPparams),as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),
+        as.double(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
+        as.double(c(0)),as.integer(c(0)),as.double(c(0)),
+        as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))}
     #Output
-    loc1<-25
-    loc2<-41 
-    tuneSigma2Ra<-out[[loc1+0]][1]
-    tuneRa<-out[[loc1+5]][1]    
+    if (mcm<4){
+        loc1<-25
+        loc2<-41 
+        tuneSigma2Ra<-out[[loc1+4]][1]
+        tuneRa<-out[[loc1+5]][1]    
+    }
     if (mcm==4) {
-		loc1<-16 
+		loc1<-17 
 		loc2<-35
 		tuneSigma2Ra<-tuneSigma2R 
 		tuneRa<-tuneR
     }        
-    fit <- list(call=call,call2=call2,formula=formula.save,seed=seed,p=p,d=p*(p-1)/2,
-                data=data,Y=Y,X=X,Xknots=Xknots,Z=Z,Zknots=Zknots,LG=LG,LD=LD,ND=ND,NG=NG,
+    fit <- list(call=call,call2=call2,formula=formula,seed=seed,p=p,d=p*(p-1)/2,
+                data=data,Y=Y,
+                X=X,Xknots=Xknots,LG=LG,NG=NG,
+                Z=Z,Zknots=Zknots,LD=LD,ND=ND,
+                storeMeanVectorX=storeMeanVectorX,
+                storeMeanVectorZ=storeMeanVectorZ,
+                storeIndicatorX=storeIndicatorX,
+                storeIndicatorZ=storeIndicatorZ,
+                assignX=assignX,
+                assignZ=assignZ,
+                labelsX=labelsX,
+                labelsZ=labelsZ,
+                countX=countX,
+                countZ=countZ,
+                varsY=varsY,
+                varsX=varsX,
+                varsZ=varsZ,
+                is.Dx=is.Dx,
+                is.Dz=is.Dz,
+                which.SpecX=which.SpecX,
+                which.SpecZ=which.SpecZ,
+                formula.termsX=formula.termsX,
+                formula.termsZ=formula.termsZ,
+                nSamples=nSamples,
+                totalSweeps=sweeps,
                 mcpar=c(as.integer(burn+1),as.integer(seq(from=burn+1,by=thin,length.out=nSamples)[nSamples]),as.integer(thin)),
-                nSamples=nSamples,storeMeanVectorX=storeMeanVectorX,storeMeanVectorZ=storeMeanVectorZ,                
+                mcm=mcm,H=H,G=G,
+                tuneCa=c(tuneCa,out[[loc1+0]][1:p]),            
+                tuneSigma2=c(tuneSigma2,out[[loc1+1]][1:p]),
+                tuneCb=c(tuneCb,out[[loc1+2]][1]),
+                tuneAlpha=c(tuneAlpha,out[[loc1+3]][1:(p*ND)]),
                 tuneSigma2R=c(tuneSigma2R,tuneSigma2Ra),
-                tuneCa=c(tuneCa,out[[loc1+1]][1:p]),            
-                tuneSigma2=c(tuneSigma2,out[[loc1+2]][1:p]),
-                tuneCb=c(tuneCb,out[[loc1+3]][1]),
-                tuneAlpha=c(tuneAlpha,out[[loc1+4]][1:(p*ND)]),
-                tuneR=c(tuneR,tuneRa),                
-                DIR=StorageDir,deviance=c(out[[loc2]][1:2]),nullDeviance=nullDeviance,            
-                storeIndicatorX=storeIndicatorX,storeIndicatorZ=storeIndicatorZ,assignX=assignX,
-                assignZ=assignZ,labelsX=labelsX,labelsZ=labelsZ,countX=countX,countZ=countZ,
-                varsX=varsX,varsZ=varsZ,varsY=varsY,is.Dx=is.Dx,is.Dz=is.Dz,which.SpecX=which.SpecX,
-                which.SpecZ=which.SpecZ,formula.termsX=formula.termsX,formula.termsZ=formula.termsZ,
-                togetherX=togetherX,togetherZ=togetherZ,HNca=HNca,H=H,G=G,mcm=mcm,out=out,totalSweeps=sweeps)               
+                tuneR=c(tuneR,tuneRa),
+                deviance=c(out[[loc2]][1:2]),
+                nullDeviance=nullDeviance,                            
+                DIR=StorageDir,
+                out=out,
+                LUT=1,
+                LGc=0,
+                LDc=0)               
     class(fit) <- 'mvrm'
     return(fit)
 }
@@ -333,10 +375,12 @@ continue <- function(object,sweeps,discard=FALSE,...){
     LASTWB <- floor(totalSweeps/50)+1
     totalSweeps<-object$totalSweeps + sweeps
     #Files
-    FL <- c("gamma", "cbeta", "delta", "alpha", "R", "muR", "sigma2R", "calpha", "sigma2", "beta", 
-            "compAlloc", "nmembers", "deviance", "DPconc",
-            "compAllocV","nmembersV",
-            "DE")
+    FL <- c("gamma", "cbeta", "delta", "alpha", "R", "muR", "sigma2R", "calpha", "sigma2", "beta", #10 
+            "compAlloc", "nmembers", "deviance", "DPconc", #4
+            "compAllocV","nmembersV", 
+            "DE", 
+            "psi", "ksi", "cpsi", "nu", "fi", "omega", "ceta", "comega", "eta",            
+            "test")     
     gamma <- paste(object$DIR, paste("BNSP",FL[1], "txt",sep="."),sep="/")
     gamma <- scan(gamma,what=numeric(),n=object$p*object$LG,quiet=TRUE,skip=object$nSamples-1)
     cbeta <- paste(object$DIR, paste("BNSP",FL[2], "txt",sep="."),sep="/")
@@ -346,9 +390,9 @@ continue <- function(object,sweeps,discard=FALSE,...){
     alpha <- paste(object$DIR, paste("BNSP",FL[4], "txt",sep="."),sep="/")
     alpha <- scan(alpha,what=numeric(),n=object$p*object$LD,quiet=TRUE,skip=object$nSamples-1)
     R <- paste(object$DIR, paste("BNSP",FL[5], "txt",sep="."),sep="/")
-    if (file.exists(R)) R <- scan(R,what=numeric(),n=object$p^2,quiet=TRUE,skip=object$nSamples-1)
+    if (file.exists(R)) R <- scan(R,what=numeric(),n=object$p^2*object$LUT,quiet=TRUE,skip=object$nSamples-1)
     muR <- paste(object$DIR, paste("BNSP",FL[6], "txt",sep="."),sep="/")
-    if (file.exists(muR)) muR <- scan(muR,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)
+    if (file.exists(muR)) muR <- scan(muR,what=numeric(),n=object$H,quiet=TRUE,skip=object$nSamples-1)
     sigma2R <- paste(object$DIR, paste("BNSP",FL[7], "txt",sep="."),sep="/")
     if (file.exists(sigma2R)) sigma2R <- scan(sigma2R,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)
     calpha <- paste(object$DIR, paste("BNSP",FL[8], "txt",sep="."),sep="/")
@@ -362,7 +406,32 @@ continue <- function(object,sweeps,discard=FALSE,...){
     compAllocV <- paste(object$DIR, paste("BNSP",FL[15], "txt",sep="."),sep="/")
     if (file.exists(compAllocV)) compAllocV <- scan(compAllocV,what=numeric(),n=object$p,quiet=TRUE,skip=object$nSamples-1)
     DE <- paste(object$DIR, paste("BNSP",FL[17], "txt",sep="."),sep="/")
-    if (file.exists(DE)) DE <- scan(DE,what=numeric(),n=2*object$p^2,quiet=TRUE,skip=0)
+    if (file.exists(DE)) DE <- scan(DE,what=numeric(),n=2*object$p^2*object$LUT,quiet=TRUE,skip=0)
+    ksi <- paste(object$DIR, paste("BNSP",FL[19], "txt",sep="."),sep="/")
+    if (file.exists(psi)) ksi <- scan(ksi,what=numeric(),n=object$p*object$p*object$LK,quiet=TRUE,skip=object$nSamples-1)    
+    psi <- paste(object$DIR, paste("BNSP",FL[18], "txt",sep="."),sep="/")
+    if (file.exists(psi)) psi <- scan(psi,what=numeric(),n=object$p*object$p*object$LK,quiet=TRUE,skip=object$nSamples-1)                       
+    cpsi <- paste(object$DIR, paste("BNSP",FL[20], "txt",sep="."),sep="/")
+    if (file.exists(psi)) cpsi <- scan(cpsi,what=numeric(),n=object$p^2,quiet=TRUE,skip=object$nSamples-1)    
+    gammaCor <- paste(object$DIR, paste("BNSP",FL[21], "txt",sep="."),sep="/")
+    gammaCor <- if (file.exists(gammaCor)) scan(gammaCor,what=numeric(),n=object$LGc*object$H,quiet=TRUE,skip=object$nSamples-1)  
+    deltaCor <- paste(object$DIR, paste("BNSP",FL[22], "txt",sep="."),sep="/")
+    deltaCor <- if (file.exists(deltaCor)) scan(deltaCor,what=numeric(),n=object$LDc,quiet=TRUE,skip=object$nSamples-1)  
+    comega <- paste(object$DIR, paste("BNSP",FL[25], "txt",sep="."),sep="/")
+    comega <- if (file.exists(comega)) scan(comega,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)
+    omega <- paste(object$DIR, paste("BNSP",FL[23], "txt",sep="."),sep="/")
+    omega <- if (file.exists(omega)) scan(omega,what=numeric(),n=object$LDc,quiet=TRUE,skip=object$nSamples-1)
+    ceta <- paste(object$DIR, paste("BNSP",FL[24], "txt",sep="."),sep="/")
+    ceta <- if (file.exists(ceta)) scan(ceta,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)    
+    LASTAll<-c(gamma,delta,alpha,sigma2,ksi,psi,R,DE,cbeta,calpha,cpsi,gammaCor)
+    if (object$mcm==6) LASTAll<-c(LASTAll,compAlloc,DPconc)
+    if (object$mcm==7) LASTAll<-c(LASTAll,compAllocV,DPconc)
+    LASTAll<-c(LASTAll,deltaCor)
+    LASTAll<-c(LASTAll,comega)
+    LASTAll<-c(LASTAll,sigma2R)
+    LASTAll<-c(LASTAll,omega)
+    LASTAll<-c(LASTAll,ceta)
+    #Discard
     if (discard==TRUE){
         for (i in 1:length(FL)){
             oneFile <- paste(object$DIR, paste("BNSP",FL[i], "txt",sep="."),sep="/")
@@ -372,113 +441,245 @@ continue <- function(object,sweeps,discard=FALSE,...){
     #Deviance & nSamples
     deviance<-c(0,0)
     if (discard==FALSE) deviance<-as.double(object$deviance)
-    if (discard==TRUE) {object$nSamples<-0; object$mcpar[1]<-1}
+    if (discard==TRUE) {object$nSamples<-0; object$mcpar[1]<-1} 
     #Tuning
-    tuneSigma2R<-object$tuneSigma2R[2]
     tuneCa<-object$tuneCa[(object$p+1):(2*object$p)]
     tuneSigma2<-object$tuneSigma2[(object$p+1):(2*object$p)]    
     tuneCb<-object$tuneCb[2]
-    tuneAlpha<-object$tubeAlpha[(object$p*object$ND+1):(2*object$p*object$ND)]
-    tuneR<-object$tuneR[2]                   
+    tuneAlpha<-object$tuneAlpha[(object$p*object$ND+1):(2*object$p*object$ND)]
+    tuneSigma2R<-object$tuneSigma2R[2]
+    tuneR<-object$tuneR[2]
+    tuneCpsi<-object$tuneCpsi[(object$p*object$p+1):(2*object$p*object$p)]
+    tuneCbCor<-object$tuneCbCor[2]
+	tuneOmega<-object$tuneOmega[(object$NDc+1):(object$NDc*2)]	            
+    tuneComega<-object$tuneComega[2]
 	#Call C
-	if (object$mcm==4) {out<-.C("mvrmC",
-            as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
-            as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),            
-            as.double(object$out[[7]]),as.double(object$out[[8]]),as.double(object$out[[9]]),as.integer(object$out[[10]]),
-            as.integer(object$out[[11]]),as.integer(object$out[[12]]),as.double(object$out[[13]]),
-            as.integer(object$out[[14]]),as.double(object$out[[15]]),as.integer(object$out[[16]]),                                   
-            as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),
-            as.integer(object$out[[21]]),as.integer(object$out[[22]]),as.integer(object$out[[23]]),
-            as.integer(object$out[[24]]),as.integer(object$out[[25]]),as.integer(object$out[[26]]),
-            as.integer(object$out[[27]]),as.double(object$out[[28]]),as.integer(object$out[[29]]),
-            as.double(object$out[[30]]),as.double(object$out[[31]]),as.double(object$out[[32]]),
-            as.integer(object$out[[33]]),as.double(object$out[[34]]),as.double(object$out[[35]]),                               
-            as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(cbeta),
-            as.double(calpha),as.integer(LASTWB))}
+	if (object$mcm==4) out<-.C("mvrmC",
+        as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
+        as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),            
+        as.double(object$out[[7]]),as.double(object$out[[8]]),as.double(object$out[[9]]),as.integer(object$out[[10]]),
+        as.integer(object$out[[11]]),as.integer(object$out[[12]]),as.double(object$out[[13]]),
+        as.integer(object$out[[14]]),as.double(object$out[[15]]),as.integer(object$out[[16]]),
+        as.double(object$out[[17]]),as.double(object$out[[18]]),as.double(object$out[[19]]),as.double(object$out[[20]]),
+        as.integer(object$out[[21]]),as.integer(object$out[[22]]),as.integer(object$out[[23]]),
+        as.integer(object$out[[24]]),as.integer(object$out[[25]]),as.integer(object$out[[26]]),
+        as.integer(object$out[[27]]),as.double(object$out[[28]]),as.integer(object$out[[29]]),
+        as.double(object$out[[30]]),as.double(object$out[[31]]),as.double(object$out[[32]]),
+        as.integer(object$out[[33]]),as.double(object$out[[34]]),as.double(object$out[[35]]),                               
+        as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(cbeta),
+        as.double(calpha),as.integer(LASTWB))
     if (object$mcm==1) out<-.C("mult",
-            as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
-            as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),
-            as.integer(object$out[[7]]),as.integer(object$out[[8]]),as.double(object$out[[9]]),as.double(object$out[[10]]),as.double(object$out[[11]]),
-            as.integer(object$out[[12]]),as.integer(object$out[[13]]),
-            as.double(object$out[[14]]),as.integer(object$out[[15]]),as.double(object$out[[16]]),as.integer(object$out[[17]]),
-            as.integer(object$out[[18]]),as.integer(object$out[[19]]),as.integer(object$out[[20]]),as.integer(object$out[[21]]),
-            as.integer(object$out[[22]]),as.integer(object$out[[23]]),as.integer(object$out[[24]]),            
-            as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),
-            as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
-            as.integer(object$out[[34]]),as.double(object$out[[35]]),as.double(object$out[[36]]),
-            as.integer(object$out[[37]]),as.double(object$out[[38]]),as.double(object$out[[39]]),as.integer(object$out[[40]]),as.double(deviance),
-            as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(R),
-            as.double(muR),as.double(sigma2R),as.double(cbeta),as.double(calpha),
-            as.integer(c(LASTsw)),as.double(c(DE)),as.integer(LASTWB))
+        as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
+        as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),
+        as.integer(object$out[[7]]),as.integer(object$out[[8]]),as.double(object$out[[9]]),as.double(object$out[[10]]),as.double(object$out[[11]]),
+        as.integer(object$out[[12]]),as.integer(object$out[[13]]),
+        as.double(object$out[[14]]),as.integer(object$out[[15]]),as.double(object$out[[16]]),as.integer(object$out[[17]]),
+        as.integer(object$out[[18]]),as.integer(object$out[[19]]),as.integer(object$out[[20]]),as.integer(object$out[[21]]),
+        as.integer(object$out[[22]]),as.integer(object$out[[23]]),as.integer(object$out[[24]]),            
+        as.double(object$out[[25]]),as.double(object$out[[26]]),as.double(object$out[[27]]),as.double(object$out[[28]]),
+        as.double(object$out[[29]]),as.double(object$out[[30]]),
+        as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
+        as.integer(object$out[[34]]),as.double(object$out[[35]]),as.double(object$out[[36]]),
+        as.integer(object$out[[37]]),as.double(object$out[[38]]),as.double(object$out[[39]]),as.integer(object$out[[40]]),as.double(deviance),
+        as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(R),
+        as.double(muR),as.double(sigma2R),as.double(cbeta),as.double(calpha),
+        as.integer(c(LASTsw)),as.double(c(DE)),as.integer(LASTWB))
     if (object$mcm==2) out<-.C("multg",
-            as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
-            as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),
-            as.integer(object$out[[7]]),as.integer(object$out[[8]]),as.double(object$out[[9]]),as.double(object$out[[10]]),as.double(object$out[[11]]),
-            as.integer(object$out[[12]]),as.integer(object$out[[13]]),
-            as.double(object$out[[14]]),as.integer(object$out[[15]]),as.double(object$out[[16]]),as.integer(object$out[[17]]),
-            as.integer(object$out[[18]]),as.integer(object$out[[19]]),as.integer(object$out[[20]]),as.integer(object$out[[21]]),
-            as.integer(object$out[[22]]),as.integer(object$out[[23]]),as.integer(object$out[[24]]),
-            as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),            
-            as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
-            as.integer(object$out[[34]]),as.double(object$out[[35]]),as.double(object$out[[36]]),
-            as.integer(object$out[[37]]),as.double(object$out[[38]]),as.double(object$out[[39]]),as.integer(object$out[[40]]),as.double(deviance),as.integer(object$out[[42]]),as.double(object$out[[43]]),
-            as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(R),
-            as.double(muR),as.double(sigma2R),as.double(cbeta),as.double(calpha),
-            as.integer(compAlloc),as.double(DPconc),as.integer(c(LASTsw)),as.double(c(DE)),as.integer(LASTWB))
+        as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
+        as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),
+        as.integer(object$out[[7]]),as.integer(object$out[[8]]),as.double(object$out[[9]]),as.double(object$out[[10]]),as.double(object$out[[11]]),
+        as.integer(object$out[[12]]),as.integer(object$out[[13]]),
+        as.double(object$out[[14]]),as.integer(object$out[[15]]),as.double(object$out[[16]]),as.integer(object$out[[17]]),
+        as.integer(object$out[[18]]),as.integer(object$out[[19]]),as.integer(object$out[[20]]),as.integer(object$out[[21]]),
+        as.integer(object$out[[22]]),as.integer(object$out[[23]]),as.integer(object$out[[24]]),
+        as.double(object$out[[25]]),as.double(object$out[[26]]),as.double(object$out[[27]]),as.double(object$out[[28]]),
+        as.double(object$out[[29]]),as.double(object$out[[30]]),            
+        as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
+        as.integer(object$out[[34]]),as.double(object$out[[35]]),as.double(object$out[[36]]),
+        as.integer(object$out[[37]]),as.double(object$out[[38]]),as.double(object$out[[39]]),as.integer(object$out[[40]]),as.double(deviance),as.integer(object$out[[42]]),as.double(object$out[[43]]),
+        as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(R),
+        as.double(muR),as.double(sigma2R),as.double(cbeta),as.double(calpha),
+        as.integer(compAlloc),as.double(DPconc),as.integer(c(LASTsw)),as.double(c(DE)),as.integer(LASTWB))
     if (object$mcm==3) out<-.C("multgv",
-            as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
-            as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),
-            as.integer(object$out[[7]]),as.integer(object$out[[8]]),as.double(object$out[[9]]),as.double(object$out[[10]]),as.double(as.matrix(object$out[[11]])),
-            as.integer(object$out[[12]]),as.integer(object$out[[13]]),
-            as.double(object$out[[14]]),as.integer(object$out[[15]]),as.double(object$out[[16]]),as.integer(object$out[[17]]),
-            as.integer(object$out[[18]]),as.integer(object$out[[19]]),as.integer(object$out[[20]]),as.integer(object$out[[21]]),
-            as.integer(object$out[[22]]),as.integer(object$out[[23]]),as.integer(object$out[[24]]),
-            as.double(tuneSigma2R),as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneR),
-            as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
-            as.integer(object$out[[34]]),as.double(object$out[[35]]),as.double(object$out[[36]]),
-            as.integer(object$out[[37]]),as.double(object$out[[38]]),as.double(object$out[[39]]),as.integer(object$out[[40]]),as.double(deviance),as.integer(object$out[[42]]),as.double(object$out[[43]]),
-            as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(R),
-            as.double(muR),as.double(sigma2R),as.double(cbeta),as.double(calpha),
-            as.integer(compAlloc),as.double(DPconc),as.integer(c(LASTsw)),as.double(c(DE)),as.integer(LASTWB))
+        as.integer(object$out[[1]]), as.character(object$out[[2]]), as.integer(object$out[[3]]), as.integer(sweeps),
+        as.integer(0), as.integer(object$out[[6]]), as.integer(object$out[[7]]), as.integer(object$out[[8]]), 
+        as.double(object$out[[9]]), as.double(object$out[[10]]), as.double(as.matrix(object$out[[11]])),
+        as.integer(object$out[[12]]), as.integer(object$out[[13]]), as.double(object$out[[14]]), as.integer(object$out[[15]]),
+        as.double(object$out[[16]]), as.integer(object$out[[17]]), as.integer(object$out[[18]]), as.integer(object$out[[19]]),
+        as.integer(object$out[[20]]), as.integer(object$out[[21]]), as.integer(object$out[[22]]), as.integer(object$out[[23]]),
+        as.integer(object$out[[24]]), as.double(object$out[[25]]), as.double(object$out[[26]]), as.double(object$out[[27]]),
+        as.double(object$out[[28]]), as.double(object$out[[29]]), as.double(object$out[[30]]), as.double(object$out[[31]]),
+        as.double(object$out[[32]]), as.double(object$out[[33]]), as.integer(object$out[[34]]), as.double(object$out[[35]]),
+        as.double(object$out[[36]]), as.integer(object$out[[37]]), as.double(object$out[[38]]), as.double(object$out[[39]]),
+        as.integer(object$out[[40]]), as.double(deviance), as.integer(object$out[[42]]), as.double(object$out[[43]]),
+        as.integer(c(1)), as.integer(gamma), as.integer(delta), as.double(alpha), as.double(sigma2), as.double(R),
+        as.double(muR), as.double(sigma2R), as.double(cbeta), as.double(calpha), as.integer(compAlloc), as.double(DPconc), 
+        as.integer(c(LASTsw)), as.double(c(DE)), as.integer(LASTWB))
+    if (object$mcm==5)
+        out<-.C("longmult",
+        as.integer(object$out[[1]]), as.character(object$out[[2]]), as.integer(object$out[[3]]),
+        as.integer(c(sweeps,0,object$out[[4]][3:7])), as.integer(object$out[[5]]), as.integer(object$out[[6]]), 
+        as.double(object$out[[7]]), as.integer(object$out[[8]]), as.integer(object$out[[9]]), as.integer(object$out[[10]]),
+        as.integer(object$out[[11]]), as.double(object$out[[12]]), as.double(object$out[[13]]), as.double(object$out[[14]]), 
+        as.double(object$out[[15]]), as.double(object$out[[16]]),as.double(object$out[[17]]), as.integer(object$out[[18]]), 
+        as.integer(object$out[[19]]), as.integer(object$out[[20]]), as.integer(object$out[[21]]), as.integer(object$out[[22]]), 
+        as.integer(object$out[[23]]), as.integer(object$out[[24]]), as.integer(object$out[[25]]), as.integer(object$out[[26]]), 
+        as.integer(object$out[[27]]), as.integer(object$out[[28]]), as.integer(object$out[[29]]), as.double(object$out[[30]]), 
+        as.integer(object$out[[31]]), as.double(object$out[[32]]), as.double(object$out[[33]]), as.double(object$out[[34]]), 
+        as.double(object$out[[35]]), as.double(object$out[[36]]), as.double(object$out[[37]]), as.double(object$out[[38]]), 
+        as.double(object$out[[39]]), as.double(object$out[[40]]), as.double(object$out[[41]]), as.double(object$out[[42]]), 
+        as.double(object$out[[43]]), as.double(object$out[[44]]), as.integer(object$out[[45]]), as.double(object$out[[46]]),            
+        as.integer(object$out[[47]]), as.double(object$out[[48]]), as.double(object$out[[49]]), as.integer(object$out[[50]]), 
+        as.double(object$out[[51]]), as.double(object$out[[52]]), as.integer(object$out[[53]]), as.double(object$out[[54]]), 
+        as.double(object$out[[55]]), as.double(object$out[[56]]), as.integer(object$out[[57]]), as.double(object$out[[58]]),
+        as.double(object$out[[59]]), as.integer(object$out[[60]]), as.double(deviance), as.integer(c(1,LASTsw,LASTWB)), 
+        as.double(LASTAll))
+    if (object$mcm==6)
+        out<-.C("longmultg",
+        as.integer(object$out[[1]]), as.character(object$out[[2]]), as.integer(object$out[[3]]),
+        as.integer(c(sweeps,0,object$out[[4]][3:7])), as.integer(object$out[[5]]), as.integer(object$out[[6]]), 
+        as.double(object$out[[7]]), as.integer(object$out[[8]]), as.integer(object$out[[9]]), as.integer(object$out[[10]]),
+        as.integer(object$out[[11]]), as.double(object$out[[12]]), as.double(object$out[[13]]), as.double(object$out[[14]]), 
+        as.double(object$out[[15]]), as.double(object$out[[16]]),as.double(as.matrix(17)), as.integer(object$out[[18]]), 
+        as.integer(object$out[[19]]), as.integer(object$out[[20]]), as.integer(object$out[[21]]), as.integer(object$out[[22]]), 
+        as.integer(object$out[[23]]), as.integer(object$out[[24]]), as.integer(object$out[[25]]), as.integer(object$out[[26]]), 
+        as.integer(object$out[[27]]), as.integer(object$out[[28]]), as.integer(object$out[[29]]), as.double(object$out[[30]]), 
+        as.integer(object$out[[31]]), as.double(object$out[[32]]), as.double(object$out[[33]]), as.double(object$out[[34]]), 
+        as.double(object$out[[35]]), as.double(object$out[[36]]), as.double(object$out[[37]]), as.double(object$out[[38]]), 
+        as.double(object$out[[39]]), as.double(object$out[[40]]), as.double(object$out[[41]]), as.double(object$out[[42]]), 
+        as.double(object$out[[43]]), as.double(object$out[[44]]), as.integer(object$out[[45]]), as.double(object$out[[46]]),
+        as.integer(object$out[[47]]), as.double(object$out[[48]]), as.double(object$out[[49]]), as.integer(object$out[[50]]), 
+        as.double(object$out[[51]]), as.double(object$out[[52]]), as.integer(object$out[[53]]), as.double(object$out[[54]]),
+        as.double(object$out[[55]]), as.double(object$out[[56]]), as.integer(object$out[[57]]), as.double(object$out[[58]]),
+        as.double(object$out[[59]]), as.integer(object$out[[60]]), as.double(deviance), as.integer(c(1,LASTsw,LASTWB)),
+        as.double(LASTAll), as.integer(object$out[[64]]), as.double(object$out[[65]]))  
+    if (object$mcm==7)
+        out<-.C("longmultgv",
+        as.integer(object$out[[1]]), as.character(object$out[[2]]), as.integer(object$out[[3]]),
+        as.integer(c(sweeps,0,object$out[[4]][3:7])), as.integer(object$out[[5]]), as.integer(object$out[[6]]), 
+        as.double(object$out[[7]]), as.integer(object$out[[8]]), as.integer(object$out[[9]]), as.integer(object$out[[10]]),
+        as.integer(object$out[[11]]), as.double(object$out[[12]]), as.double(object$out[[13]]), as.double(object$out[[14]]), 
+        as.double(object$out[[15]]), as.double(object$out[[16]]),as.double(as.matrix(17)), as.integer(object$out[[18]]), 
+        as.integer(object$out[[19]]), as.integer(object$out[[20]]), as.integer(object$out[[21]]), as.integer(object$out[[22]]), 
+        as.integer(object$out[[23]]), as.integer(object$out[[24]]), as.integer(object$out[[25]]), as.integer(object$out[[26]]), 
+        as.integer(object$out[[27]]), as.integer(object$out[[28]]), as.integer(object$out[[29]]), as.double(object$out[[30]]), 
+        as.integer(object$out[[31]]), as.double(object$out[[32]]), as.double(object$out[[33]]), as.double(object$out[[34]]), 
+        as.double(object$out[[35]]), as.double(object$out[[36]]), as.double(object$out[[37]]), as.double(object$out[[38]]), 
+        as.double(object$out[[39]]), as.double(object$out[[40]]), as.double(object$out[[41]]), as.double(object$out[[42]]), 
+        as.double(object$out[[43]]), as.double(object$out[[44]]), as.integer(object$out[[45]]), as.double(object$out[[46]]),
+        as.integer(object$out[[47]]), as.double(object$out[[48]]), as.double(object$out[[49]]), as.integer(object$out[[50]]), 
+        as.double(object$out[[51]]), as.double(object$out[[52]]), as.integer(object$out[[53]]), as.double(object$out[[54]]),
+        as.double(object$out[[55]]), as.double(object$out[[56]]), as.integer(object$out[[57]]), as.double(object$out[[58]]),
+        as.double(object$out[[59]]), as.integer(object$out[[60]]), as.double(deviance), as.integer(c(1,LASTsw,LASTWB)),
+        as.double(LASTAll), as.integer(object$out[[64]]), as.double(object$out[[65]]))
     #Output
-    loc1<-25
-    loc2<-41 
-    tuneSigma2Ra<-out[[loc1+0]][1]
-    tuneRa<-out[[loc1+5]][1]    
-    if (object$mcm==4) {
-		loc1<-16 
+    if (object$mcm<4){
+        loc1<-25
+        loc2<-41 
+        tuneSigma2Ra<-out[[loc1+4]][1]
+        tuneRa<-out[[loc1+5]][1]    
+    }
+    if (object$mcm==4){
+		loc1<-17 
 		loc2<-35
 		tuneSigma2Ra<-tuneSigma2R 
 		tuneRa<-tuneR
-    }                       
+    }
+    if (object$mcm>4){
+	    loc1<-32
+	    loc2<-61
+	    tuneSigma2Ra<-out[[loc1+4]][1]
+        tuneRa<-out[[loc1+5]][1:object$LUT] 
+	}
     fit <- list(call=object$call,call2=object$call2,formula=object$formula,seed=object$seed,p=object$p,d=object$d,
-                data=object$data,Y=object$Y,X=object$X,Xknots=object$Xknots,Z=object$Z,Zknots=object$Zknots,LG=object$LG,LD=object$LD,ND=object$ND,NG=object$NG,
-                mcpar=c(as.integer(object$mcpar[1]),as.integer(seq(from=object$mcpar[1],by=object$mcpar[3],length.out=(nSamples+object$nSamples))[nSamples+object$nSamples]),as.integer(object$mcpar[3])),
+                data=object$data,Y=object$Y,
+                X=object$X,Xknots=object$Xknots,LG=object$LG,NG=object$NG,
+                Z=object$Z,Zknots=object$Zknots,LD=object$LD,ND=object$ND,
+                storeMeanVectorX=object$storeMeanVectorX,
+                storeMeanVectorZ=object$storeMeanVectorZ,
+                storeIndicatorX=object$storeIndicatorX,
+                storeIndicatorZ=object$storeIndicatorZ,
+                assignX=object$assignX,
+                assignZ=object$assignZ,
+                labelsX=object$labelsX,
+                labelsZ=object$labelsZ,
+                countX=object$countX,
+                countZ=object$countZ,
+                varsY=object$varsY,
+                varsX=object$varsX,
+                varsZ=object$varsZ,
+                is.Dx=object$is.Dx,
+                is.Dz=object$is.Dz,
+                which.SpecX=object$which.SpecX,
+                which.SpecZ=object$which.SpecZ,
+                formula.termsX=object$formula.termsX,
+                formula.termsZ=object$formula.termsZ,
                 nSamples=nSamples+object$nSamples,
-                storeMeanVectorX=object$storeMeanVectorX,storeMeanVectorZ=object$storeMeanVectorZ,                                
+                totalSweeps=totalSweeps,
+                mcpar=c(as.integer(object$mcpar[1]),as.integer(seq(from=object$mcpar[1],by=object$mcpar[3],length.out=(nSamples+object$nSamples))[nSamples+object$nSamples]),as.integer(object$mcpar[3])),
+                mcm=object$mcm,H=object$H,G=object$G,
+                tuneCa=c(tuneCa,out[[loc1+0]][1:object$p]),    
+                tuneSigma2=c(tuneSigma2,out[[loc1+1]][1:object$p]),
+                tuneCb=c(tuneCb,out[[loc1+2]][1]),
+                tuneAlpha=c(tuneAlpha,out[[loc1+3]][1:(object$p*object$ND)]),
                 tuneSigma2R=c(tuneSigma2R,tuneSigma2Ra),
-                tuneCa=c(tuneCa,out[[loc1+1]][1:object$p]),            
-                tuneSigma2=c(tuneSigma2,out[[loc1+2]][1:object$p]),
-                tuneCb=c(tuneCb,out[[loc1+3]][1]),
-                tuneAlpha=c(tuneAlpha,out[[loc1+4]][1:(object$p*object$ND)]),
-                tuneR=c(tuneR,tuneRa),                                
-                DIR=object$DIR,deviance=c(out[[loc2]][1:2]),nullDeviance=object$nullDeviance,
-                storeIndicatorX=object$storeIndicatorX,storeIndicatorZ=object$storeIndicatorZ,assignX=object$assignX,
-                assignZ=object$assignZ,labelsX=object$labelsX,labelsZ=object$labelsZ,countX=object$countX,countZ=object$countZ,
-                varsX=object$varsX,varsZ=object$varsZ,varsY=object$varsY,is.Dx=object$is.Dx,is.Dz=object$is.Dz,which.SpecX=object$which.SpecX,
-                which.SpecZ=object$which.SpecZ,formula.termsX=object$formula.termsX,formula.termsZ=object$formula.termsZ,
-                togetherX=object$togetherX,togetherZ=object$togetherZ,HNca=object$HNca,H=object$H,G=object$G,mcm=object$mcm,out=out,
-                totalSweeps=totalSweeps)
+                tuneR=c(tuneR,tuneRa),
+                deviance=c(out[[loc2]][1:2]),
+                nullDeviance=object$nullDeviance,                            
+                DIR=object$StorageDir,
+                out=out,
+                LUT=object$LUT,
+                LGc=object$LGc,
+                LDc=object$LDc)
+    if (object$mcm > 4){
+		fit2 <- list(
+		        C=object$C,Cknots=object$Cknots,LK=object$LK,NK=object$NK,
+                Xc=object$Xc,Xcknots=object$Xcknots,LGc=object$LGc,NGc=object$NGc,
+                Zc=object$Zc,Zcknots=object$Zcknots,LDc=object$LDc,NDc=object$NDc,                
+                storeMeanVectorC=object$storeMeanVectorC,
+                storeMeanVectorXc=object$storeMeanVectorXc,
+                storeMeanVectorZc=object$storeMeanVectorZc,                               
+                storeIndicatorC=object$storeIndicatorC,
+                storeIndicatorXc=object$storeIndicatorXc,
+                storeIndicatorZc=object$storeIndicatorZc, 
+                assignC=object$assignC,          
+                assignXc=object$assignXc,
+                assignZc=object$assignZc,
+                labelsC=object$labelsC,                
+                labelsXc=object$labelsXc,
+                labelsZc=object$labelsZc,                                               
+                countC=object$countC,                            
+                countXc=object$countXc,
+                countZc=object$countZc,
+                varsC=object$varsC,                
+                varsXc=object$varsXc,
+                varsZc=object$varsZc,  
+                is.Dc=object$is.Dc,
+                is.Dxc=object$is.Dxc,
+                is.Dzc=object$is.Dzc,  
+                which.SpecC=object$which.SpecC,                
+                which.SpecXc=object$which.SpecXc,
+                which.SpecZc=object$which.SpecZc, 
+                formula.termsC=object$formula.termsC,
+                formula.termsXc=object$formula.termsXc,
+                formula.termsZc=object$formula.termsZc, 
+                tuneCpsi=c(tuneCpsi,out[[38]][1:(object$p*object$p)]),                
+	            tuneCbCor=c(tuneCbCor,out[[39]][1]),	            
+	            tuneOmega=c(tuneOmega,out[[40]][1:object$NDc]),	            
+                tuneComega=c(tuneComega,out[[41]][1]))
+        fit<-c(fit,fit2)        
+	}
     class(fit) <- 'mvrm'
     return(fit)
 }
 
 mvrm2mcmc <- function(mvrmObj,labels){
-    all.labels <- c("alpha","calpha","cbeta","delta","beta","gamma","sigma2")
-    more.labels1 <- c("muR","sigma2R","R")
-    more.labels2 <- c("compAlloc","nmembers","DPconc")
-    more.labels3 <- c("compAllocV","nmembersV","deviance")
-    all.labels<-c(all.labels,more.labels1,more.labels2,more.labels3)
+    labels1 <- c("alpha","calpha","cbeta","delta","beta","gamma","sigma2")
+    labels2 <- c("muR","sigma2R","R")
+    labels3 <- c("compAlloc","nmembers","DPconc")
+    labels4 <- c("compAllocV","nmembersV","deviance")
+    labels5 <- c("psi","ksi","cpsi","nu","fi","omega","comega","eta","ceta")
+    all.labels<-c(labels1,labels2,labels3,labels4,labels5)
     if (missing(labels)) labels <- all.labels
     mtch<-match(labels,all.labels)
 	p<-mvrmObj$p
@@ -486,16 +687,16 @@ mvrm2mcmc <- function(mvrmObj,labels){
     if (any(mtch==1) && mvrmObj$LD > 0){
         file <- paste(mvrmObj$DIR,"BNSP.alpha.txt",sep="")
         if (file.exists(file)){ 
-           if (mvrmObj$p > 1) names1<-paste("alpha",rep(colnames(mvrmObj$Z)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LD),sep=".")
-           if (mvrmObj$p == 1) names1<-paste("alpha",colnames(mvrmObj$Z)[-1],sep=".")
+           if (p > 1) names1<-paste("alpha",rep(colnames(mvrmObj$Z)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LD),sep=".")
+           if (p == 1) names1<-paste("alpha",colnames(mvrmObj$Z)[-1],sep=".")
            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LD*p,dimnames=list(c(),names1)))
 	   }
     }
     if (any(mtch==2)){
         file <- paste(mvrmObj$DIR,"BNSP.calpha.txt",sep="")
         if (file.exists(file)){ 
-            if (mvrmObj$p > 1) names1<-paste(rep("c_alpha",p),mvrmObj$varsY,sep=".")
-            if (mvrmObj$p == 1) names1<-"c_alpha"
+            if (p > 1) names1<-paste(rep("c_alpha",p),mvrmObj$varsY,sep=".")
+            if (p == 1) names1<-"c_alpha"
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,dimnames=list(c(),names1)))
 		}
     }
@@ -507,48 +708,48 @@ mvrm2mcmc <- function(mvrmObj,labels){
     if (any(mtch==4) && mvrmObj$LD > 0){
         file <- paste(mvrmObj$DIR,"BNSP.delta.txt",sep="")
         if (file.exists(file)){ 
-            if (mvrmObj$p > 1) names1<-paste("delta",rep(colnames(mvrmObj$Z)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LD),sep=".")
-            if (mvrmObj$p == 1) names1<-paste("delta",colnames(mvrmObj$Z)[-1],sep=".")
+            if (p > 1) names1<-paste("delta",rep(colnames(mvrmObj$Z)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LD),sep=".")
+            if (p == 1) names1<-paste("delta",colnames(mvrmObj$Z)[-1],sep=".")
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LD*p,dimnames=list(c(),names1)))
 	    }
     }
     if (any(mtch==5)){
         file <- paste(mvrmObj$DIR,"BNSP.beta.txt",sep="")
         if (file.exists(file)){ 
-            if (mvrmObj$p > 1) names1<-paste("beta",rep(colnames(mvrmObj$X),p),rep(mvrmObj$varsY,each=mvrmObj$LG+1),sep=".")
-            if (mvrmObj$p == 1) names1<-paste("beta",colnames(mvrmObj$X),sep=".")
+            if (p > 1) names1<-paste("beta",rep(colnames(mvrmObj$X),p),rep(mvrmObj$varsY,each=mvrmObj$LG+1),sep=".")
+            if (p == 1) names1<-paste("beta",colnames(mvrmObj$X),sep=".")
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*(mvrmObj$LG+1),dimnames=list(c(),names1)))
 		}
     }
     if (any(mtch==6) && mvrmObj$LG > 0){
         file <- paste(mvrmObj$DIR,"BNSP.gamma.txt",sep="")
         if (file.exists(file)){ 
-            if (mvrmObj$p > 1) names1<-paste("gamma",rep(colnames(mvrmObj$X)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LG+1),sep=".")
-            if (mvrmObj$p == 1) names1<-paste("gamma",colnames(mvrmObj$X)[-1],sep=".")
+            if (p > 1) names1<-paste("gamma",rep(colnames(mvrmObj$X)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LG),sep=".")
+            if (p == 1) names1<-paste("gamma",colnames(mvrmObj$X)[-1],sep=".")
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*mvrmObj$LG,dimnames=list(c(),names1)))
 		}
     }
     if (any(mtch==7)){
         file <- paste(mvrmObj$DIR,"BNSP.sigma2.txt",sep="")
         if (file.exists(file)) 
-            if (mvrmObj$p > 1) names1<-paste(rep("sigma2",p),mvrmObj$varsY,sep=".")
-            if (mvrmObj$p == 1) names1<-"sigma2"
+            if (p > 1) names1<-paste(rep("sigma2",p),mvrmObj$varsY,sep=".")
+            if (p == 1) names1<-"sigma2"
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,dimnames=list(c(),names1)))
 	}
-	if (any(mtch==8) && mvrmObj$p >1){
+	if (any(mtch==8) && p > 1){
 		names <- paste("muR of cluster",seq(1,mvrmObj$H),sep=" ")
 		if (mvrmObj$H==1) names <- "muR"
 	    file <- paste(mvrmObj$DIR,"BNSP.muR.txt",sep="")
         if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),nrow=mvrmObj$nSamples,
                 dimnames=list(c(),names)))
     }
-    if (any(mtch==9) && mvrmObj$p >1){
+    if (any(mtch==9) && p > 1){
         file <- paste(mvrmObj$DIR,"BNSP.sigma2R.txt",sep="")
         if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=1,dimnames=list(c(),c("sigma2R"))))
 	}
 	subset <- rep(seq(1,p),each=p) < rep(seq(1,p),p)
 	cor.names <- paste(rep(seq(1,p),each=p),rep(seq(1,p),p),sep="")
-    if (any(mtch==10) && mvrmObj$p >1){
+    if (any(mtch==10) && p > 1){
         file <- paste(mvrmObj$DIR,"BNSP.R.txt",sep="")
         if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*p,
                  dimnames=list(c(),paste("cor",cor.names,sep=".")))[,subset,drop=FALSE])
@@ -568,7 +769,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
     }
     if (any(mtch==14)){
         file <- paste(mvrmObj$DIR,"BNSP.compAllocV.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$p,dimnames=list(c(),paste("clustering of ",mvrmObj$varsY))))
+        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,dimnames=list(c(),paste("clustering of ",mvrmObj$varsY))))
 	}
     if (any(mtch==15)){
         file <- paste(mvrmObj$DIR,"BNSP.nmembersV.txt",sep="")
@@ -578,431 +779,87 @@ mvrm2mcmc <- function(mvrmObj,labels){
        file <- paste(mvrmObj$DIR,"BNSP.deviance.txt",sep="")
        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=2,dimnames=list(c(),c("marginal deviance","full deviance"))))
     }
+    if (any(mtch==17)){
+        file <- paste(mvrmObj$DIR,"BNSP.psi.txt",sep="")
+        if (file.exists(file)){ 
+            if (p > 1){ 
+                e <- cbind(rep(unlist(mvrmObj$varsY),each=p),rep(unlist(mvrmObj$varsY),p))
+                e <- paste(e[,1],e[,2],sep=".")
+                names1<-paste("psi",rep(colnames(mvrmObj$C),p*p),rep(e,each=mvrmObj$LK),sep=".")
+			}
+            if (p == 1) names1<-paste("psi",colnames(mvrmObj$C),sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*p*mvrmObj$LK,dimnames=list(c(),names1)))
+		}
+    }
+    if (any(mtch==18)){
+        file <- paste(mvrmObj$DIR,"BNSP.ksi.txt",sep="")
+        if (file.exists(file)){ 
+            if (p > 1){ 
+                e <- cbind(rep(unlist(mvrmObj$varsY),each=p),rep(unlist(mvrmObj$varsY),p))
+                e <- paste(e[,1],e[,2],sep=".")
+                names1<-paste("ksi",rep(colnames(mvrmObj$C),p*p),rep(e,each=mvrmObj$LK),sep=".")
+			}
+            if (p == 1) names1<-paste("ksi",colnames(mvrmObj$C),sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*p*mvrmObj$LK,dimnames=list(c(),names1)))
+		}
+    }
+    if (any(mtch==19)){
+        file <- paste(mvrmObj$DIR,"BNSP.cpsi.txt",sep="")
+        if (file.exists(file)){ 
+            if (p > 1){ 
+                e <- cbind(rep(unlist(mvrmObj$varsY),each=p),rep(unlist(mvrmObj$varsY),p))
+                e <- paste(e[,1],e[,2],sep=".")
+                names1<-paste("cpsi",e,sep=".")
+			}
+            if (p == 1) names1<-paste("cpsi")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*p,dimnames=list(c(),names1)))
+		}
+    }
+    if (any(mtch==20) && mvrmObj$LGc > 0){
+        file <- paste(mvrmObj$DIR,"BNSP.nu.txt",sep="")
+        if (file.exists(file)){ 
+            names1<-paste("nu",colnames(mvrmObj$Xc)[-1],sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LGc,dimnames=list(c(),names1)))
+		}
+    }
+    if (any(mtch==21) && mvrmObj$LDc > 0){
+        file <- paste(mvrmObj$DIR,"BNSP.fi.txt",sep="")
+        if (file.exists(file)){ 
+            names1<-paste("fi",colnames(mvrmObj$Zc)[-1],sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LDc,dimnames=list(c(),names1)))
+		}
+    }
+    if (any(mtch==22) && mvrmObj$LDc > 0){
+        file <- paste(mvrmObj$DIR,"BNSP.omega.txt",sep="")
+        if (file.exists(file)){ 
+            names1<-paste("omega",colnames(mvrmObj$Zc)[-1],sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LDc,dimnames=list(c(),names1)))
+		}
+    }
+    if (any(mtch==23)){
+        file <- paste(mvrmObj$DIR,"BNSP.comega.txt",sep="")
+        if (file.exists(file)){ 
+            names1<-"c_omega"
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=1,dimnames=list(c(),names1)))
+		}
+    }
+    if (any(mtch==24)){
+        file <- paste(mvrmObj$DIR,"BNSP.eta.txt",sep="")
+        if (file.exists(file)){ 
+            names1<-paste("eta",colnames(mvrmObj$Xc),sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LGc+1,dimnames=list(c(),names1)))
+		}
+    }
+    if (any(mtch==25)){
+       file <- paste(mvrmObj$DIR,"BNSP.ceta.txt",sep="")
+       if (file.exists(file)) 
+           R<-cbind(R,matrix(unlist(read.table(file)),ncol=1,dimnames=list(c(),c("c_eta"))))
+    }
 	if (!is.null(R)){
 	    attr(R, "mcpar") <- mvrmObj$mcpar
         attr(R, "class") <- "mcmc"
 	}
 	return(R)
-}
-
-plot2 <- function(x, model="mean", term, response=1, intercept=TRUE, grid=30,
-                  centre=mean, quantiles=c(0.1, 0.9), static=TRUE,
-                  centreEffects=FALSE, plotOptions=list(), ...){
-    mvrmObj<-x
-    p<-mvrmObj$p
-	if (!is.function(centre)) stop("centre must be a function, usually mean or median")
-	if (length(quantiles)==1) quantiles <- c(quantiles,1-quantiles)
-    if (length(quantiles) > 2) stop("up to two quantiles")
-    if (!is.null(quantiles)) quantiles <- unique(sort(quantiles))
-    grid<-round(grid)
-	MEAN<-0
-	if (model=="mean" || model=="both") MEAN<-1
-    STDEV<-0
-    if (model=="stdev" || model=="both") STDEV<-1
-    if (missing(term)) term<-1
-    countX<-0
-    if (MEAN){
-        if (is.character(term)){
-            int.labelX<-grep(term,mvrmObj$labelsX,fixed=TRUE)
-            k<-1
-            while (length(int.labelX)==0 && (nchar(term)>k)){
-                int.labelX<-grep(substr(term,1,nchar(term)-k),mvrmObj$labelsX,fixed=TRUE)
-                k<-k+1
-	        }
-	    }
-	    if (is.numeric(term)) int.labelX<-term
-        if (length(int.labelX)==0) stop(cat(cat("`term` in mean model should be an integer between 1 and", length(mvrmObj$labelsX),"or one of: "), cat(mvrmObj$labelsX,sep=", ",fill=TRUE)))
-        if (int.labelX > length(mvrmObj$labelsX)) stop(cat(cat("`term` in mean model should be an integer between 1 and", length(mvrmObj$labelsX),"Or one of:"), cat(mvrmObj$labelsX,sep=", ",fill=TRUE)))
-        T<-0
-        if (length(mvrmObj$togetherX)>0)
-            for (i in 1:length(mvrmObj$togetherX))
-                if (int.labelX %in% mvrmObj$togetherX[[i]])
-                    T<-i
-        if (T > 0) int.labelX<-mvrmObj$togetherX[[i]]
-        countX<-mvrmObj$countX[int.labelX[length(int.labelX)]]
-    }
-    countZ<-0
-    if (STDEV){
-	    if (is.character(term)){
-            int.labelZ<-grep(term,mvrmObj$labelsZ,fixed=TRUE)
-            k<-1
-            while (length(int.labelZ)==0 && (nchar(term)>k)){
-                int.labelZ<-grep(substr(term,1,nchar(term)-k),mvrmObj$labelsZ,fixed=TRUE)
-                k<-k+1
-	        }
-	    }
-	    if (is.numeric(term)) int.labelZ<-term
-	    if (length(int.labelZ)==0) stop(cat(cat("`term` in stdev model should be an integer between 1 and", length(mvrmObj$labelsZ),"or one of: "), cat(mvrmObj$labelsZ,sep=", ",fill=TRUE)))
-        if (int.labelZ > length(mvrmObj$labelsZ)) stop(cat(cat("`term` in stdev model should be an integer between 1 and", length(mvrmObj$labelsZ),"or one of: "), cat(mvrmObj$labelsZ,sep=", ",fill=TRUE)))
-        T<-0
-        if (length(mvrmObj$togetherZ)>0)
-            for (i in 1:length(mvrmObj$togetherZ))
-                if (int.labelZ %in% mvrmObj$togetherZ[[i]])
-                    T<-i
-        if (T > 0) int.labelZ<-mvrmObj$togetherZ[[i]]
-        countZ<-mvrmObj$countZ[int.labelZ[length(int.labelZ)]]
-	}
-    if (model=="both" && (!countZ==countX && min(countZ,countX)>0))
-        stop("don't know how to arrange ggplots and 3d-plots in a single grid; plot one of `model` at a time")
-    if (MEAN){
-        int.label<-int.labelX
-        count<-countX
-        vars<-mvrmObj$varsX[[int.label[length(int.label)]]]
-        label<-mvrmObj$labelsX[int.label[length(int.label)]]
-        is.D<-mvrmObj$is.Dx[[int.label[length(int.label)]]]
-        formula.term<-mvrmObj$formula.termsX[int.label]
-		if (!grepl("knots",formula.term) && mvrmObj$which.SpecX[[int.label[length(int.label)]]]>0){
-    	    z<-length(formula.term) #use this to fix both sm and s smooths
-     		formula.term[z]<-substr(formula.term[z],1,nchar(formula.term[z])-1)
-     		formula.term[z]<-paste(formula.term[z],", knots=knots)")
-		}
-        ML<-which(mvrmObj$assignX %in% int.label)
-        if ((intercept || sum(is.D)) & MEAN) ML<-c(1,ML)
-        if (count==1){
-			if (!is.D){
-	            min1<-min(with(mvrmObj$data,eval(as.name(vars[1]))))
-			    max1<-max(with(mvrmObj$data,eval(as.name(vars[1]))))
-			    newR1<-seq(min1,max1,length.out=grid)
-                newData<-data.frame(newR1)
-                colnames(newData)<-vars
-                whichKnots <- mvrmObj$which.SpecX[[int.label]]
-                if (length(mvrmObj$Xknots)>0 && whichKnots>0) {Dstar<-data.frame(knots=mvrmObj$Xknots[[whichKnots]])}else{Dstar<-NULL}
-                DsM<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=Dstar,
-                        meanVector=mvrmObj$storeMeanVectorX[ML],indicator=mvrmObj$storeIndicatorX[ML])$X
-                if (! 1%in%ML) DsM<-DsM[,-1]
-		    }
-	        if (is.D){
-	            newData<-data.frame(unique(with(mvrmObj$data,eval(as.name(vars[1])))))
-                colnames(newData)<-vars
-                DsM<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=NULL,
-                        meanVector=mvrmObj$storeMeanVectorX[ML],indicator=mvrmObj$storeIndicatorX[ML])$X
-	        }
-		}
-	    if (count==2){
-	        if (sum(is.D)){
-	            dv<-which(is.D==1)
-	            cv<-which(is.D==0)
-	            min1<-min(with(mvrmObj$data,eval(as.name(vars[cv]))))
-				max1<-max(with(mvrmObj$data,eval(as.name(vars[cv]))))
-                newR1<-seq(min1,max1,length.out=grid)
-                newR2<-unique(with(mvrmObj$data,eval(as.name(vars[dv]))))
-                newData<-expand.grid(newR1,newR2)
-                colnames(newData)<-vars[c(cv,dv)]
-                whichKnots <- mvrmObj$which.SpecX[[int.label[length(int.label)]]]
-                Dstar<-mvrmObj$Xknots[[whichKnots]]
-                DsM<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=Dstar,
-                        meanVector=mvrmObj$storeMeanVectorX[ML],indicator=mvrmObj$storeIndicatorX[ML])$X
-			}
-            if (sum(is.D)==0){
-				min1<-min(with(mvrmObj$data,eval(as.name(vars[1]))))
-				min2<-min(with(mvrmObj$data,eval(as.name(vars[2]))))
-				max1<-max(with(mvrmObj$data,eval(as.name(vars[1]))))
-				max2<-max(with(mvrmObj$data,eval(as.name(vars[2]))))
-                newR1<-seq(min1,max1,length.out=grid)
-                newR2<-seq(min2,max2,length.out=grid)
-                newData<-expand.grid(newR1,newR2)
-                colnames(newData)<-vars
-                whichKnots <- mvrmObj$which.SpecX[[int.label]]
-                Dstar<-mvrmObj$Xknots[[whichKnots]]
-                DsM<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=Dstar,
-                        meanVector=mvrmObj$storeMeanVectorX[ML],indicator=mvrmObj$storeIndicatorX[ML])$X
-		    }
-        }
-        fitM<-matrix(0,nrow=mvrmObj$nSamples,ncol=NROW(DsM))
-		etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.beta.txt",sep=""))
-        eFile<-file(etaFN,open="r")
-		for (i in 1:mvrmObj$nSamples){
-            eta<-scan(eFile,what=numeric(),n=p*(mvrmObj$LG+1),quiet=TRUE)
-            fitM[i,]<-as.matrix(DsM)%*%matrix(c(eta[ML+(response-1)*(mvrmObj$LG+1)]))
-            if (centreEffects) fitM[i,]<-fitM[i,]-mean(fitM[i,])
-		}
-		close(eFile)
-		if (count==1 && !is.D){
-		    centreM<-apply(fitM,2,centre)
-		    QM<-NULL
-		    if (!is.null(quantiles)) QM<-drop(t(apply(fitM,2,quantile,probs=quantiles,na.rm=TRUE)))
-		    newX<-newData
-		    dataM<-data.frame(cbind(newX,centreM,QM))
-		    nms <- c(vars,"centreM")
-		    if (!is.null(quantiles)) nms<-c(nms,"QLM","QUM")
-		    colnames(dataM) <- nms
-
-		    dataRug<-data.frame(b=with(mvrmObj$data,eval(as.name(vars))))
-		    plotElM<-c(geom_line(aes_string(x=as.name(vars),y=centreM),col=4,alpha=0.5),
-                       geom_rug(mapping=aes(x=dataRug$b),data=dataRug,alpha=0.3),
-                       list(ylab(label)))
-
-            if (!is.null(quantiles))
-                plotElM<-c(geom_ribbon(data=dataM,aes_string(x=vars, ymin="QLM", ymax="QUM"),alpha=0.2),plotElM)
-		    ggM<-ggplot(data=dataM)
-	        plotM<-ggM + plotElM + ggtitle("mean") + plotOptions
-	    }
-	    if (count==1 && is.D){
-			lvs<-levels(with(mvrmObj$data,eval(as.name(vars[1]))))
-			if (is.null(lvs)) lvs<-unique(with(mvrmObj$data,eval(as.name(vars[1]))))
-	        df<-data.frame(x=rep(lvs,each=mvrmObj$nSamples),y=c(fitM))
-            plotElM<-c(geom_boxplot(),list(xlab(label),ylab("")))
-            ggM<-ggplot(aes(x=factor(x),y=df$y),data=df)
-	        plotM<-ggM + plotElM + ggtitle("mean") + plotOptions
-	    }
-	    if (count==2 && sum(is.D)==1){
-		    centreM<-apply(fitM,2,centre)
-		    QM<-NULL
-		    if (!is.null(quantiles)) QM<-drop(t(apply(fitM,2,quantile,probs=quantiles,na.rm=TRUE)))
-		    disc.var<-vars[which(is.D==1)]
-		    cont.var<-vars[which(is.D==0)]
-		    lvs<-levels(with(mvrmObj$data,eval(as.name(disc.var))))
-		    nms<-paste(disc.var,lvs[-1],sep="")
-		    dataM<-data.frame(newData,centreM,QM)
-		    nms <- c(colnames(newData),"centreM")
-		    if (!is.null(quantiles)) nms<-c(nms,"QLM","QUM")
-		    colnames(dataM) <- nms
-		    DG<-data.frame(b=with(mvrmObj$data,eval(as.name(cont.var))),c=with(mvrmObj$data,eval(as.name(disc.var))))
-		    plotElM<-c(geom_line(aes_string(x=cont.var,y=centreM,
-		               group=disc.var,colour=disc.var,linetype=disc.var),alpha=0.80),
-                       geom_rug(mapping=aes(x=DG$b,group=c,colour=c,linetype=c),data=DG,alpha=0.3),
-                       list(ylab(label)))
-            if (!is.null(quantiles))
-                plotElM<-c(geom_ribbon(data=dataM,aes_string(x=cont.var,ymin="QLM",ymax="QUM",
-                                       group=disc.var,fill=as.name(disc.var)),alpha=0.2),plotElM)
-		    ggM<-ggplot(data=dataM)
-	        plotM<-ggM + plotElM + ggtitle("mean") + plotOptions
-	    }
-	    if (count==2 && sum(is.D)==0){
-		    centreM<-apply(fitM,2,centre)
-		    if (static){
-		        defaultList<-list(x=as.numeric(newR1),y=as.numeric(newR2),z=matrix(centreM,length(newR1),length(newR2)),colvar=matrix(centreM,length(newR1),length(newR2)))
-                along="xy";
-                space=0.6;
-                optionalList<-list(xlab=vars[1],ylab=vars[2],zlab=label,along=along,space=space,add=FALSE,bty="g",main="mean")
-                allOptions<-c(defaultList,plotOptions,optionalList)
-                if (STDEV==1) par(mfrow=c(1,2))
-                do.call("ribbon3D",allOptions[!duplicated(names(allOptions))])
-		    }
-            if (!static){
-                a<-as.matrix(cbind(newData,centreM))
-                if (is.null(plotOptions$col)) col=rainbow(16,2/3)
-                else col<-plotOptions$col
-                plotCentreM <- centreM
-                if (min(centreM)<=0) plotCentreM <- centreM + abs(min(centreM)) + 1
-                ra<-ceiling(length(col)*plotCentreM/max(plotCentreM))
-                defaultList<-list(x=a,col=col[ra])
-                optionalList<-list(size=0.4,bg=1,axisLabels=c(vars[1],label,vars[2]),main="mean")
-                allOptions<-c(defaultList,plotOptions,optionalList)
-                plotM<-do.call("scatterplot3js",allOptions[!duplicated(names(allOptions))])
-			}
-		}
-	}
-	if (STDEV){
-        int.label<-int.labelZ
-        count<-countZ
-        vars<-mvrmObj$varsZ[[int.label[length(int.label)]]]
-        label<-mvrmObj$labelsZ[int.label[length(int.label)]]
-        is.D<-mvrmObj$is.Dz[[int.label[length(int.label)]]]
-        formula.term<-mvrmObj$formula.termsZ[int.label]
-        if (!grepl("knots",formula.term) && mvrmObj$which.SpecZ[[int.label[length(int.label)]]]>0){
-    	    z<-length(formula.term) #use this to fix both sm and s smooths
-     		formula.term[z]<-substr(formula.term[z],1,nchar(formula.term[z])-1)
-     		formula.term[z]<-paste(formula.term[z],", knots=knots)")
-		}
-        VL<-which(mvrmObj$assignZ %in% int.label)-1
-        if (count==1){
-	        if (!is.D){
-	            min1<-min(with(mvrmObj$data,eval(as.name(vars[1]))))
-			    max1<-max(with(mvrmObj$data,eval(as.name(vars[1]))))
-			    newR1<-seq(min1,max1,length.out=grid)
-                newData<-data.frame(newR1)
-                colnames(newData)<-vars
-                whichKnots <- mvrmObj$which.SpecZ[[int.label]]
-                if (length(mvrmObj$Zknots)>0 && whichKnots>0) {Dstar<-data.frame(mvrmObj$Zknots[[whichKnots]])}else{Dstar<-NULL}
-                DsV<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=Dstar,
-                        meanVector=mvrmObj$storeMeanVectorZ[c(1,VL+1)],indicator=mvrmObj$storeIndicatorZ[c(1,VL+1)])$X[,-1]
-		    }
-	        if (is.D){
-	            newData<-data.frame(unique(with(mvrmObj$data,eval(as.name(vars[1])))))
-                colnames(newData)<-vars
-                DsV<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=NULL,
-                        meanVector=mvrmObj$storeMeanVectorZ[c(1,VL+1)],indicator=mvrmObj$storeIndicatorZ[c(1,VL+1)])$X[,-1]
-			}
-		}
-		if (count==2){
-	        if (sum(is.D)){
-	            dv<-which(is.D==1)
-	            cv<-which(is.D==0)
-	            min1<-min(with(mvrmObj$data,eval(as.name(vars[cv]))))
-				max1<-max(with(mvrmObj$data,eval(as.name(vars[cv]))))
-                newR1<-seq(min1,max1,length.out=grid)
-                newR2<-unique(with(mvrmObj$data,eval(as.name(vars[dv]))))
-                newData<-expand.grid(newR1,newR2)
-                colnames(newData)<-vars[c(cv,dv)]
-                whichKnots <- mvrmObj$which.SpecZ[[int.label[length(int.label)]]]
-                Dstar<-mvrmObj$Zknots[[whichKnots]]
-                DsV<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=Dstar,
-                        meanVector=mvrmObj$storeMeanVectorZ[c(1,VL+1)],indicator=mvrmObj$storeIndicatorZ[c(1,VL+1)])$X
-                DsV<-DsV[,-1]
-			}
-            if (sum(is.D)==0){
-                min1<-min(with(mvrmObj$data,eval(as.name(vars[1]))))
-				min2<-min(with(mvrmObj$data,eval(as.name(vars[2]))))
-				max1<-max(with(mvrmObj$data,eval(as.name(vars[1]))))
-				max2<-max(with(mvrmObj$data,eval(as.name(vars[2]))))
-                newR1<-seq(min1,max1,length.out=grid)
-                newR2<-seq(min2,max2,length.out=grid)
-                newData<-expand.grid(newR1,newR2)
-                colnames(newData)<-vars
-                whichKnots <- mvrmObj$which.SpecZ[[int.label]]
-                Dstar<-mvrmObj$Zknots[[whichKnots]]
-                DsV<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=Dstar,
-                        meanVector=mvrmObj$storeMeanVectorZ[c(1,VL+1)],indicator=mvrmObj$storeIndicatorZ[c(1,VL+1)])$X
-                DsV<-DsV[,-1]
-		    }
-        }
-        fitV<-matrix(0,nrow=mvrmObj$nSamples,ncol=NROW(DsV))
-		alphaFN <- file.path(paste(mvrmObj$DIR,"BNSP.alpha.txt",sep=""))
-        aFile<-file(alphaFN,open="r")
-		sigma2FN <- file.path(paste(mvrmObj$DIR,"BNSP.sigma2.txt",sep=""))
-        s2File<-file(sigma2FN,open="r")
-        for (i in 1:mvrmObj$nSamples){
-        	alpha<-scan(aFile,what=numeric(),n=p*mvrmObj$LD,quiet=TRUE)
-		    if (intercept) s2<-scan(s2File,what=numeric(),n=p,quiet=TRUE)[response]
-		    else s2=1
-            fitV[i,]<-sqrt(s2*exp(as.matrix(DsV)%*%matrix(c(alpha[VL+(response-1)*mvrmObj$LD]))))
-            if (centreEffects) fitV[i,]<-fitV[i,]/mean(fitV[i,])
-		}
-		close(aFile)
-		close(s2File)
-		if (count==1 && !is.D){
-		    centreV<-apply(fitV,2,centre)
-		    QV<-NULL
-		    if (!is.null(quantiles)) QV<-drop(t(apply(fitV,2,quantile,probs=quantiles,na.rm=TRUE)))
-		    newV<-newData#DsV[,vars]+mean(with(mvrmObj$data,eval(as.name(vars))))
-		    dataV<-data.frame(newV,centreV,QV)
-            nms<-c(vars,"centreV")
-		    if (!is.null(quantiles)) nms<-c(nms,"QLV","QUV")
-		    colnames(dataV) <- nms
-		    dataRug<-data.frame(b=with(mvrmObj$data,eval(as.name(vars))))
-		    plotElV<-c(geom_line(aes_string(x=as.name(vars),y=centreV),col=4,alpha=0.5),
-                       geom_rug(mapping=aes(x=dataRug$b),data=dataRug,alpha=0.3),
-                       list(ylab(label)))
-            if (!is.null(quantiles))
-                plotElV<-c(geom_ribbon(data=dataV,aes_string(x=vars, ymin="QLV", ymax="QUV"),alpha =0.2),plotElV)
-		    ggV<-ggplot(data=dataV)
-		    plotV<-ggV + plotElV + ggtitle("st dev") + plotOptions
-		}
-		if (count==1 && is.D){
-	        lvs<-levels(with(mvrmObj$data,eval(as.name(vars[1]))))
-			if (is.null(lvs)) lvs<-unique(with(mvrmObj$data,eval(as.name(vars[1]))))
-	        df<-data.frame(x=rep(lvs,each=mvrmObj$nSamples),y=c(fitV))
-            plotElV<-c(geom_boxplot(),list(xlab(label),ylab("")))
-            ggV<-ggplot(data=df,aes(x=factor(x),y=df$y))
-	        plotV<-ggV + plotElV + ggtitle("st dev") + plotOptions
-	    }
-	    if (count==2 && sum(is.D)==1){
-		    centreV<-apply(fitV,2,centre)
-		    QV<-NULL
-		    if (!is.null(quantiles)) QV<-drop(t(apply(fitV,2,quantile,probs=quantiles,na.rm=TRUE)))
-		    disc.var<-vars[which(is.D==1)]
-		    cont.var<-vars[which(is.D==0)]
-		    lvs<-levels(with(mvrmObj$data,eval(as.name(disc.var))))
-		    nms<-paste(disc.var,lvs[-1],sep="")
-		    dataV<-data.frame(newData,centreV,QV)
-		    nms <- c(colnames(newData),"centreV")
-		    if (!is.null(quantiles)) nms<-c(nms,"QLV","QUV")
-		    colnames(dataV) <- nms
-   		    DG<-data.frame(b=with(mvrmObj$data,eval(as.name(cont.var))),c=with(mvrmObj$data,eval(as.name(disc.var))))
-		    plotElV<-c(geom_line(aes_string(x=cont.var,y=centreV,
-		               group=disc.var,linetype=disc.var,colour=disc.var),alpha=0.80),
-                       geom_rug(mapping=aes(x=DG$b,group=DG$c,colour=DG$c,linetype=DG$c),data=DG,alpha=0.3),
-                       list(ylab(label)))
-            if (!is.null(quantiles))
-                plotElV<-c(geom_ribbon(data=dataV,aes_string(x=cont.var,ymin="QLV",ymax="QUV",
-                                       group=disc.var,fill=as.name(disc.var)),alpha=0.2),plotElV)
-		    ggV<-ggplot(data=dataV)
-	        plotV<-ggV + plotElV + ggtitle("st dev") + plotOptions
-	    }
-		if (count==2 && sum(is.D)==0){
-		    centreV<-apply(fitV,2,centre)
-		    if (static){
-				defaultList<-list(x=as.numeric(newR1),y=as.numeric(newR2),z=matrix(centreV,length(newR1),length(newR2)),colvar=matrix(centreV,length(newR1),length(newR2)))
-                along="xy";
-                space=0.6;
-                optionalList<-list(xlab=vars[1],ylab=vars[2],zlab=label,along=along,space=space,add=FALSE,bty="g",main="st dev")
-                allOptions<-c(defaultList,plotOptions,optionalList)
-                do.call("ribbon3D",allOptions[!duplicated(names(allOptions))])
-		    }
-            if (!static){
-                a<-as.matrix(cbind(newData,centreV))
-                if (is.null(plotOptions$col)) col=rainbow(16,2/3)
-                else col<-plotOptions$col
-                ra<-ceiling(length(col)*centreV/max(centreV))
-                defaultList<-list(x=a,col=col[ra])
-                optionalList<-list(size=0.4,bg=1,axisLabels=c(vars[1],label,vars[2]),main="st dev")
-                allOptions<-c(defaultList,plotOptions,optionalList)
-                plotV<-do.call("scatterplot3js",allOptions[!duplicated(names(allOptions))])
-			}
-		}
-    }
-	if (count==1 || sum(is.D)==1){
-	    if (model=="mean") return(plotM)
-	    else if (model=="stdev") return(plotV)
-	    else if (model=="both") return(grid.arrange(plotM, plotV, ncol=2))
-	}
-	if (count==2 && !static && sum(is.D)==0){
-	    if (MEAN) print(plotM)
-	    if (STDEV) print(plotV)
-	}
-}
-
-quiet <- function(x) {
-    sink(tempfile())
-    on.exit(sink())
-    invisible(force(x))
-}
-
-plot.mvrm<-function(x, model, term, response, intercept=TRUE, grid=30,
-                    centre=mean, quantiles=c(0.1, 0.9), static=TRUE,
-                    centreEffects=FALSE,plotOptions=list(),nrow,ask=FALSE,...)
-{
-    oldpar <- NULL
-    on.exit(par(oldpar))
-    #
-    if (missing(response)) response <- c(1:x$p)
-    if (max(response) > x$p) stop("argument response exceeds the number of responses");
-    if (missing(model)) model<-"both"
-    MEAN <- 0; STDEV <- 0
-    if ((model=="both" || model=="mean") && (x$NG > 0)) MEAN <- 1
-    if ((model=="both" || model=="stdev") && (x$ND > 0)) STDEV <- 1
-    if (MEAN==0 && STDEV==0) stop("no terms to plot; only intercepts in the model");
-    if (missing(term)) {termM<-1:x$NG; termSD<-1:x$ND}
-    if (!missing(term)) {termM <- termSD <- term[[1]]; if (length(term)==2) termSD<-term[[2]]}
-    if (missing(nrow)) nrow <- length(response)
-    my_plots <- list()
-    count <- 1
-    for (r in response) {
-		if (MEAN)
-        for (i in termM){
-            plotOptions <- list(ggtitle(paste("mean of", x$varsY[[r]])),plotOptions)
-            my_plots[[count]] <- plot2(x, model="mean", term=i, response=r, intercept=intercept, grid=grid,
-                  centre=centre, quantiles=quantiles, static=static,
-                  centreEffects=centreEffects, plotOptions=plotOptions)
-            if (ask==TRUE) print(my_plots[[count]])
-            if (count==1)
-                oldpar <- c(oldpar, par(ask=ask))
-            count <- count + 1
-        }
-        if (STDEV)
-        for (i in termSD){
-            plotOptions <- list(ggtitle(paste("stdev of", x$varsY[[r]])),plotOptions)
-            my_plots[[count]] <- plot2(x, model = "stdev", term=i, response=r, intercept=intercept, grid=grid,
-                  centre=centre, quantiles=quantiles, static=static,
-                  centreEffects=centreEffects, plotOptions=plotOptions)
-            if (ask==TRUE) print(my_plots[[count]])
-            if (count==1)
-                oldpar <- c(oldpar, par(ask=ask))
-            count <- count + 1
-        }
-	}
-	if (ask==FALSE) quiet(print(grid.arrange(grobs = my_plots,nrow=nrow)))
 }
 
 plotCorr <- function(x, term="R", centre=mean, quantiles=c(0.1, 0.9), ...){

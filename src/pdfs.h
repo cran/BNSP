@@ -656,6 +656,7 @@ double hPmean(double lambda, void *params){
 double solve_hyper_poisson(double mu, double gamma){
     double lambda;
     double r = 0;
+    r = 0;
     int status;
     int iter = 0, max_iter = 100;
     struct hP_params params = {mu,gamma};

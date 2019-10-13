@@ -1,3 +1,5 @@
+# s, te, ti, sm, DM, match.call.defaults, quiet  
+
 s<-function(...,data,knots=NULL,absorb.cons=FALSE, scale.penalty=TRUE,n=nrow(data),dataX=NULL,
             null.space.penalty=FALSE,sparse.cons=0,diagonal.penalty=FALSE,apply.by=TRUE,modCon=0,
             k=-1,fx=FALSE,bs="tp",m=NA,by=NA,xt=NULL,id=NULL,sp=NULL,pc=NULL){
@@ -38,7 +40,7 @@ sm<-function(...,k=10,knots=NULL,bs="rd"){
     pf <- parent.frame()
     vars<-as.list(substitute(list(...)))[-1]
     d<-length(vars)
-    if (d > 2) stop("Up to bivariate covariates supported")
+    if (d > 2) stop("Up to bivariate covariates supported; other arguments are k, knots and bs")
     term<-NULL
     for (i in 1:d){
 	    term[i]<-deparse(vars[[i]],backtick=TRUE,width.cutoff=500)
@@ -59,8 +61,6 @@ sm<-function(...,k=10,knots=NULL,bs="rd"){
         lvs<-levels(eval(vars[[i]],pf))
         if (length(lvs)==0) {colnames(mm)[2]<-c(term[i]); is.D[i]<-0}
         if (length(lvs)>=2) {colnames(mm)<-paste(term[i],lvs,sep=""); is.D[i]<-1}
-        #print("x2");print("x2")
-        #print("mm");print(mm)
         x2<-cbind(x2,mm[,-1,drop=FALSE])
     }
     X<-x2
@@ -89,7 +89,6 @@ sm<-function(...,k=10,knots=NULL,bs="rd"){
 		else stop("chosen bs not supported")
     }
     else if (d==2 & nknots>0){
-        #if (!is.null(knots) && !is.matrix(knots)) stop("for bivariate smoothers knots must in matrix form")
         if (!is.null(knots)) nknots<-c(dim(knots))
         if (is.null(knots) && length(nknots)==1) nknots<-rep(nknots,2)
         if (is.null(knots)){
@@ -114,8 +113,6 @@ sm<-function(...,k=10,knots=NULL,bs="rd"){
 		}
         if (bs=="rd"){
             for (i in 1:NROW(knots)){
-				#print(x2-matrix(knots[i,],nrow=NROW(x2),ncol=NCOL(x2),byrow=TRUE))
-                #print("h")
                 D<-apply((x2-matrix(as.numeric(knots[i,]),nrow=NROW(x2),ncol=NCOL(x2),byrow=TRUE))^2,1,sum)
                 D2<-D*log(D)
                 D2[which(D==0)]<-0
@@ -247,18 +244,9 @@ DM<-function(formula,data,n,knots=NULL,predInd=FALSE,meanVector,indicator,mvrmOb
 		    indicator[which(assign==mat.arg[i])]<-TRUE
 	}
 	Design.X[,!indicator]<-Design.X[,!indicator]-matrix(1,nrow=n)%*%matrix(meanVector[!indicator],nrow=1)
-	together<-list()
-	e<-0
-	if (!is.null(nFactors)){
-        ptns<-which(lapply(vars,length) > 1) #candidates for together
-        if (length(ptns) > 0)
-		    for (i in 1:nFactors)
-	            for (j in ptns)
-	                if (sum(vars[[i]] %in% vars[[j]]) > 0 && (!i==j)) together[[e<-e+1]]<-c(i,j)
-	}
     return(list(y=y,X=Design.X,assign=assign,Rknots=Rknots,meanVector=meanVector,
                 indicator=indicator,labels=labels,count=count,vars=vars,is.D=is.D,
-                which.Spec=which.Spec,formula.terms=formula.terms,together=together))
+                which.Spec=which.Spec,formula.terms=formula.terms))
 }
 
 match.call.defaults <- function(...) {
@@ -267,4 +255,10 @@ match.call.defaults <- function(...) {
     for(k in setdiff(names(formals), names(call)))
         call[k] <- list( formals[[k]] )
     match.call(sys.function(sys.parent()), call)
+}
+
+quiet <- function(x) {
+    sink(tempfile())
+    on.exit(sink())
+    invisible(force(x))
 }

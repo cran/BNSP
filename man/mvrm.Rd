@@ -230,28 +230,27 @@ require(ggplot2)
 data(cps71)
 model <- logwage ~ sm(age,k=30,bs="rd") | sm(age,k=30,bs="rd")
 DIR<-getwd()
-m1<-mvrm(formula=model,data=cps71,sweeps=10,burn=5,thin=1,seed=1,StorageDir=DIR)
-\donttest{m2 <- mvrm(formula=model,data=cps71,sweeps=10000,burn=5000,thin=2, seed=1,StorageDir=DIR)
+\dontrun{m1 <- mvrm(formula=model,data=cps71,sweeps=10000,burn=5000,thin=2, seed=1,StorageDir=DIR)
 #Print information and summarize the model
-print(m2)
-summary(m2)
+print(m1)
+summary(m1)
 #Summarize and plot one parameter of interest
-alpha<-mvrm2mcmc(m2,"alpha")
+alpha<-mvrm2mcmc(m1,"alpha")
 summary(alpha)
 plot(alpha)
 #Obtain a plot of a term in the mean model
 wagePlotOptions<-list(geom_point(data=cps71,aes(x=age,y=logwage)))
-plot(x=m2,model="mean",term="sm(age)",plotOptions=wagePlotOptions)
-plot(m2)
+plot(x=m1,model="mean",term="sm(age)",plotOptions=wagePlotOptions)
+plot(m1)
 #Obtain predictions for new values of the predictor "age"
-predict(m2,data.frame(age=c(21,65)),interval="credible")
+predict(m1,data.frame(age=c(21,65)),interval="credible")
 
 # Fit a bivariate mean/variance model on the marks dataset from package ggm
 # two responses: marks mechanics and vectors, and one covariate: marks on algebra 
 model2 <- mechanics | vectors ~ sm(algebra,k=5) | sm(algebra,k=3)
-m3 <- mvrm(formula=model2, data=marks, sweeps = 100000, burn = 50000, 
+m2 <- mvrm(formula=model2, data=marks, sweeps = 100000, burn = 50000, 
                        thin = 2, seed = 1, StorageDir = DIR)
-plot(m3)
+plot(m2)
 }
 }
 

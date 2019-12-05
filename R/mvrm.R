@@ -56,6 +56,7 @@ sm<-function(...,k=10,knots=NULL,bs="rd"){
     label<-paste(label,")",sep="")
     is.D<-rep(0,d)
     x2<-NULL
+    type<-1
     for (i in 1:d){
         mm<-model.matrix(~eval(vars[[i]],pf))
         lvs<-levels(eval(vars[[i]],pf))
@@ -66,10 +67,10 @@ sm<-function(...,k=10,knots=NULL,bs="rd"){
     X<-x2
     if (d==1 & nknots>0){
         if (is.null(knots)){
-            knots<-seq(from = 0, to = 1, length = nknots + 2)[-c(1, nknots + 2)]
-            knots<-seq(from = 0, to = 1, length = nknots)
-            knots<-unique(quantile(x2,knots))
-            knots<-data.frame(knots=knots)
+            knots<-seq(from = 0, to = 1, length = nknots + 2)[-c(1, nknots + 2)]            
+            knots<-seq(from = 0, to = 1, length = nknots)            
+            knots<-unique(round(quantile(x2,knots,type=type),5))           
+            knots<-data.frame(knots=knots)            
         }
         if (!is.null(knots)){
 			knots<-data.frame(knots=knots)
@@ -97,15 +98,15 @@ sm<-function(...,k=10,knots=NULL,bs="rd"){
             knots2<-seq(from = 0, to = 1, length = nknots[2] + 2)[-c(1, nknots[2] + 2)]
             knots2<-seq(from = 0, to = 1, length = nknots[2])
             if (dim(x2)[2] == 2){
-                knots1<-unique(quantile(x2[,1],knots1))
-                knots2<-unique(quantile(x2[,2],knots2))
+                knots1<-unique(round(quantile(x2[,1],knots1,type=type),5))
+                knots2<-unique(round(quantile(x2[,2],knots2,type=type),5))
                 knots<-as.matrix(expand.grid(knots1,knots2))
 			}else if (is.D[1] == 1){
 			    knots1<-unique(x2[,-dim(x2)[2]])
-			    knots2<-unique(quantile(x2[,dim(x2)[2],drop=FALSE],knots2))
+			    knots2<-unique(round(quantile(x2[,dim(x2)[2],drop=FALSE],knots2,type=type),5))
 			    knots <- cbind(knots1[rep(1:nrow(knots1), length(knots2)), ], rep(knots2, each = nrow(knots1)))
 			}else if (is.D[2] == 1){
-				knots1<-unique(quantile(x2[,1],knots1))
+				knots1<-unique(round(quantile(x2[,1],knots1,type=type),5))
 			    knots2<-unique(x2[,-1])
 			    knots <- cbind(rep(knots1, nrow(knots2)), knots2[rep(1:nrow(knots2), length(knots1)), ])
 			}

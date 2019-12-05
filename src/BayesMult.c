@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */
+ */ 
 
 #define GSL_RANGE_CHECK_OFF
 #define HAVE_INLINE
@@ -39,13 +39,12 @@
 #include <gsl/gsl_roots.h>
 #include <gsl/gsl_multiset.h>
 
-/*
-#include "matalg.h"
-#include "pdfs.h"
-#include "sampling.h" 
-#include "other.functions.h"
-#include "mathm.h"  
-*/
+//#include "matalg.h"
+//#include "pdfs.h"
+//#include "sampling.h" 
+//#include "other.functions.h"  
+//#include "mathm.h"  
+//#include "spec.BCM.h"  
 
 extern void   computeStStar(double *Y, int *time, int N, int t, int p, gsl_matrix *StStar); 
 extern void   ginv(int p, double tol, gsl_matrix *A);
@@ -278,7 +277,7 @@ void   mult(int *seed1, char **WorkingDir, int *WF1,
     gsl_matrix *RtC = gsl_matrix_alloc(p,p);
     gsl_matrix *RtCinv = gsl_matrix_alloc(p,p);
     gsl_matrix *EtP = gsl_matrix_alloc(p,p);
-    gsl_matrix *DtP = gsl_matrix_alloc(p,p);
+    gsl_matrix *DtP = gsl_matrix_calloc(p,p);
     gsl_matrix *RtP = gsl_matrix_alloc(p,p);
     gsl_matrix *RtPinv = gsl_matrix_alloc(p,p);
     gsl_matrix *A = gsl_matrix_alloc(d,d);
@@ -431,6 +430,12 @@ void   mult(int *seed1, char **WorkingDir, int *WF1,
         cetahat = ceta; //starting value is the current value
         //Rprintf("%s %i %i %i %i \n","SPC & ceta ",p,m,LG,Ngamma);
         SPC = ScalcMult(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2);
+        //Rprintf("%s %f \n","test SPcalMult:",SPC);
+        //Rprintf("%s %i %i %f %i %i %f %f %i %f %f %f \n","inputs SPcalc",
+        //        m,p,tol,LG,Ngamma,Ytilde[0],X[0],gamma[0][0],ceta,Q2,sigma2ij[0][0]);
+        //print_matrix(St);
+        //print_matrix(RtC);
+        //print_matrix(RtCinv);        
         elPrime = 99.9;
         while(elPrime > 0.000000001 || -elPrime > 0.000000001){
             Sprime = -Q2/pow(cetahat+1,2);

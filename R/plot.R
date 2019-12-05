@@ -22,10 +22,10 @@ label.count <- function(term,labels,counts,model){
     return(c(int.label,count))
 }	
 
-plot.generic <- function(mvrmObj, model, term, response, intercept, grid, centre, quantiles, static, contour,
-                         centreEffects, plotOptions, 
-                         int.label,count,vars,label,is.D,formula.term,which.Spec,assign,
-                         knots,storeMeanVector,storeIndicator,data,MEAN,STDEV){
+plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, term, response, intercept, grid, 
+                         centre, quantiles, static, contour, centreEffects, plotOptions, 
+                         int.label, count, vars, label, is.D, formula.term, which.Spec, assign,
+                         knots, storeMeanVector, storeIndicator, data){
     p<-mvrmObj$p
     if (!grepl("knots",formula.term) && which.Spec>0){			
         z<-length(formula.term) #use this to fix both sm and s smooths
@@ -45,14 +45,13 @@ plot.generic <- function(mvrmObj, model, term, response, intercept, grid, centre
             newData<-data.frame(newR1)
             colnames(newData)<-vars
             whichKnots <- which.Spec
-            if (length(knots)>0 && whichKnots>0) {Dstar<-data.frame(knots=knots[[whichKnots]])}else{Dstar<-NULL}
-            
+            if (length(knots)>0 && whichKnots>0) {Dstar<-data.frame(knots=knots[[whichKnots]])}else{Dstar<-NULL}            
             Ds<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=Dstar,
                    meanVector=storeMeanVector[indeces],indicator=storeIndicator[indeces])$X
             if ((!1%in%V)||STDEV) Ds<-Ds[,-1]
         }
         if (is.D){
-            newData<-data.frame(unique(with(data,eval(as.name(vars[1])))))
+            newData<-data.frame(sort(unique(with(data,eval(as.name(vars[1]))))))
             colnames(newData)<-vars
             Ds<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=NULL,
                    meanVector=storeMeanVector[indeces],indicator=storeIndicator[indeces])$X
@@ -93,26 +92,47 @@ plot.generic <- function(mvrmObj, model, term, response, intercept, grid, centre
     }  
     if (MEAN){    
         fit<-matrix(0,nrow=mvrmObj$nSamples,ncol=NROW(Ds))
-	    etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.beta.txt",sep=""))
+	    if (CORM==0 && DEP==0){
+			etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.beta.txt",sep=""))
+			how.many <- p*(mvrmObj$LG+1)
+			multiplier <- mvrmObj$LG+1
+		}else if (CORM==1){
+		    etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.eta.txt",sep=""))
+		    how.many <- mvrmObj$LGc+1
+		    multiplier<-0
+		}else{
+			etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.psi.txt",sep=""))
+			how.many <- p*p*mvrmObj$LK
+			multiplier <- mvrmObj$LK		
+		}
         eFile<-file(etaFN,open="r")
 	    for (i in 1:mvrmObj$nSamples){
-            eta<-scan(eFile,what=numeric(),n=p*(mvrmObj$LG+1),quiet=TRUE)
-            fit[i,]<-as.matrix(Ds)%*%matrix(c(eta[V+(response-1)*(mvrmObj$LG+1)]))
+            eta<-scan(eFile,what=numeric(),n=how.many,quiet=TRUE)
+            fit[i,]<-as.matrix(Ds)%*%matrix(c(eta[V+(response-1)*multiplier]))
             if (centreEffects) fit[i,]<-fit[i,]-mean(fit[i,])
 	    }
 	    close(eFile)
     }
 	if (STDEV){	
 	    fit<-matrix(0,nrow=mvrmObj$nSamples,ncol=NROW(Ds))
-	    alphaFN <- file.path(paste(mvrmObj$DIR,"BNSP.alpha.txt",sep=""))
-        aFile<-file(alphaFN,open="r")
-	    sigma2FN <- file.path(paste(mvrmObj$DIR,"BNSP.sigma2.txt",sep=""))
+	    if (CORS==0){
+	        alphaFN <- file.path(paste(mvrmObj$DIR,"BNSP.alpha.txt",sep=""))
+            sigma2FN <- file.path(paste(mvrmObj$DIR,"BNSP.sigma2.txt",sep=""))
+            how.many1 <- p*mvrmObj$LD
+            how.many2 <- p
+		}else{
+			alphaFN <- file.path(paste(mvrmObj$DIR,"BNSP.omega.txt",sep=""))
+            sigma2FN <- file.path(paste(mvrmObj$DIR,"BNSP.sigma2R.txt",sep=""))		
+            how.many1 <- mvrmObj$LDc
+            how.many2 <- 1
+		}
+        aFile<-file(alphaFN,open="r")	    
         s2File<-file(sigma2FN,open="r")
         for (i in 1:mvrmObj$nSamples){
-            alpha<-scan(aFile,what=numeric(),n=p*mvrmObj$LD,quiet=TRUE)
-		    if (intercept) s2<-scan(s2File,what=numeric(),n=p,quiet=TRUE)[response]
+            alpha<-scan(aFile,what=numeric(),n=how.many1,quiet=TRUE)
+		    if (intercept) s2<-scan(s2File,what=numeric(),n=how.many2,quiet=TRUE)[response]
 		    else s2=1
-            fit[i,]<-sqrt(s2*exp(as.matrix(Ds)%*%matrix(c(alpha[V+(response-1)*mvrmObj$LD]))))
+            fit[i,]<-sqrt(s2*exp(as.matrix(Ds)%*%matrix(c(alpha[V+(response-1)*mvrmObj$LD]))))            
             if (centreEffects) fit[i,]<-fit[i,]/mean(fit[i,])
 	    }
 	    close(aFile)
@@ -120,12 +140,14 @@ plot.generic <- function(mvrmObj, model, term, response, intercept, grid, centre
 	}
 	if (count==1 && !is.D){
 	    centreM<-apply(fit,2,centre)
-	    QM<-NULL
-	    if (!is.null(quantiles)) QM<-drop(t(apply(fit,2,quantile,probs=quantiles,na.rm=TRUE)))
 	    newX<-newData
-	    dataM<-data.frame(cbind(newX,centreM,QM))
-	    nms <- c(vars,"centreM")
-	    if (!is.null(quantiles)) nms<-c(nms,"QLM","QUM")
+	    dataM<-data.frame(newX,centreM)
+	    nms <- c(vars,"centreM")	   
+	    if (!is.null(quantiles)) {
+			nms<-c(nms,"QLM","QUM")
+			QM<-drop(t(apply(fit,2,quantile,probs=quantiles,na.rm=TRUE)))
+			dataM<-data.frame(newX,centreM,QM)
+		}	    
 	    colnames(dataM) <- nms
 	    dataRug<-data.frame(b=with(data,eval(as.name(vars))))
 	    plotElM<-c(geom_line(aes_string(x=as.name(vars),y=centreM),col=4,alpha=0.5),
@@ -144,15 +166,17 @@ plot.generic <- function(mvrmObj, model, term, response, intercept, grid, centre
         ggM<-ggplot(data=df,aes(x=factor(df$x),y=df$y))
 	    plotM<-ggM + plotElM + plotOptions
 	}     
-	if (count==2 && sum(is.D)==1){
-	    centreM<-apply(fit,2,centre)
-		QM<-NULL
-		if (!is.null(quantiles)) QM<-drop(t(apply(fit,2,quantile,probs=quantiles,na.rm=TRUE)))
+	if (count==2 && sum(is.D)==1){	    
+	    centreM<-apply(fit,2,centre)	
 		disc.var<-vars[which(is.D==1)]
 		cont.var<-vars[which(is.D==0)]
-		dataM<-data.frame(newData,centreM,QM)
+		dataM<-data.frame(newData,centreM)
 		nms <- c(colnames(newData),"centreM")
-		if (!is.null(quantiles)) nms<-c(nms,"QLM","QUM")
+		if (!is.null(quantiles)){ 
+		    nms<-c(nms,"QLM","QUM")
+		    QM<-drop(t(apply(fit,2,quantile,probs=quantiles,na.rm=TRUE)))
+		    dataM<-data.frame(newData,centreM,QM)
+		}
 		colnames(dataM) <- nms
 		DG<-data.frame(b=with(data,eval(as.name(cont.var))),c=with(data,eval(as.name(disc.var))))
 		plotElM<-c(geom_line(aes_string(x=cont.var,y=centreM,
@@ -201,9 +225,9 @@ plot.generic <- function(mvrmObj, model, term, response, intercept, grid, centre
 		return(plotM)
 }
 
-
-plot.mvrm <- function(x, model, term, response, intercept = TRUE, grid = 30,
-                      centre = mean, quantiles = c(0.1, 0.9), contour = TRUE, static = TRUE, 
+plot.mvrm <- function(x, model, term, response, response2, 
+                      intercept = TRUE, grid = 30, centre = mean, 
+                      quantiles = c(0.1, 0.9), contour = TRUE, static = TRUE, 
                       centreEffects = FALSE, plotOptions = list(), nrow, ask = FALSE,...)
 {
     oldpar <- NULL
@@ -215,16 +239,22 @@ plot.mvrm <- function(x, model, term, response, intercept = TRUE, grid = 30,
     if (!is.null(quantiles)) quantiles <- unique(sort(quantiles))
     grid<-round(grid)
     if (missing(response)) response <- c(1:x$p)
+    if (missing(response2)) response2 <- c(1:x$p)
     if (max(response) > x$p) stop("argument response exceeds the number of responses");
-    if (missing(model)) model<-"both"
-    MEAN <- 0; STDEV <- 0
-    if ((model=="both" || model=="mean") && (x$NG > 0)) MEAN <- 1
-    if ((model=="both" || model=="stdev") && (x$ND > 0)) STDEV <- 1
-    if (MEAN==0 && STDEV==0) stop("no terms to plot; only intercepts in the model");    
-    termM <- NULL; termSD <- NULL; 
-    if (missing(term)) {termM<-1:x$NG; termSD<-1:x$ND}
-    if (!missing(term)) {termM <- termSD <- term}
-    if (missing(nrow)) nrow <- length(response)
+    
+    if (missing(model)) model<-"all"
+    MEAN <- 0; STDEV <- 0; CORM <- 0; CORS <- 0; DEP <- 0;
+    if ((model=="all" || model=="mean") && (x$NG > 0)) MEAN <- 1
+    if ((model=="all" || model=="stdev") && (x$ND > 0)) STDEV <- 1
+    if ((model=="all" || model=="corm") && (x$NGc > 0)) CORM <- 1
+    if ((model=="all" || model=="cors") && (x$NDc > 0)) CORS <- 1
+    if ((model=="all" || model=="dep") && (x$NK > 0)) DEP <- 1
+    
+    if (MEAN==0 && STDEV==0 && CORM==0 && CORS==0 && DEP==0) stop("no terms to plot; only intercepts in the model");    
+    termM <- NULL; termSD <- NULL; termMC<-1; termSDC<-1; termD<-NULL  
+    if (missing(term)) {termM<-1:x$NG; termSD<-1:x$ND; termD<-1:(x$NK-1)}
+    if (!missing(term)) {termM <- termSD <- termD <- term}
+    
     #
     if (((MEAN+STDEV+length(termM)+length(termSD)+length(response))>3) && contour == 0)
         warning("for 3-d plots, specify one model, one term and one response at a time")
@@ -232,14 +262,15 @@ plot.mvrm <- function(x, model, term, response, intercept = TRUE, grid = 30,
     #
     my_plots <- list()
     count <- 1
-    for (r in response) {
+    for (r in response){
 		if (MEAN)
         for (i in termM){
 			lcX <- label.count(i,x$labelsX,x$countX,"mean")
             int.labelX <- lcX[1]
             countX <- lcX[2]
             plotOptions2 <- list(ggtitle(paste("mean of", x$varsY[r])),plotOptions)            
-            my_plots[[count]] <- plot.generic(mvrmObj=x, model="mean", term=i, response=r, intercept=intercept, grid=grid,
+            my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=1, STDEV=0, CORM=0, CORS=0, DEP=0,
+                                              term=i, response=r, intercept=intercept, grid=grid,
                                               centre=centre, quantiles=quantiles, static=static, contour=contour,
                                               centreEffects=centreEffects, plotOptions=plotOptions2,
                                               int.label=int.labelX, count=countX, vars=x$varsX[[int.labelX]], 
@@ -247,7 +278,7 @@ plot.mvrm <- function(x, model, term, response, intercept = TRUE, grid = 30,
                                               formula.term=x$formula.termsX[int.labelX], 
                                               which.Spec=x$which.SpecX[[int.labelX]], assign=x$assignX, 
                                               knots=x$Xknots, storeMeanVector=x$storeMeanVectorX,
-                                              storeIndicator=x$storeIndicatorX, data=x$data, MEAN=1, STDEV=0)
+                                              storeIndicator=x$storeIndicatorX, data=x$data)
             if ((ask==TRUE) && (length(my_plots)>0)) print(my_plots[[count]])
             if (count==1)
                 oldpar <- c(oldpar, par(ask=ask))
@@ -259,7 +290,9 @@ plot.mvrm <- function(x, model, term, response, intercept = TRUE, grid = 30,
             int.labelZ <- lcZ[1]
             countZ <- lcZ[2]
             plotOptions2 <- list(ggtitle(paste("stdev of", x$varsY[[r]])),plotOptions)
-            my_plots[[count]] <- plot.generic(x, model="stdev", term=i, response=r, intercept=intercept, grid=grid,
+            if (x$LUT > 1)plotOptions2 <- list(ggtitle(paste("innovation stdev of", x$varsY[[r]])),plotOptions)
+            my_plots[[count]] <- plot.generic(x, MEAN=0, STDEV=1, CORM=0, CORS=0, DEP=0,
+                                              term=i, response=r, intercept=intercept, grid=grid,
                                               centre=centre, quantiles=quantiles, static=static, contour=contour,
                                               centreEffects=centreEffects, plotOptions=plotOptions2,
                                               int.label=int.labelZ, count=countZ, vars=x$varsZ[[int.labelZ]], 
@@ -267,12 +300,79 @@ plot.mvrm <- function(x, model, term, response, intercept = TRUE, grid = 30,
                                               formula.term=x$formula.termsZ[int.labelZ], 
                                               which.Spec=x$which.SpecZ[[int.labelZ]], assign=x$assignZ, 
                                               knots=x$Zknots, storeMeanVector=x$storeMeanVectorZ,
-                                              storeIndicator=x$storeIndicatorZ, data=x$data, MEAN=0, STDEV=1)
+                                              storeIndicator=x$storeIndicatorZ, data=x$data)
             if ((ask==TRUE) && (length(my_plots)>0)) print(my_plots[[count]])
             if (count==1)
                 oldpar <- c(oldpar, par(ask=ask))
             count <- count + 1
         }
-	}
+	}	
+	if (DEP)
+    	for (r1 in response){
+	    	for (r2 in response2){		    
+				Pair<-(r1-1)*x$p + r2
+                for (i in termD){
+			        lcC <- label.count(i,x$labelsC,x$countC,"autoregressive")
+                    int.labelC <- lcC[1]
+                    countC <- lcC[2]
+                    plotOptions2 <- list(ggtitle(paste("autoregressive", x$varsY[r1], x$varsY[r2])), plotOptions)            
+                    my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=1, STDEV=0, CORM=0, CORS=0, DEP=1, 
+                                                      term=i, response=Pair, intercept=intercept, grid=grid,
+                                                      centre=centre, quantiles=quantiles, static=static, contour=contour,
+                                                      centreEffects=centreEffects, plotOptions=plotOptions2,
+                                                      int.label=int.labelC, count=countC, vars=x$varsC[[int.labelC]], 
+                                                      label=x$labelsC[int.labelC], is.D=x$is.Dc[[int.labelC]], 
+                                                      formula.term=x$formula.termsC[int.labelC], 
+                                                      which.Spec=x$which.SpecC[[int.labelC]], assign=x$assignC, 
+                                                      knots=x$Cknots, storeMeanVector=x$storeMeanVectorC,
+                                                      storeIndicator=x$storeIndicatorC, data=x$lag)
+                    if ((ask==TRUE) && (length(my_plots)>0)) print(my_plots[[count]])
+                    if (count==1)
+                        oldpar <- c(oldpar, par(ask=ask))
+                    count <- count + 1
+		        }
+            }
+	    }
+    if (CORM){
+        for (i in termMC){			
+            plotOptions2 <- list(ggtitle(paste("mean of correlations")),plotOptions)            
+            my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=1, STDEV=0, CORM=1, CORS=0, DEP=0,
+                                              term=-99, response=1, intercept=intercept, 
+                                              grid=grid, centre=centre, quantiles=quantiles, static=static, contour=contour,
+                                              centreEffects=centreEffects, plotOptions=plotOptions2,
+                                              int.label=1, count=1, vars=x$varsXc[[1]], 
+                                              label=x$labelsXc[1], is.D=x$is.Dxc[[1]], 
+                                              formula.term=x$formula.termsXc[1], 
+                                              which.Spec=x$which.SpecXc[[1]], assign=x$assignXc,
+                                              knots=x$Xcknots, storeMeanVector=x$storeMeanVectorXc,
+                                              storeIndicator=x$storeIndicatorXc, data=x$data)                        
+            if ((ask==TRUE) && (length(my_plots)>0)) print(my_plots[[count]])
+            if (count==1)
+                oldpar <- c(oldpar, par(ask=ask))
+            count <- count + 1
+        }
+	}	
+	if (CORS){
+        for (i in termSDC){			
+            plotOptions2 <- list(ggtitle(paste("stdev of correlations")),plotOptions)            
+            my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=0, STDEV=1, CORM=0, CORS=1, DEP=0, 
+                                              term=-99, response=1, intercept=intercept, 
+                                              grid=grid, centre=centre, quantiles=quantiles, static=static, contour=contour,
+                                              centreEffects=centreEffects, plotOptions=plotOptions2,
+                                              int.label=1, count=1, vars=x$varsZc[[1]], 
+                                              label=x$labelsZc[1], is.D=x$is.Dzc[[1]], 
+                                              formula.term=x$formula.termsZc[1], 
+                                              which.Spec=x$which.SpecZc[[1]], assign=x$assignZc,
+                                              knots=x$Zcknots, storeMeanVector=x$storeMeanVectorZc,
+                                              storeIndicator=x$storeIndicatorZc, data=x$data)
+            if ((ask==TRUE) && (length(my_plots)>0)) print(my_plots[[count]])
+            if (count==1)
+                oldpar <- c(oldpar, par(ask=ask))
+            count <- count + 1
+        }
+	}	
+	if (missing(nrow)){
+	    if (CORM==0 && CORS==0 && DEP==0){nrow <- length(x$p)}else{nrow <- ceiling(sqrt(count-1))}
+	}	     	
 	if ((ask==FALSE) && (length(my_plots)>0)) quiet(print(grid.arrange(grobs = my_plots, nrow = nrow)))
 }

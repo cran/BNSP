@@ -46,10 +46,16 @@
 #include "other.functions.h"
 #include "mathm.h"
 #include "SpecOneRL.h"
-#include "bnsp.h"
+//#include "bnsp.h"
 #include "cubature.h"
 #define MAX(x, y) (((x) > (y)) ? (x) : (y)) 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+
+extern int (*p_pcubature)(unsigned, integrand, void *, unsigned, const double *, const double *,
+	                    size_t, double, double, error_norm, double *, double *);
+extern int (*p_hcubature)(unsigned, integrand, void *, unsigned, const double *, const double *,
+	                    size_t, double, double, error_norm, double *, double *);
+
 
 void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                 int *sweeps1, int *burn1, int *thin1, int *ncomp1, 

@@ -24,8 +24,7 @@ void R_init_BNSP(DllInfo *dll)
 {
     R_registerRoutines(dll, CEntries, NULL, NULL, NULL);
     R_useDynamicSymbols(dll, FALSE); 
-    
-	                    
+    	                    
     p_pcubature = (int (*) (unsigned, integrand, void *, unsigned, const double *, const double *,
 	                    size_t, double, double, error_norm, double *, double *)) R_GetCCallable("cubature","pcubature");
     p_hcubature = (int (*) (unsigned, integrand, void *, unsigned, const double *, const double *,

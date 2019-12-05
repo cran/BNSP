@@ -15,7 +15,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
-
+ 
 #define GSL_RANGE_CHECK_OFF
 #define HAVE_INLINE
 #include <R.h>
@@ -38,13 +38,13 @@
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_roots.h>
 #include <gsl/gsl_multiset.h>
-/*
-#include "matalg.h"
-#include "pdfs.h"
-#include "sampling.h" 
-#include "other.functions.h"
-#include "mathm.h"
-*/
+
+//#include "matalg.h"
+//#include "pdfs.h"
+//#include "sampling.h" 
+//#include "other.functions.h"
+//#include "mathm.h"
+
 #include "spec.BCM.h" 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
@@ -341,6 +341,9 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
         ceta = 1;
         cetahat = ceta; //starting value is the current value
         SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
+        //Rprintf("%s %f \n","test SPcal:",SPC);
+        //Rprintf("%s %i %f %i %i %f %f %i %f %f \n","inputs SPcalc",
+        //        n,tol,LG,Ngamma,yTilde[0],X[0],gamma[0],ceta,Q2);
         elPrime = 99.9;
         while(elPrime > 0.000000001 || -elPrime > 0.000000001){
             Sprime = -Q2/pow(cetahat+1,2);
@@ -384,11 +387,13 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
 	        for (block = 0; block < nBlocks; block++){
                 s = gsl_ran_flat(r,1.0,100000);
 	            proposeBlockInd(s,vecGamma[j],vecLG[j],block,blockSize,indexG[j],cmu[j],dmu[j],vecGammaP[j]); 
-	            for (k = 0; k < vecLG[j]; k++)
-	                gammaP[cusumVecLG[j]+k] = vecGammaP[j][k];	            	            
 	            NPJ = 0;
-                for (k = 0; k < vecLG[j]; k++)
-                    NPJ += vecGammaP[j][k];
+	            for (k = 0; k < vecLG[j]; k++){
+	                gammaP[cusumVecLG[j]+k] = vecGammaP[j][k];	            	            
+	                NPJ += vecGammaP[j][k];
+				}
+                //for (k = 0; k < vecLG[j]; k++)
+                //    NPJ += vecGammaP[j][k];
 	            NgammaP = Ngamma - vecNgamma[j] + NPJ; 
 	            SPP = SPcalc(n,1,tol,yTilde,gammaP,NgammaP,LG,ceta,X,LPV,&Q2); 
                 Acp = exp((-SPP+SPC)/(2*sigma2))*pow(ceta+1,0.5*(vecNgamma[j]-NPJ));
@@ -420,7 +425,10 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
         
         //Rprintf("%s %i %i %i %f %f %i \n","before alpha: ",1,n,LG,tol,ceta,Ngamma);	                        
 
+
         postMeanVarEta(n,1,tol,gamma,Ngamma,LG,sigma2,ceta,LPV,X,yTilde,&subMeanEta.vector,&subVarEta.matrix,sw);
+        
+        //print_vector(&subMeanEta.vector);
         
         //puts("var");
         //print_matrix(&subVarEta.matrix);

@@ -86,8 +86,9 @@ mvrm <- function(formula,data=list(),
     LASTDE <- LASTR <- LASTmuR <- LASTsigma2R <- 1   
     if (p>1){
         Res<-NULL
+        Xinit<-X[,-grep("(",colnames(X),fixed=TRUE)]
         for (i in 1:p) 
-            Res<-cbind(Res,residuals(lm(Y[,i] ~ as.matrix(data[,unlist(varsX)]))))		
+            Res<-cbind(Res,residuals(lm(Y[,i] ~ Xinit)))
         CR<-0.9*cov(Res)+0.1*diag(1,p)
         D<-matrix(0,p,p)
         diag(D)<-sqrt(diag(CR))
@@ -286,9 +287,9 @@ mvrm <- function(formula,data=list(),
         as.integer(HNca),as.double(calphaParams),as.double(Rparams),
         as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(H),
         as.double(DPparams), as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),
-        as.double(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
+        as.double(LASTR),as.double((rnorm(n=H,mean=LASTmuR,sd=0.01))),as.double(LASTsigma2R/H),as.double(c(0)),
         as.double(c(0)),as.integer(c(0)),as.double(c(0)),
-        as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))}
+        as.integer(c(LASTsw)),as.double(c(LASTDE)),as.integer(LASTWB))}
     if (mcm==3) {out<-.C("multgv",
         as.integer(seed),as.character(StorageDir),as.integer(WF),
         as.integer(sweeps),as.integer(burn),as.integer(thin),
@@ -302,9 +303,9 @@ mvrm <- function(formula,data=list(),
         as.integer(HNca),as.double(calphaParams),as.double(Rparams),
         as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(G),
         as.double(DPparams),as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),
-        as.double(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
+        as.double(LASTR),as.double((rnorm(n=H,mean=LASTmuR,sd=0.01))),as.double(LASTsigma2R/H),as.double(c(0)),
         as.double(c(0)),as.integer(c(0)),as.double(c(0)),
-        as.integer(c(LASTsw)),as.double(c(0)),as.integer(LASTWB))}
+        as.integer(c(LASTsw)),as.double(c(LASTDE)),as.integer(LASTWB))}
     #Output
     if (mcm<4){
         loc1<-25
@@ -736,7 +737,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
             if (p == 1) names1<-"sigma2"
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,dimnames=list(c(),names1)))
 	}
-	if (any(mtch==8) && p > 1){
+	if (any(mtch==8) && p > 1 && mvrmObj$LUT==1){
 		names <- paste("muR of cluster",seq(1,mvrmObj$H),sep=" ")
 		if (mvrmObj$H==1) names <- "muR"
 	    file <- paste(mvrmObj$DIR,"BNSP.muR.txt",sep="")
@@ -751,8 +752,8 @@ mvrm2mcmc <- function(mvrmObj,labels){
 	cor.names <- paste(rep(seq(1,p),each=p),rep(seq(1,p),p),sep="")
     if (any(mtch==10) && p > 1){
         file <- paste(mvrmObj$DIR,"BNSP.R.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*p,
-                 dimnames=list(c(),paste("cor",cor.names,sep=".")))[,subset,drop=FALSE])
+        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LUT*p*p,
+                 dimnames=list(c(),paste("cor",rep(cor.names,mvrmObj$LUT),sep=".")))[,subset,drop=FALSE])
     }
 	if (any(mtch==11)){
 	    file <- paste(mvrmObj$DIR,"BNSP.compAlloc.txt",sep="")
@@ -836,21 +837,21 @@ mvrm2mcmc <- function(mvrmObj,labels){
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LDc,dimnames=list(c(),names1)))
 		}
     }
-    if (any(mtch==23)){
+    if (any(mtch==23) && p > 1){
         file <- paste(mvrmObj$DIR,"BNSP.comega.txt",sep="")
         if (file.exists(file)){ 
             names1<-"c_omega"
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=1,dimnames=list(c(),names1)))
 		}
     }
-    if (any(mtch==24)){
+    if (any(mtch==24) && p > 1){
         file <- paste(mvrmObj$DIR,"BNSP.eta.txt",sep="")
         if (file.exists(file)){ 
             names1<-paste("eta",colnames(mvrmObj$Xc),sep=".")
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LGc+1,dimnames=list(c(),names1)))
 		}
     }
-    if (any(mtch==25)){
+    if (any(mtch==25) && p > 1){
        file <- paste(mvrmObj$DIR,"BNSP.ceta.txt",sep="")
        if (file.exists(file)) 
            R<-cbind(R,matrix(unlist(read.table(file)),ncol=1,dimnames=list(c(),c("c_eta"))))
@@ -1075,23 +1076,30 @@ summary.mvrm <- function(object, nModels = 5, digits = 5, printTuning = FALSE, .
     if (printTuning){
 		cat("\nTuning parameters: start and end values\n\n")
 	    dm<-c("start","end")
-	    names(object$tuneSigma2R)<-dm
 	    names(object$tuneCb)<-dm
-	    names(object$tuneR)<-dm
-	    ind.f3<-lapply(seq(1:object$p),function(x)seq(x,2*object$p,by=object$p))
-	    sigma2<-lapply(ind.f3,function(x){object$tuneSigma2[x]})
-	    for (k in 1:object$p) names(sigma2[[k]])<-dm
-	    c.alpha<-lapply(ind.f3,function(x){object$tuneCa[x]})
-	    for (k in 1:object$p) names(c.alpha[[k]])<-dm
+	    sigma2<-c(t(matrix(object$tuneSigma2,ncol=2)))
+	    names(sigma2)<-rep(dm,object$p)	    
+	    names(object$tuneSigma2R)<-dm	    
+	    R<-c(t(matrix(object$tuneR,ncol=2)))
+	    names(R)<-rep(dm,object$LUT)	    
+	    #rearrange<-lapply(seq(1:object$p),function(x)seq(x,2*object$p,by=object$p))
+	    #sigma2<-lapply(rearrange,function(x){object$tuneSigma2[x]})
+	    #for (k in 1:object$p) names(sigma2[[k]])<-dm	    	    	    
+	    #c.alpha<-lapply(rearrange,function(x){object$tuneCa[x]})
+	    #for (k in 1:object$p) names(c.alpha[[k]])<-dm
+	    c.alpha<-c(t(matrix(object$tuneCa,ncol=2)))
+	    names(c.alpha)<-rep(dm,object$p)	    
 	    if (object$ND > 0){
 	        tot<-object$p*object$ND
-	        ind.h<-lapply(seq(1:tot),function(x)seq(x,2*tot,by=tot))
-	        tuneAlpha<-lapply(ind.h,function(x){object$tuneAlpha[x]})
-	        for (k in 1:tot) names(tuneAlpha[[k]])<-dm
+	        #rearrange<-lapply(seq(1:tot),function(x)seq(x,2*tot,by=tot))
+	        #tuneAlpha<-lapply(rearrange,function(x){object$tuneAlpha[x]})
+	        #for (k in 1:tot) names(tuneAlpha[[k]])<-dm
+	        tuneAlpha<-c(t(matrix(object$tuneAlpha,ncol=2)))
+	        names(tuneAlpha)<-rep(dm,tot)
 	    }
-	    pT1<-list(c.beta = object$tuneCb, sigma2 = sigma2)
+	    pT1<-list(c.beta=object$tuneCb,sigma2=sigma2)
 	    if (object$ND > 0) {pT2<-list(Alpha=tuneAlpha, c.alpha = c.alpha); pT1<-c(pT1,pT2)}
-	    if (object$p > 1) {pT2<-list(sigma2R = object$tuneSigma2R, R = object$tuneR); pT1<-c(pT1,pT2)}
+	    if (object$p > 1) {pT2<-list(sigma2R = object$tuneSigma2R, R =  R); pT1<-c(pT1,pT2)}
 	    print(pT1)
 	}
 }

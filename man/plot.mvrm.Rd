@@ -8,7 +8,7 @@ This function plots estimated terms that appear in the mean and variance models.
 }
 
 \usage{
-\method{plot}{mvrm}(x,model,term,response,intercept=TRUE,grid=30,centre=mean,
+\method{plot}{mvrm}(x,model,term,response,response2,intercept=TRUE,grid=30,centre=mean,
 quantiles=c(0.1, 0.9),contour=TRUE,static=TRUE,centreEffects=FALSE,plotOptions=list(), 
 nrow,ask=FALSE, ...)
 }
@@ -18,6 +18,7 @@ nrow,ask=FALSE, ...)
 \item{model}{one of "mean", "stdev", or "both", specifying which model to be visualized.}
 \item{term}{the term in the selected model to be plotted.}
 \item{response}{integer number denoting the response variable to be plotted (in case there is more than one).}
+\item{response2}{only relevant for multivariate longitudinal data.}
 \item{intercept}{specifies if an intercept should be included in the calculations.}
 \item{grid}{the length of the grid on which the term will be evaluated.}
 \item{centre}{a description of how the centre of the posterior should be measured. Usually \code{mean} or \code{median}.}

@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */ 
+ */  
 
 #define GSL_RANGE_CHECK_OFF
 #define HAVE_INLINE
@@ -38,14 +38,14 @@
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_roots.h>
 #include <gsl/gsl_multiset.h>
-/*
-#include "matalg.h"
-#include "pdfs.h"
-#include "sampling.h"
-#include "other.functions.h"
-#include "mathm.h" 
-#include "spec.BCM.h"
-*/
+
+//#include "matalg.h"
+//#include "pdfs.h"
+//#include "sampling.h"
+//#include "other.functions.h"
+//#include "mathm.h" 
+//#include "spec.BCM.h"
+
 extern void   computeStStar(double *Y, int *time, int N, int t, int p, gsl_matrix *StStar); 
 extern void   ginv(int p, double tol, gsl_matrix *A);
 extern double FisherTr(double r, int I);
@@ -298,7 +298,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
     gsl_matrix *RtC = gsl_matrix_alloc(p,p);
     gsl_matrix *RtCinv = gsl_matrix_alloc(p,p);
     gsl_matrix *EtP = gsl_matrix_alloc(p,p);
-    gsl_matrix *DtP = gsl_matrix_alloc(p,p);
+    gsl_matrix *DtP = gsl_matrix_calloc(p,p);
     gsl_matrix *RtP = gsl_matrix_alloc(p,p);
     gsl_matrix *RtPinv = gsl_matrix_alloc(p,p);
     gsl_matrix *A = gsl_matrix_alloc(d,d);
@@ -412,7 +412,7 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
     computeStStar(Ytilde,time,m*p,0,p,St); 
     
     // - 5 - R related         
-    if (cont[0]==1){
+    //if (cont[0]==1){
         for (i = 0; i < p; i++){
 		    for (j = 0; j < p; j++){
                 gsl_matrix_set(RtC,i,j,LASTR[j+i*p]);
@@ -420,24 +420,24 @@ void  multg(int *seed1, char **WorkingDir, int *WF1,
                 gsl_matrix_set(EtC,i,j,LASTDE[p*p+j+i*p]);
 			}
 		}
-	}else{
-		gsl_matrix_set_identity(RtC);
-        gsl_matrix_set_identity(DtC);
-        gsl_matrix_set_identity(EtC);	
-	}
+	//}else{
+	//	gsl_matrix_set_identity(RtC);
+    //    gsl_matrix_set_identity(DtC);
+    //    gsl_matrix_set_identity(EtC);	
+	//}
         
     gsl_matrix_memcpy(RtCinv,RtC);
     ginv(p,tol,RtCinv);
 
-    if (cont[0]==0){
-        for (j = 0; j < H; j++) 
-            muR[j] = 0.0; 
-        sigma2R = 1.0; 
-    }else{
+    //if (cont[0]==0){
+    //    for (j = 0; j < H; j++) 
+    //        muR[j] = 0.0; 
+    //    sigma2R = 1.0; 
+    //}else{
         for (j = 0; j < H; j++) 
             muR[j] = LASTmuR[0]; 
         sigma2R = LASTsigma2R[0]; 
-    }
+    //}
     
     move = 0;
     for (k = 0; k < (p-1); k++)

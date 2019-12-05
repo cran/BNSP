@@ -19,7 +19,8 @@
 //Matrix generalized inverse function with arguments (dimension, tolerance, Matrix). After this function has been called
 //matrix A becomes its inverse
 void ginv(int p, double tol, gsl_matrix *A){
-    int i; double temp;
+    int i; 
+    double temp, max;
     gsl_matrix *D = gsl_matrix_calloc(p,p);
     gsl_matrix *M = gsl_matrix_alloc(p,p);
     gsl_matrix *N = gsl_matrix_alloc(p,p);
@@ -27,9 +28,11 @@ void ginv(int p, double tol, gsl_matrix *A){
     gsl_matrix *evec = gsl_matrix_alloc(p,p);
     gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc(p);
     gsl_eigen_symmv(A,eval,evec,w);
-    for (i=0; i < p; i++){ //D = diag{1/eigen for eigen > tol and 0 otherwise}
-        temp = gsl_vector_get(eval,i);
-	    if (temp > tol) gsl_matrix_set(D,i,i,1/temp);else{gsl_matrix_set(D,i,i,0.0);}
+    gsl_eigen_symmv_sort(eval,evec,GSL_EIGEN_SORT_VAL_DESC);
+    max = gsl_vector_get(eval,0);
+    for (i=0; i < p; i++){ 
+        temp = gsl_vector_get(eval,i);        
+	    if (temp > tol * max) gsl_matrix_set(D,i,i,1/temp);else{gsl_matrix_set(D,i,i,0.0);}
     }
     gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,evec,D,0.0,M);  //D1 = V D
     gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,M,evec,0.0,N); //D2 = D1 A = ginv(A)
@@ -41,7 +44,8 @@ void ginv(int p, double tol, gsl_matrix *A){
 //Matrix generalized inverse function with arguments (dimension, tolerance, Matrix). After this function has 
 //been called matrix A becomes its inverse and det it's determinant
 void ginv2(int p, double tol, gsl_matrix *A, double *det){
-    int i; double temp;
+    int i; 
+    double temp, max;
     gsl_matrix *D = gsl_matrix_calloc(p,p);
     gsl_matrix *M = gsl_matrix_alloc(p,p);
     gsl_matrix *N = gsl_matrix_alloc(p,p);
@@ -49,11 +53,13 @@ void ginv2(int p, double tol, gsl_matrix *A, double *det){
     gsl_matrix *evec = gsl_matrix_alloc(p,p);
     gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc(p);
     gsl_eigen_symmv(A,eval,evec,w);
+    gsl_eigen_symmv_sort(eval,evec,GSL_EIGEN_SORT_VAL_DESC);
+    max = gsl_vector_get(eval,0);
     *det = 1.0;
     for (i=0; i < p; i++){ //D = diag{1/eigen for eigen > tol and 0 otherwise}
         temp = gsl_vector_get(eval,i);
         *det *= temp;
-	    if (temp > tol) gsl_matrix_set(D,i,i,1/temp);else{gsl_matrix_set(D,i,i,0.0);}
+	    if (temp > tol * max) gsl_matrix_set(D,i,i,1/temp);else{gsl_matrix_set(D,i,i,0.0);}
     }
     gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,evec,D,0.0,M);  //D1 = V D
     gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,M,evec,0.0,N); //D2 = D1 A = ginv(A)
@@ -81,7 +87,8 @@ void Inverse(int dim, gsl_matrix *A){
 //Matrix inverse root function with arguments (dimension, tolerance, Matrix). After this function has been called
 //matrix A becomes A^{-1/2}
 void gHalfInv(int p, double tol, gsl_matrix *A){
-    int i; double temp;
+    int i; 
+    double temp, max;
     gsl_matrix *D = gsl_matrix_calloc(p,p);
     gsl_matrix *M = gsl_matrix_alloc(p,p);
     gsl_matrix *N = gsl_matrix_alloc(p,p);
@@ -89,9 +96,11 @@ void gHalfInv(int p, double tol, gsl_matrix *A){
     gsl_matrix *evec = gsl_matrix_alloc(p,p);
     gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc(p);
     gsl_eigen_symmv(A,eval,evec,w);
+    gsl_eigen_symmv_sort(eval,evec,GSL_EIGEN_SORT_VAL_DESC);
+    max = gsl_vector_get(eval,0);
     for (i=0; i < p; i++){ //D = diag{1/eigen for eigen > tol and 0 otherwise}
         temp = gsl_vector_get(eval,i);
-	    if (temp > tol) gsl_matrix_set(D,i,i,1/sqrt(temp));else{gsl_matrix_set(D,i,i,0.0);}
+	    if (temp > tol * max) gsl_matrix_set(D,i,i,1/sqrt(temp));else{gsl_matrix_set(D,i,i,0.0);}
     }
     gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,evec,D,0.0,M);  //D1 = V D
     gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,M,evec,0.0,N); //D2 = D1 A = A^{-0.5}
@@ -103,7 +112,8 @@ void gHalfInv(int p, double tol, gsl_matrix *A){
 //Matrix root function with arguments (dimension, tolerance, Matrix). After this function has been called
 //matrix A becomes A^{1/2}
 void matHalf(int p, double tol, gsl_matrix *A){
-    int i; double temp;
+    int i; 
+    double temp, max;
     gsl_matrix *D = gsl_matrix_calloc(p,p);
     gsl_matrix *M = gsl_matrix_alloc(p,p);
     gsl_matrix *N = gsl_matrix_alloc(p,p);
@@ -111,9 +121,11 @@ void matHalf(int p, double tol, gsl_matrix *A){
     gsl_matrix *evec = gsl_matrix_alloc(p,p);
     gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc(p);
     gsl_eigen_symmv(A,eval,evec,w);
+    gsl_eigen_symmv_sort(eval,evec,GSL_EIGEN_SORT_VAL_DESC);
+    max = gsl_vector_get(eval,0);
     for (i=0; i < p; i++){ //D = diag{sqrt(eigen) for eigen > tol and 0 otherwise}
         temp = gsl_vector_get(eval,i);
-	    if (temp > tol) gsl_matrix_set(D,i,i,sqrt(temp));else{gsl_matrix_set(D,i,i,0.0);}
+	    if (temp > tol * max) gsl_matrix_set(D,i,i,sqrt(temp));else{gsl_matrix_set(D,i,i,0.0);}
     }
     gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,evec,D,0.0,M);  //D1 = V D
     gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,M,evec,0.0,N); //D2 = D1 A = ginv(A)

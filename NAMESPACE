@@ -19,3 +19,4 @@ S3method(summary,mvrm)
 
 export(plotCorr,histCorr,continue,clustering)
 
+export(chol)

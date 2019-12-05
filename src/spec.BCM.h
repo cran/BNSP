@@ -7,7 +7,7 @@ extern double logMVNormalpdf(int dim, gsl_vector *x, gsl_vector *mu, gsl_matrix 
 //Creates the base for matrix Z Bar Start _Gamma. Inputes: 1. number of time points, 2. dimension,
 //3. vec gamma, 4. All bases, 5. output of function - only vizible bases.
 void setBaseZBSg(int T, int d, int *gamma, int LG, double *AllBases, double *BaseZBSg){
-    int i, j, move;
+    int i, j, move; 
     move = 0;
     for (i = 0; i < (T*d); i++){
         for (j = 0; j < (LG+1); j++){
@@ -705,7 +705,7 @@ void setBaseXg(int p, int m, int LG, int Ngamma, double *X, int gamma[p][LG], do
 	}
 }
 
-//Compute vector of squared residuals
+//Compute vector of squared residuals 
 void cSqRes2(int p, int m, int LG, int gamma[p][LG], int Ngamma, double *X, gsl_vector *MeanEta, double *Y, double *sqRes){
     int i;
     double BaseXg[m*p*(Ngamma+p)];    
@@ -713,11 +713,12 @@ void cSqRes2(int p, int m, int LG, int gamma[p][LG], int Ngamma, double *X, gsl_
     gsl_vector *yHat = gsl_vector_alloc(p*m);
     gsl_matrix_view Z;
     setBaseXg(p,m,LG,Ngamma,X,gamma,BaseXg);
-	Z = gsl_matrix_view_array(BaseXg,m*p,Ngamma+p);
-	
+	Z = gsl_matrix_view_array(BaseXg,m*p,Ngamma+p);	
 	//for (i = 0; i < (Ngamma+p); i++)
-      //  Rprintf("%s %f \n",gsl_matrix_get(&Z.matrix,,)); 	
-	
+        //Rprintf("%s %f %f \n", "Z:", gsl_matrix_get(&Z.matrix,i,0), gsl_matrix_get(&Z.matrix,i,1)); 	
+	//puts("A");
+	//print_vector(MeanEta);
+	//puts("B");
     gsl_blas_dgemv(CblasNoTrans,1.0,&Z.matrix,MeanEta,0.0,yHat);
     for (i = 0; i < (p*m); i++){
         sqRes[i] = pow(Y[i] - yHat->data[i*yHat->stride],2);
@@ -760,10 +761,11 @@ void DeltaAlphaHatExp(int m, int p, int l, double tol, double LPV[m][p], double 
 
 // LONG
 
-//sets Si^{-1/2} Li (ni*p x ni*p). Inputs: # of independent sampling units, dim of response, individual, 
-//# of observational times, total number of obs, estimated varianes, dimLPC = p*p*niMax*(niMax-1)/2, LPC, matrix to be set
+//sets Si^{-1/2} Li and Li (ni*p x ni*p). Inputs: # of independent sampling units, dim of response, individual, 
+//# of observational times, cusumniVec, total number of obs, estimated varianes, dimLPC = p*p*niMax*(niMax-1)/2, 
+//LPC, matrix to be set, binary choice for Li or S^(-1/2) Li
 void setSLi(int m, int p, int i, int ni, int cusumniVec, int N, double sigma2ij[N][p], 
-            int dimLPC, double LPC[m][dimLPC][p][p], gsl_matrix *Li){     
+            int dimLPC, double LPC[m][dimLPC][p][p], gsl_matrix *Li, int SL){     
     int k, r, c, multR, multC, count, multRold, row, col, t, j;
     gsl_matrix_set_identity(Li);   
     int upTo = ni*(ni-1)/2;	
@@ -781,14 +783,16 @@ void setSLi(int m, int p, int i, int ni, int cusumniVec, int N, double sigma2ij[
                 Li->data[row * Li->tda + col] = -LPC[i][k][r][c];        
 			}
 		}
-	}	   	
-	double base[ni*p];
-	for (t = 0; t < ni; t++)
-	    for (j = 0; j < p; j++)
-	        base[t*p+j] = 1/sqrt(sigma2ij[cusumniVec+t][j]);
-	for (row = 0; row < (p*ni); row++)		
-		for (col = 0; col < (p*ni); col++)                        
-            Li->data[row * Li->tda + col] *= base[row];
+	}
+	if (SL==1){	   	
+	    double base[ni*p];
+	    for (t = 0; t < ni; t++)
+	        for (j = 0; j < p; j++)
+	            base[t*p+j] = 1/sqrt(sigma2ij[cusumniVec+t][j]);
+	    for (row = 0; row < (p*ni); row++)		
+		    for (col = 0; col < (p*ni); col++)                        
+                Li->data[row * Li->tda + col] *= base[row];
+	}
 }
 
 //Sets up X_{i,gamma}^* for long data. Inputs are: 1. dim of y-vec, 2. # of obs on i, 3. cusum ni vec,
@@ -828,40 +832,48 @@ double ScalcMultLong(int m, int p, double tol, int LG, int Ngamma,
     gsl_vector_view YiVec, Yc, Yij;
     for (i = 0; i < m; i++){	    	    
 	    Li = gsl_matrix_submatrix(L,0,0,p*niVec[i],p*niVec[i]);	    
-        setSLi(m,p,i,niVec[i],cusumniVec[i],N,sigma2ij,dimLPC,LPC,&Li.matrix);
+        setSLi(m,p,i,niVec[i],cusumniVec[i],N,sigma2ij,dimLPC,LPC,&Li.matrix,1);
+        //if (i==0) {Rprintf("%s %i \n","here:",niVec[i]);print_matrix(&Li.matrix);}
 	    setXgammaiStar(p,niVec[i],cusumniVec[i],LG,Ngamma,X,gamma,base);	    	    	    
 	    Xgis = gsl_matrix_view_array(base,p*niVec[i],Ngamma+p);	    	                       
+	    //if (i==0) print_matrix(&Xgis.matrix);
 	    Xc = gsl_matrix_submatrix(Xd,0,0,p*niVec[i],Ngamma+p);
-	    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,&Li.matrix,&Xgis.matrix,0.0,&Xc.matrix);	    	    
+	    gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,&Li.matrix,&Xgis.matrix,0.0,&Xc.matrix);    
 	    for (k = 0; k < p*niVec[i]; k++)        
             Yi[k] = Y[cusumniVec[i]*p+k];    	    	    
     	YiVec = gsl_vector_view_array(Yi,p*niVec[i]);		
 	    Yc = gsl_vector_subvector(Yd,0,p*niVec[i]);
 	    gsl_blas_dgemv(CblasNoTrans,1.0,&Li.matrix,&YiVec.vector,0.0,&Yc.vector);	    	    
 	    //Rprintf("%s %i \n", "Li", i);
-	    //print_vector(&Yc.vector);
+	    //if (i==0) print_vector(&Yc.vector);
 	    //print_matrix(&Li.matrix);
 	    //print_matrix(&Xc.matrix);
 	    for (j = 0; j < niVec[i]; j++){	        	    	    		    
+			//if (i==0 && j==0) Rprintf("%i %i \n",Ngamma,p);
 		    Xij = gsl_matrix_submatrix(&Xc.matrix,p*j,0,p,Ngamma+p);		    
+		    //if (i==0 && j==0) print_matrix(&Xij.matrix);
 		    Yij = gsl_vector_subvector(&Yc.vector,j*p,p);		    
 		    Ri = gsl_matrix_submatrix(RiAll,0,p*intime[cusumniVec[i]+j],p,p);            
-            gsl_blas_dgemm(CblasTrans,CblasNoTrans,1.0,&Xij.matrix,&Ri.matrix,0.0,XRi);            
+            gsl_blas_dgemm(CblasTrans,CblasNoTrans,1.0,&Xij.matrix,&Ri.matrix,0.0,XRi);                        
             gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,XRi,&Xij.matrix,1.0,XRiX);
+            //if (gsl_isnan(gsl_matrix_get(XRiX,0,0))) Rprintf("%i %i \n",i,j);
             gsl_blas_dgemv(CblasNoTrans,1.0,XRi,&Yij.vector,1.0,XRiY);            
             gsl_blas_dgemv(CblasNoTrans,1.0,&Ri.matrix,&Yij.vector,0.0,RY);
             gsl_blas_ddot(RY,&Yij.vector,&yRy);
             trace += yRy;            
-            //Rprintf("%s %i %i %i %i %f %f \n","i,j,cusumniVec,intime,yRy & trace:",i,j,cusumniVec[i],intime[cusumniVec[i]+j],yRy,trace);             
+            //Rprintf("%s %i %i %i %i %f %f \n","i,j,cusumniVec,intime,yRy & trace:",i,j,cusumniVec[i],intime[cusumniVec[i]+j],yRy,trace);
+            //if (j==10) print_vector(XRiY);             
 	    }	
 	}
-//print_matrix(XRiX);
 	ginv(Ngamma+p,tol,XRiX);		        
 	gsl_blas_dgemv(CblasTrans,1.0,XRiX,XRiY,0.0,AB);	
 	gsl_blas_ddot(XRiY,AB,qf2);
-//Rprintf("%s %f %f \n", "ceta & qf2", ceta, qf2[0]);
+    //Rprintf("%s %f %f %f \n", "ceta & qf2 & yRy", ceta, qf2[0], trace);
+	//print_matrix(XRiX);
+	//print_vector(XRiY);
 	S = -(ceta/(1+ceta))*(*qf2);    	          
     S += trace;		        
+    //if (gsl_isnan(gsl_matrix_get(XRiX,0,0))) Rprintf("%s %f %f %f %f \n", "S: ", ceta, qf2[0], gsl_matrix_get(XRiX,0,0), S);    
     gsl_matrix_free(L); gsl_matrix_free(XRi); gsl_matrix_free(XRiX); gsl_matrix_free(Xd); 
     gsl_vector_free(XRiY); gsl_vector_free(RY); gsl_vector_free(AB); gsl_vector_free(Yd);                      
     return(S);
@@ -886,7 +898,7 @@ void postMeanVarEtaLong(int m, int p, double tol, int LG, int Ngamma,
     gsl_vector_view YiVec, Yc, Yij;    
     for (i = 0; i < m; i++){	    	    
 	    Li = gsl_matrix_submatrix(L,0,0,p*niVec[i],p*niVec[i]);	    
-	    setSLi(m,p,i,niVec[i],cusumniVec[i],N,sigma2ij,dimLPC,LPC,&Li.matrix);
+	    setSLi(m,p,i,niVec[i],cusumniVec[i],N,sigma2ij,dimLPC,LPC,&Li.matrix,1);
 	    setXgammaiStar(p,niVec[i],cusumniVec[i],LG,Ngamma,X,gamma,base);	    	    	    
 	    Xgis = gsl_matrix_view_array(base,p*niVec[i],Ngamma+p);	    	    	                       
 	    Xc = gsl_matrix_submatrix(Xd,0,0,p*niVec[i],Ngamma+p);
@@ -995,18 +1007,29 @@ void postMeanVarPSI(int m, int p, double tol, int *niVec,  int *cusumniVec, int 
             setVij(i,j,p,m,LK,NKsi,rsd,ksi,cusumniVec,cusumC,C,N,sigma2ij,base);                                
             Vij = gsl_matrix_view_array(base,p,NKsi);            
             
-            //Rprintf("%s %i %i \n", "Vij: ", i, j);            
-            //print_matrix(&Vij.matrix);
+            //if (i==0){
+            //    Rprintf("%s %i %i \n", "Vij: ", i, j);            
+            //    print_matrix(&Vij.matrix);
+		    //}
             
             for (k = 0; k < p; k++)         
                 Resij[k] = rsd[cusumniVec[i]*p+j*p+k]/sqrt(sigma2ij[cusumniVec[i]+j][k]);                    	    	  
     	    ResijVec = gsl_vector_view_array(Resij,p);                                    
             Ri = gsl_matrix_submatrix(RiAll,0,p*intime[cusumniVec[i]+j],p,p);           
+            
+            //print_matrix(&Ri.matrix);
+            
             gsl_blas_dgemm(CblasTrans,CblasNoTrans,1.0,&Vij.matrix,&Ri.matrix,0.0,VRi);            
             gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,VRi,&Vij.matrix,1.0,VRiV);                        
             gsl_blas_dgemv(CblasNoTrans,1.0,VRi,&ResijVec.vector,1.0,VRires);
 		}
-	}  	         
+		
+		//if (i==0){
+        //        Rprintf("%s %i %i \n", "Vij: ", i, j);            
+        //        print_matrix(&Vij.matrix);
+		//    }
+		
+	}  	     	
 	move = 0;          	       	
     for (i = 0; i < p; i++)
         for (j = 0; j < p; j++)
@@ -1014,18 +1037,17 @@ void postMeanVarPSI(int m, int p, double tol, int *niVec,  int *cusumniVec, int 
                 if (ksi[i][j][k]==1){ 
                     Dpsi->data[move * Dpsi->tda + move] = 1 / cpsi[i*p+j];
                     move++;          
-				}  
-   // print_matrix(Dpsi);
+				}    
     gsl_matrix_add(VRiV,Dpsi);
    	ginv(NKsi,tol,VRiV);	        
     gsl_matrix_memcpy(Var,VRiV);    
-    gsl_blas_dgemv(CblasNoTrans,1.0,Var,VRires,0.0,Mean);           
+    gsl_blas_dgemv(CblasNoTrans,1.0,Var,VRires,0.0,Mean);              
     gsl_matrix_free(VRi); gsl_matrix_free(VRiV); gsl_vector_free(VRires); gsl_matrix_free(Dpsi);
 }
 
 void cResCheck(int p, int m, int N, int niMax, int *niVec, int *cusumniVec, 
                double sigma2ij[N][p], int dimLPC, double LPC[m][dimLPC][p][p],
-               double *ResC, double *ResCheck){
+               double *ResC, double *ResCheck, int SL){
     int i, k;
     double Resi[niMax*p];
     gsl_matrix *L = gsl_matrix_alloc(p*niMax,p*niMax);
@@ -1034,7 +1056,7 @@ void cResCheck(int p, int m, int N, int niMax, int *niVec, int *cusumniVec,
 	ResiCheck1 = gsl_vector_view_array(ResCheck,N*p);
 	for (i = 0; i < m; i++){	    	    
         Li = gsl_matrix_submatrix(L,0,0,p*niVec[i],p*niVec[i]);	    
-        setSLi(m,p,i,niVec[i],cusumniVec[i],N,sigma2ij,dimLPC,LPC,&Li.matrix);	            	    	    
+        setSLi(m,p,i,niVec[i],cusumniVec[i],N,sigma2ij,dimLPC,LPC,&Li.matrix,SL);	            	    	    
 	    for (k = 0; k < p*niVec[i]; k++)        
             Resi[k] = ResC[cusumniVec[i]*p+k];    	    	    
     	ResiVec = gsl_vector_view_array(Resi,p*niVec[i]);			            	    

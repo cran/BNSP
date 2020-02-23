@@ -9,12 +9,12 @@ utilizes spike-slab priors for variable selection and regularization. See `Detai
 of the model.}
 
 \usage{
-mvrm(formula,data=list(),sweeps,burn=0,thin=1,seed,StorageDir,
-c.betaPrior="IG(0.5,0.5*n*p)", pi.muPrior="Beta(1,1)", c.alphaPrior="IG(1.1,1.1)",
-sigmaPrior="HN(2)", pi.sigmaPrior="Beta(1,1)", mu.RPrior="N(0,1)",
-sigma.RPrior="HN(1)",corr.Model=c("common",nClust=1),DP.concPrior="Gamma(5,2)",
-tuneAlpha,tuneSigma2,tuneCb,tuneCa,tuneR,tuneSigma2R,tau,FT=1,...)
-}
+mvrm(formula, data = list(), sweeps, burn = 0, thin = 1, seed, StorageDir,
+c.betaPrior = "IG(0.5, 0.5 * n * p)", pi.muPrior = "Beta(1, 1)", 
+c.alphaPrior = "IG(1.1, 1.1)", sigmaPrior = "HN(2)", pi.sigmaPrior = "Beta(1, 1)",
+mu.RPrior = "N(0, 1)", sigma.RPrior = "HN(1)", corr.Model = c("common", nClust = 1),
+DP.concPrior = "Gamma(5, 2)", tuneAlpha, tuneSigma2, tuneCb, tuneCa, tuneR, 
+tuneSigma2R, tau, FT = 1, ...) }
 
 \arguments{
 \item{formula}{a formula defining the responses and the covariates in the mean and variance models e.g. \code{y1 | y2 ~ x | z} or

@@ -1,12 +1,13 @@
 useDynLib(BNSP,.registration = TRUE)
 
-import(stats,ggplot2,plot3D,threejs,coda,cubature,Formula,plyr,mgcv,corrplot)
+import(stats,ggplot2,plot3D,threejs,coda,cubature,Formula,plyr,mgcv,corrplot,label.switching)
 
 importFrom("grDevices", "rainbow")
 importFrom("graphics", "par")
 importFrom("graphics", "plot")
 importFrom("utils", "read.table")
 importFrom("gridExtra", "grid.arrange")
+importFrom("utils", "write.table")
 
 export(dpmj)
 S3method(print,bnp)

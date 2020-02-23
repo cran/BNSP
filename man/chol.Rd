@@ -1,23 +1,23 @@
 \name{chol}
 \alias{chol}
 
-\title{The Choleski and modified Choleski decompositions}
+\title{The Cholesky and modified Cholesky decompositions}
 
 \description{
-Computes the Choleski factorization and modified Cholesky factorizations of a real symmetric positive-definite square matrix.
+Computes the Cholesky factorization and modified Cholesky factorizations of a real symmetric positive-definite square matrix.
 }
 
 \usage{chol(x, mod = TRUE, p = 1, ...)}
 
 \arguments{
 \item{x}{A symmetric, positive-definite matrix.}
-\item{mod}{Defaults to TRUE. With this choice, the function returns the modified Choleski decomposition. When mod = FALSE, the function returns the usual Choleski
+\item{mod}{Defaults to TRUE. With this choice, the function returns the modified Cholesky decomposition. When mod = FALSE, the function returns the usual Cholesky
            decomposition.}
 \item{p}{Relevant only when \code{mod = TRUE}. It determines the size of the blocks of the block diagonal matrix.}
 \item{...}{other arguments.}
 }
 
-\details{The function computes the modified Choleski decomposition of a real symmetric positive-definite square matrix \eqn{\Sigma}. This is given by
+\details{The function computes the modified Cholesky decomposition of a real symmetric positive-definite square matrix \eqn{\Sigma}. This is given by
          \deqn{L \Sigma L^{\top} = D,}
          where \eqn{L} is a lower tringular matrix with ones on its main diagonal and D is a block diagonal matrix with block size determined by argument \code{p}.}
 

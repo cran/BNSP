@@ -6,7 +6,7 @@
 \description{Function used to define smooth effects in the mean and variance formulae of function \code{mvrm}. 
 The function is used internally to construct the design matrices.}
 
-\usage{sm(...,k=10,knots=NULL,bs="rd")}
+\usage{sm(..., k = 10, knots = NULL, bs = "rd")}
 
 \arguments{
 \item{...}{one or two covariates that the smooth term is a function of. If two covariates are used, 

@@ -552,7 +552,8 @@ void computeStStar(double *Y, int *time, int N, int t, int p, gsl_matrix *StStar
         if (c == p){
 		    c=0;
 		    YitVec = gsl_matrix_view_array(Yit,p,1);
-            gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,&YitVec.matrix,&YitVec.matrix,1.0,StStar);      
+            gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,&YitVec.matrix,&YitVec.matrix,1.0,StStar); 
+            //gsl_blas_dger(double alpha, const gsl_vector * x, const gsl_vector * y, gsl_matrix * A) UPDATE and use this function     
 		}         
     }    
 }

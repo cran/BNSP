@@ -1,9 +1,9 @@
 # mvrm, continue, mvrm2mcmc, plotCorr, histCorr, predict.mvrm, print.mvrm, summary.mvrm, clustering
 mvrm <- function(formula,data=list(),
                  sweeps,burn=0,thin=1,seed,StorageDir,
-                 c.betaPrior="IG(0.5,0.5*n*p)", pi.muPrior="Beta(1,1)", c.alphaPrior="IG(1.1,1.1)",
-                 sigmaPrior="HN(2)", pi.sigmaPrior="Beta(1,1)", mu.RPrior="N(0,1)",
-                 sigma.RPrior="HN(1)",corr.Model=c("common",nClust=1),DP.concPrior="Gamma(5,2)",
+                 c.betaPrior="IG(0.5, 0.5 * n * p)", pi.muPrior="Beta(1, 1)", c.alphaPrior="IG(1.1, 1.1)",
+                 sigmaPrior="HN(2)", pi.sigmaPrior="Beta(1, 1)", mu.RPrior="N(0, 1)",
+                 sigma.RPrior="HN(1)",corr.Model=c("common",nClust=1),DP.concPrior="Gamma(5, 2)",
                  tuneAlpha,tuneSigma2,tuneCb,tuneCa,tuneR,tuneSigma2R,tau,FT=1,...){
     #Samples etc
     if (thin <= 0) thin <- 1
@@ -356,9 +356,7 @@ mvrm <- function(formula,data=list(),
                 nullDeviance=nullDeviance,                            
                 DIR=StorageDir,
                 out=out,
-                LUT=1,
-                LGc=0,
-                LDc=0)               
+                LUT=1, SUT=1, LGc=0, LDc=0, NGc=0, NDc=0, NK=0)               
     class(fit) <- 'mvrm'
     return(fit)
 }
@@ -679,7 +677,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
     labels2 <- c("muR","sigma2R","R")
     labels3 <- c("compAlloc","nmembers","DPconc")
     labels4 <- c("compAllocV","nmembersV","deviance")
-    labels5 <- c("psi","ksi","cpsi","nu","fi","omega","comega","eta","ceta")
+    labels5 <- c("psi","ksi","cpsi","nu","fi","omega","comega","eta","ceta","probs")
     all.labels<-c(labels1,labels2,labels3,labels4,labels5)
     if (missing(labels)) labels <- all.labels
     mtch<-match(labels,all.labels)
@@ -762,7 +760,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
 	}
     if (any(mtch==12)){
         file <- paste(mvrmObj$DIR,"BNSP.nmembers.txt",sep="")
-        if (file.exists(file))R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$H,dimnames=list(c(),paste("elements in cor cluster ",seq(1,mvrmObj$H)))))
+        if (file.exists(file))R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$H,dimnames=list(c(),paste("cor cluster ",seq(1,mvrmObj$H)))))
     }
     if (any(mtch==13)){
         file <- paste(mvrmObj$DIR,"BNSP.DPconc.txt",sep="")
@@ -774,7 +772,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
 	}
     if (any(mtch==15)){
         file <- paste(mvrmObj$DIR,"BNSP.nmembersV.txt",sep="")
-        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$G,dimnames=list(c(),paste("elements in var cluster ",seq(1,mvrmObj$G)))))
+        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$G,dimnames=list(c(),paste("var cluster ",seq(1,mvrmObj$G)))))
 	}
 	if (any(mtch==16)){
        file <- paste(mvrmObj$DIR,"BNSP.deviance.txt",sep="")
@@ -819,10 +817,11 @@ mvrm2mcmc <- function(mvrmObj,labels){
     if (any(mtch==20) && mvrmObj$LGc > 0){
         file <- paste(mvrmObj$DIR,"BNSP.nu.txt",sep="")
         if (file.exists(file)){ 
-            names1<-paste("nu",colnames(mvrmObj$Xc)[-1],sep=".")
-            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LGc,dimnames=list(c(),names1)))
+            if (mvrmObj$H==1) names1<-paste("nu",colnames(mvrmObj$Xc)[-1],sep=".")
+            if (mvrmObj$H>1) names1<-paste(paste("nu",rep(1:mvrmObj$H,each=mvrmObj$LGc),sep="."),rep(seq(1:mvrmObj$LGc),mvrmObj$H),sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LGc*mvrmObj$H,dimnames=list(c(),names1)))
 		}
-    }
+    }    
     if (any(mtch==21) && mvrmObj$LDc > 0){
         file <- paste(mvrmObj$DIR,"BNSP.fi.txt",sep="")
         if (file.exists(file)){ 
@@ -847,14 +846,20 @@ mvrm2mcmc <- function(mvrmObj,labels){
     if (any(mtch==24) && p > 1){
         file <- paste(mvrmObj$DIR,"BNSP.eta.txt",sep="")
         if (file.exists(file)){ 
-            names1<-paste("eta",colnames(mvrmObj$Xc),sep=".")
-            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LGc+1,dimnames=list(c(),names1)))
+            if (mvrmObj$H==1) names1<-paste("eta",colnames(mvrmObj$Xc),sep=".")
+            if (mvrmObj$H>1) names1<-paste(paste("eta",rep(1:mvrmObj$H,each=(mvrmObj$LGc+1)),sep="."),rep(seq(1:(mvrmObj$LGc+1)),mvrmObj$H),sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=((mvrmObj$LGc+1)*mvrmObj$H),dimnames=list(c(),names1)))
 		}
     }
     if (any(mtch==25) && p > 1){
        file <- paste(mvrmObj$DIR,"BNSP.ceta.txt",sep="")
        if (file.exists(file)) 
            R<-cbind(R,matrix(unlist(read.table(file)),ncol=1,dimnames=list(c(),c("c_eta"))))
+    }
+    if (any(mtch==26)){ 
+        file <- paste(mvrmObj$DIR,"BNSP.probs.txt",sep="")
+        if (file.exists(file))
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$H,dimnames=list(c(),seq(1,mvrmObj$H))))
     }
 	if (!is.null(R)){
 	    attr(R, "mcpar") <- mvrmObj$mcpar
@@ -1106,8 +1111,8 @@ summary.mvrm <- function(object, nModels = 5, digits = 5, printTuning = FALSE, .
 
 clustering <- function(object, ...){
     R <- list()
-    if (object$mcm==1) stop("Common correlations model")
-    if (object$mcm > 1){
+    if (object$mcm==1 || object$mcm==5) stop("common correlations model has no clustering")
+    if (object$mcm %in% c(2,3,6,7)){
         simMatC<-matrix(0,object$d,object$d)
         compAllocFP <- file.path(paste(object$DIR,"BNSP.compAlloc.txt",sep=""))
         compAlloc<-file(compAllocFP,open="r")
@@ -1125,7 +1130,7 @@ clustering <- function(object, ...){
 	    rownames(simMatC) <- cor.names
 	    R[[1]]<-simMatC/object$nSamples
     }
-    if (object$mcm==3){
+    if (object$mcm %in%c(3,7)){
         simMatV<-matrix(0,object$p,object$p)
         compAllocVFP <- file.path(paste(object$DIR,"BNSP.compAllocV.txt",sep=""))
         compAllocV<-file(compAllocVFP,open="r")

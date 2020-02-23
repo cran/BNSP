@@ -6,7 +6,7 @@
 \description{Reads in files where the posterior samples were written and creates an object of class 
 `mcmc' so that functions like \code{summary} and \code{plot} from package \code{coda} can be used}
 
-\usage{mvrm2mcmc(mvrmObj,labels)}
+\usage{mvrm2mcmc(mvrmObj, labels)}
 
 \arguments{
 \item{mvrmObj}{An object of class `mvrm' as created by a call to function \code{mvrm}.}

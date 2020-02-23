@@ -8,7 +8,7 @@ Provides basic information from an mvrm fit.
 }
 
 \usage{
-\method{summary}{mvrm}(object, nModels = 5, digits = 5, printTuning = FALSE,...)
+\method{summary}{mvrm}(object, nModels = 5, digits = 5, printTuning = FALSE, ...)
 }
 
 \arguments{

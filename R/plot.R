@@ -1,3 +1,35 @@
+# includes functions: ls.mvrm, label.count, plot.generic, plot.mvrm   
+ls.mvrm <- function(x){
+    nu<-mvrm2mcmc(x,"nu")
+    eta<-mvrm2mcmc(x,"eta")
+    nmembers<-mvrm2mcmc(x,"nmembers")
+    nparams<-x$LGc+(x$LGc+1)+1 #gamma + eta + nmembers
+    nu <- nu[,c(mapply(seq,seq(1,x$LGc),length.out=x$H,by=x$LGc))]
+    eta <- eta[,c(mapply(seq,seq(1,x$LGc+1),length.out=x$H,by=x$LGc+1))]
+    mat<-cbind(nu,eta,nmembers)
+    mcmc.pars <- array(data = mat, dim = c(x$nSamples, x$H, nparams))
+    z<-mvrm2mcmc(x,"compAlloc") + 1
+    probs<-mvrm2mcmc(x,"probs")
+    pr <- array(data = probs, dim = c(x$d, x$nSamples, x$H))
+    p <- aperm(pr, c(2,1,3))
+    ls <- label.switching(method = "STEPHENS", p = p, mcmc = mcmc.pars, z = z, K = x$H)
+    mcmc.pars.per<-permute.mcmc(mcmc.pars, ls$permutations$STEPHENS)$output
+    nu<-NULL
+    if (x$LGc > 0){ # Try one example with LGc=0
+        nu<-mcmc.pars.per[,,1:x$LGc]
+        nu <-matrix(nu,nrow=x$nSamples)    
+        nu <- nu[,c(mapply(seq,seq(1,x$H),length.out=x$LGc,by=x$H))]
+	}
+    eta<-mcmc.pars.per[,,(1+x$LG):(nparams-1)]
+    eta <-matrix(eta,nrow=x$nSamples)    
+    eta <- eta[,c(mapply(seq,seq(1,x$H),length.out=(x$LGc+1),by=x$H))]    
+    nmembers<-mcmc.pars.per[,,nparams]
+    write.table(nu,file=paste(x$DIR,"BNSP.nu.ls.txt",sep=""),row.names = FALSE,col.names = FALSE)
+    write.table(eta,file=paste(x$DIR,"BNSP.eta.ls.txt",sep=""),row.names = FALSE,col.names = FALSE)
+    write.table(nmembers,file=paste(x$DIR,"BNSP.nmembers.ls.txt",sep=""),row.names = FALSE,col.names = FALSE)
+    write.table(ls$clusters,file=paste(x$DIR,"BNSP.clusters.txt",sep=""),row.names = FALSE,col.names = FALSE)   
+}
+
 label.count <- function(term,labels,counts,model){
     if (is.character(term)){        
         int.label1<-int.label2<-grep(term,labels,fixed=TRUE)
@@ -25,7 +57,7 @@ label.count <- function(term,labels,counts,model){
 plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, term, response, intercept, grid, 
                          centre, quantiles, static, contour, centreEffects, plotOptions, 
                          int.label, count, vars, label, is.D, formula.term, which.Spec, assign,
-                         knots, storeMeanVector, storeIndicator, data){
+                         knots, storeMeanVector, storeIndicator, data, plotEmptyCluster){
     p<-mvrmObj$p
     if (!grepl("knots",formula.term) && which.Spec>0){			
         z<-length(formula.term) #use this to fix both sm and s smooths
@@ -90,31 +122,49 @@ plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, term, response, 
             if (STDEV) Ds<-Ds[,-1]
 		}
     }  
-    if (MEAN){    
-        fit<-matrix(0,nrow=mvrmObj$nSamples,ncol=NROW(Ds))
+    if (MEAN){   
+		dim2<-1
+		if (CORM) dim2<-mvrmObj$H 
+        fit<-array(0,dim=c(mvrmObj$nSamples,dim2,NROW(Ds)))
+        #fit<-matrix(0,nrow=mvrmObj$nSamples,ncol=NROW(Ds))
+        #meanReg<-array(0,dim=c(x$nSamples,x$H,x$LUT)) 
 	    if (CORM==0 && DEP==0){
 			etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.beta.txt",sep=""))
 			how.many <- p*(mvrmObj$LG+1)
 			multiplier <- mvrmObj$LG+1
 		}else if (CORM==1){
-		    etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.eta.txt",sep=""))
-		    how.many <- mvrmObj$LGc+1
+		    if (mvrmObj$H==1) etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.eta.txt",sep=""))
+		    if (mvrmObj$H > 1){
+			    etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.eta.ls.txt",sep=""))
+                clusFN <- paste(mvrmObj$DIR,"BNSP.clusters.txt",sep="")
+                if (!file.exists(etaFN) || !file.exists(clusFN)) 
+                    quiet(ls.mvrm(mvrmObj))  
+                tabs<-table(array(unlist(read.table(clusFN))))
+		        labs<-array(0,mvrmObj$H)
+                labs[as.numeric(names(tabs))]<-tabs 
+                V <- rep(V,mvrmObj$H) + rep(seq(0,max(V)*(mvrmObj$H-1),by=max(V)),each=length(V))
+			}
+		    how.many <- (mvrmObj$LGc+1)*mvrmObj$H
 		    multiplier<-0
 		}else{
 			etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.psi.txt",sep=""))
 			how.many <- p*p*mvrmObj$LK
 			multiplier <- mvrmObj$LK		
-		}
+		}			
         eFile<-file(etaFN,open="r")
 	    for (i in 1:mvrmObj$nSamples){
             eta<-scan(eFile,what=numeric(),n=how.many,quiet=TRUE)
-            fit[i,]<-as.matrix(Ds)%*%matrix(c(eta[V+(response-1)*multiplier]))
-            if (centreEffects) fit[i,]<-fit[i,]-mean(fit[i,])
+            fit[i,,] <- matrix(c(eta[V+(response-1)*multiplier]),byrow=TRUE,ncol=dim(Ds)[2]) %*% t(as.matrix(Ds))            
+            #if (i==1) {print(fit[i,,]);print(matrix(c(eta[V+(response-1)*multiplier]),nrow=1));print(t(as.matrix(Ds)))}
+            #fit[i,,]<-as.matrix(Ds)%*%matrix(c(eta[V+(response-1)*multiplier]))
+            #meanReg[i,,] <- eta[i,,]%*%t(uXc)            
+            if (CORM && mvrmObj$out[[60]]==1) fit[i,,] <- tanh(fit[i,,])                        
+            if (centreEffects) fit[i,,]<-fit[i,,]-mean(fit[i,,])
 	    }
 	    close(eFile)
     }
 	if (STDEV){	
-	    fit<-matrix(0,nrow=mvrmObj$nSamples,ncol=NROW(Ds))
+	    fit<-array(0,dim=c(mvrmObj$nSamples,1,NROW(Ds)))
 	    if (CORS==0){
 	        alphaFN <- file.path(paste(mvrmObj$DIR,"BNSP.alpha.txt",sep=""))
             sigma2FN <- file.path(paste(mvrmObj$DIR,"BNSP.sigma2.txt",sep=""))
@@ -132,31 +182,49 @@ plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, term, response, 
             alpha<-scan(aFile,what=numeric(),n=how.many1,quiet=TRUE)
 		    if (intercept) s2<-scan(s2File,what=numeric(),n=how.many2,quiet=TRUE)[response]
 		    else s2=1
-            fit[i,]<-sqrt(s2*exp(as.matrix(Ds)%*%matrix(c(alpha[V+(response-1)*mvrmObj$LD]))))            
-            if (centreEffects) fit[i,]<-fit[i,]/mean(fit[i,])
+            fit[i,,]<-sqrt(s2*exp(as.matrix(Ds)%*%matrix(c(alpha[V+(response-1)*mvrmObj$LD]))))            
+            if (centreEffects) fit[i,,]<-fit[i,,]/mean(fit[i,,])
 	    }
 	    close(aFile)
 	    close(s2File)  
 	}
 	if (count==1 && !is.D){
-	    centreM<-apply(fit,2,centre)
-	    newX<-newData
-	    dataM<-data.frame(newX,centreM)
-	    nms <- c(vars,"centreM")	   
-	    if (!is.null(quantiles)) {
+	    centreM<-drop(apply(fit,c(2,3),centre))
+	    newX<-unlist(newData)
+	    dataM<-data.frame(rep(newX,dim(fit)[2]),c(t(centreM)))	            	
+	    nms <- c(vars,"centreM")
+	    if (!is.null(quantiles)){
 			nms<-c(nms,"QLM","QUM")
-			QM<-drop(t(apply(fit,2,quantile,probs=quantiles,na.rm=TRUE)))
-			dataM<-data.frame(newX,centreM,QM)
+			QM<-apply(fit,c(2,3),quantile,probs=quantiles,na.rm=TRUE)
+			dataM<-data.frame(dataM,c(t(QM[1,,])),c(t(QM[2,,])))			
 		}	    
-	    colnames(dataM) <- nms
-	    dataRug<-data.frame(b=with(data,eval(as.name(vars))))
+	    colnames(dataM) <- nms	    
+	    if (CORM==1 && mvrmObj$H > 1){
+            dataM<-data.frame(dataM,group=factor(rep(1:mvrmObj$H,each=grid)),size=rep(labs,each=grid))		       
+            dataM<-dataM[order(-dataM$size, dataM[,1]),]            
+            if (!plotEmptyCluster) dataM<-dataM[dataM$size > 0,]
+            labs2<-unique(dataM$size)      
+        }        	    	    	    	    	    
+	    dataRug<-data.frame(b=with(data,eval(as.name(vars))))	    
 	    plotElM<-c(geom_line(aes_string(x=as.name(vars),y=centreM),col=4,alpha=0.5),
                    geom_rug(mapping=aes(x=dataRug$b),data=dataRug,alpha=0.3),
-                   list(ylab(label)))
+                   list(ylab(label)))        
         if (!is.null(quantiles))
-            plotElM<-c(geom_ribbon(data=dataM,aes_string(x=vars, ymin="QLM", ymax="QUM"),alpha=0.2),plotElM)
-		ggM<-ggplot(data=dataM)
-	    plotM<-ggM + plotElM + plotOptions
+            plotElM<-c(geom_ribbon(data=dataM,aes_string(x=vars, ymin="QLM", ymax="QUM"),alpha=0.2),plotElM)			    	                    
+        if (CORM==1 && mvrmObj$H > 1){
+	        plotElM<-c(geom_line(aes_string(x=as.name(vars),y="centreM",group="group",linetype="group"),col=4,alpha=0.5),
+                       geom_rug(mapping=aes(x=dataRug$b),data=dataRug,alpha=0.3),
+                       list(ylab(label)))        
+            if (!is.null(quantiles))
+                plotElM<-c(geom_ribbon(data=dataM,aes_string(x=vars,ymin="QLM",ymax="QUM",group="group"),alpha=0.2),plotElM)			    	            
+        }           
+        ggM<-ggplot(data=dataM)
+	    plotM<-ggM + plotElM + plotOptions        
+        if (CORM==1 && mvrmObj$H > 1)
+            plotM <- ggM + plotElM + guides(fill=FALSE) +                 
+                     scale_linetype_manual(name = "group [size]", labels = paste("[",labs2,"]",sep=""),values=seq(1:mvrmObj$H)) + 
+                     plotOptions 
+	    	    
 	}     
 	if (count==1 && is.D){	
 		lvs<-levels(with(data,eval(as.name(vars[1]))))
@@ -167,36 +235,47 @@ plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, term, response, 
 	    plotM<-ggM + plotElM + plotOptions
 	}     
 	if (count==2 && sum(is.D)==1){	    
-	    centreM<-apply(fit,2,centre)	
+	    centreM<-drop(apply(fit,c(2,3),centre))	
 		disc.var<-vars[which(is.D==1)]
 		cont.var<-vars[which(is.D==0)]
 		dataM<-data.frame(newData,centreM)
 		nms <- c(colnames(newData),"centreM")
-		if (!is.null(quantiles)){ 
-		    nms<-c(nms,"QLM","QUM")
-		    QM<-drop(t(apply(fit,2,quantile,probs=quantiles,na.rm=TRUE)))
-		    dataM<-data.frame(newData,centreM,QM)
+		if (!is.null(quantiles)){ 			
+			nms<-c(nms,"QLM","QUM")
+			QM<-apply(fit,c(2,3),quantile,probs=quantiles,na.rm=TRUE)
+			dataM<-data.frame(dataM,c(t(QM[1,,])),c(t(QM[2,,])))					    		    
 		}
 		colnames(dataM) <- nms
 		DG<-data.frame(b=with(data,eval(as.name(cont.var))),c=with(data,eval(as.name(disc.var))))
+		
+		#plotElM<-c(geom_line(aes_string(x=as.name(vars),y="centreM",group="group",linetype="group"),col=4,alpha=0.5),
+        #               geom_rug(mapping=aes(x=dataRug$b),data=dataRug,alpha=0.3),
+        #               list(ylab(label)))        
+        
+        #if (!is.null(quantiles))
+        #    plotElM<-c(geom_ribbon(data=dataM,aes_string(x=vars,ymin="QLM",ymax="QUM",group="group"),alpha=0.2),plotElM
+		
 		plotElM<-c(geom_line(aes_string(x=cont.var,y=centreM,
-		           group=disc.var,colour=disc.var,linetype=disc.var),alpha=0.80),
-                   geom_rug(mapping=aes(x=DG$b,group=c,colour=c,linetype=c),data=DG,alpha=0.3),
+		           group=disc.var,linetype=disc.var),col=4,alpha=0.5),
+                   geom_rug(mapping=aes(x=DG$b,group=c,linetype=c),data=DG,alpha=0.3),
                    list(ylab(label)))
+        
         if (!is.null(quantiles))
             plotElM<-c(geom_ribbon(data=dataM,aes_string(x=cont.var,ymin="QLM",ymax="QUM",
-                                   group=disc.var,fill=as.name(disc.var)),alpha=0.2),plotElM)
+                                   group=disc.var),alpha=0.2),plotElM)
+		
 		ggM<-ggplot(data=dataM)
 	    plotM<-ggM + plotElM + plotOptions
     }
     if (count==2 && sum(is.D)==0){
-	    centreM<-apply(fit,2,centre)
+	    centreM<-drop(apply(fit,c(2,3),centre))
 	    if (contour==1){	        
 	        dataM<-data.frame(newData,centreM)
 		    nms <- c(colnames(newData),"centreM")		    
 		    colnames(dataM) <- nms
 		    ggM<-ggplot(data=dataM,aes_string(x=vars[1],y=vars[2],z=centreM))    
-	        plotM<-ggM + geom_contour(data=dataM,aes(colour = stat(centreM))) + plotOptions
+	        level<-1
+	        plotM<-ggM + geom_contour(data=dataM,aes(colour = stat(level))) + plotOptions
 	    }
 		if (static && contour==0){
 		    defaultList<-list(x=as.numeric(newR1),y=as.numeric(newR2),z=matrix(centreM,length(newR1),length(newR2)),colvar=matrix(centreM,length(newR1),length(newR2)))
@@ -228,7 +307,8 @@ plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, term, response, 
 plot.mvrm <- function(x, model, term, response, response2, 
                       intercept = TRUE, grid = 30, centre = mean, 
                       quantiles = c(0.1, 0.9), contour = TRUE, static = TRUE, 
-                      centreEffects = FALSE, plotOptions = list(), nrow, ask = FALSE,...)
+                      centreEffects = FALSE, plotOptions = list(), nrow, ask = FALSE,
+                      plotEmptyCluster = FALSE, ...)
 {
     oldpar <- NULL
     on.exit(par(oldpar))
@@ -250,7 +330,7 @@ plot.mvrm <- function(x, model, term, response, response2,
     if ((model=="all" || model=="cors") && (x$NDc > 0)) CORS <- 1
     if ((model=="all" || model=="dep") && (x$NK > 0)) DEP <- 1
     
-    if (MEAN==0 && STDEV==0 && CORM==0 && CORS==0 && DEP==0) stop("no terms to plot; only intercepts in the model");    
+    if (MEAN==0 && STDEV==0 && CORM==0 && CORS==0 && DEP==0) stop("no terms to plot");    
     termM <- NULL; termSD <- NULL; termMC<-1; termSDC<-1; termD<-NULL  
     if (missing(term)) {termM<-1:x$NG; termSD<-1:x$ND; termD<-1:(x$NK-1)}
     if (!missing(term)) {termM <- termSD <- termD <- term}
@@ -278,7 +358,8 @@ plot.mvrm <- function(x, model, term, response, response2,
                                               formula.term=x$formula.termsX[int.labelX], 
                                               which.Spec=x$which.SpecX[[int.labelX]], assign=x$assignX, 
                                               knots=x$Xknots, storeMeanVector=x$storeMeanVectorX,
-                                              storeIndicator=x$storeIndicatorX, data=x$data)
+                                              storeIndicator=x$storeIndicatorX, data=x$data,
+                                              plotEmptyCluster=plotEmptyCluster)
             if ((ask==TRUE) && (length(my_plots)>0)) print(my_plots[[count]])
             if (count==1)
                 oldpar <- c(oldpar, par(ask=ask))
@@ -290,7 +371,7 @@ plot.mvrm <- function(x, model, term, response, response2,
             int.labelZ <- lcZ[1]
             countZ <- lcZ[2]
             plotOptions2 <- list(ggtitle(paste("stdev of", x$varsY[[r]])),plotOptions)
-            if (x$LUT > 1)plotOptions2 <- list(ggtitle(paste("innovation stdev of", x$varsY[[r]])),plotOptions)
+            if (x$LUT > 1)plotOptions2 <- list(ggtitle(paste("innov stdev of", x$varsY[[r]])),plotOptions)
             my_plots[[count]] <- plot.generic(x, MEAN=0, STDEV=1, CORM=0, CORS=0, DEP=0,
                                               term=i, response=r, intercept=intercept, grid=grid,
                                               centre=centre, quantiles=quantiles, static=static, contour=contour,
@@ -300,7 +381,8 @@ plot.mvrm <- function(x, model, term, response, response2,
                                               formula.term=x$formula.termsZ[int.labelZ], 
                                               which.Spec=x$which.SpecZ[[int.labelZ]], assign=x$assignZ, 
                                               knots=x$Zknots, storeMeanVector=x$storeMeanVectorZ,
-                                              storeIndicator=x$storeIndicatorZ, data=x$data)
+                                              storeIndicator=x$storeIndicatorZ, data=x$data,
+                                              plotEmptyCluster=plotEmptyCluster)
             if ((ask==TRUE) && (length(my_plots)>0)) print(my_plots[[count]])
             if (count==1)
                 oldpar <- c(oldpar, par(ask=ask))
@@ -315,7 +397,7 @@ plot.mvrm <- function(x, model, term, response, response2,
 			        lcC <- label.count(i,x$labelsC,x$countC,"autoregressive")
                     int.labelC <- lcC[1]
                     countC <- lcC[2]
-                    plotOptions2 <- list(ggtitle(paste("autoregressive", x$varsY[r1], x$varsY[r2])), plotOptions)            
+                    plotOptions2 <- list(ggtitle(paste("autoreg", x$varsY[r1], x$varsY[r2])), plotOptions)            
                     my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=1, STDEV=0, CORM=0, CORS=0, DEP=1, 
                                                       term=i, response=Pair, intercept=intercept, grid=grid,
                                                       centre=centre, quantiles=quantiles, static=static, contour=contour,
@@ -325,7 +407,8 @@ plot.mvrm <- function(x, model, term, response, response2,
                                                       formula.term=x$formula.termsC[int.labelC], 
                                                       which.Spec=x$which.SpecC[[int.labelC]], assign=x$assignC, 
                                                       knots=x$Cknots, storeMeanVector=x$storeMeanVectorC,
-                                                      storeIndicator=x$storeIndicatorC, data=x$lag)
+                                                      storeIndicator=x$storeIndicatorC, data=x$lag,
+                                                      plotEmptyCluster=plotEmptyCluster)
                     if ((ask==TRUE) && (length(my_plots)>0)) print(my_plots[[count]])
                     if (count==1)
                         oldpar <- c(oldpar, par(ask=ask))
@@ -335,7 +418,7 @@ plot.mvrm <- function(x, model, term, response, response2,
 	    }
     if (CORM){
         for (i in termMC){			
-            plotOptions2 <- list(ggtitle(paste("mean of correlations")),plotOptions)            
+            plotOptions2 <- list(ggtitle(paste("mean cor")),plotOptions)            
             my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=1, STDEV=0, CORM=1, CORS=0, DEP=0,
                                               term=-99, response=1, intercept=intercept, 
                                               grid=grid, centre=centre, quantiles=quantiles, static=static, contour=contour,
@@ -345,7 +428,8 @@ plot.mvrm <- function(x, model, term, response, response2,
                                               formula.term=x$formula.termsXc[1], 
                                               which.Spec=x$which.SpecXc[[1]], assign=x$assignXc,
                                               knots=x$Xcknots, storeMeanVector=x$storeMeanVectorXc,
-                                              storeIndicator=x$storeIndicatorXc, data=x$data)                        
+                                              storeIndicator=x$storeIndicatorXc, data=x$data,
+                                              plotEmptyCluster=plotEmptyCluster)                        
             if ((ask==TRUE) && (length(my_plots)>0)) print(my_plots[[count]])
             if (count==1)
                 oldpar <- c(oldpar, par(ask=ask))
@@ -354,7 +438,7 @@ plot.mvrm <- function(x, model, term, response, response2,
 	}	
 	if (CORS){
         for (i in termSDC){			
-            plotOptions2 <- list(ggtitle(paste("stdev of correlations")),plotOptions)            
+            plotOptions2 <- list(ggtitle(paste("stdev cor")),plotOptions)            
             my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=0, STDEV=1, CORM=0, CORS=1, DEP=0, 
                                               term=-99, response=1, intercept=intercept, 
                                               grid=grid, centre=centre, quantiles=quantiles, static=static, contour=contour,
@@ -364,7 +448,8 @@ plot.mvrm <- function(x, model, term, response, response2,
                                               formula.term=x$formula.termsZc[1], 
                                               which.Spec=x$which.SpecZc[[1]], assign=x$assignZc,
                                               knots=x$Zcknots, storeMeanVector=x$storeMeanVectorZc,
-                                              storeIndicator=x$storeIndicatorZc, data=x$data)
+                                              storeIndicator=x$storeIndicatorZc, data=x$data,
+                                              plotEmptyCluster=plotEmptyCluster)
             if ((ask==TRUE) && (length(my_plots)>0)) print(my_plots[[count]])
             if (count==1)
                 oldpar <- c(oldpar, par(ask=ask))

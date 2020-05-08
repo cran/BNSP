@@ -45,7 +45,8 @@
 //#include "other.functions.h"
 //#include "mathm.h"
 
-#include "spec.BCM.h" 
+#include "spec.BCM.h"
+ 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX_PATH 300
@@ -77,19 +78,19 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
     FILE *out_file1, *out_file2, *out_file3, *out_file4, *out_file5, *out_file6, *out_file7, *out_file8;
 
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.gamma.txt");
-    out_file1 = fopen(path_name, "wt");
+    out_file1 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.delta.txt");
-    out_file2 = fopen(path_name, "wt");
+    out_file2 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.alpha.txt");
-    out_file3 = fopen(path_name, "wt");
+    out_file3 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.sigma2.txt");
-    out_file4 = fopen(path_name, "wt");
+    out_file4 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.cbeta.txt");
-    out_file5 = fopen(path_name, "wt");
+    out_file5 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.calpha.txt");
-    out_file6 = fopen(path_name, "wt");
+    out_file6 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.beta.txt");
-    out_file7 = fopen(path_name, "wt");
+    out_file7 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.deviance.txt");
     out_file8 = fopen(path_name, "a");
     
@@ -714,7 +715,7 @@ void mvrmC(int *seed1, char **WorkingDir, int *WF1,
             fprintf(out_file8, "%f %f \n", dev0, dev1);
         }
         // If sw needs to be printed
-        if ((sw==(sweeps-1)) && (!(sweeps % 1000)==0)) Rprintf("%i %s \n",sweeps, "posterior samples...");
+        if ((sw==(sweeps-1)) && (!((sweeps % 1000)==0))) Rprintf("%i %s \n",sweeps, "posterior samples...");
     }//end of sw
     
     //Update LASTWB

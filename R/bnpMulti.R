@@ -677,10 +677,11 @@ mvrm2mcmc <- function(mvrmObj,labels){
     labels2 <- c("muR","sigma2R","R")
     labels3 <- c("compAlloc","nmembers","DPconc")
     labels4 <- c("compAllocV","nmembersV","deviance")
-    labels5 <- c("psi","ksi","cpsi","nu","fi","omega","comega","eta","ceta","probs")
+    labels5 <- c("psi","ksi","cpsi","nu","fi","omega","comega","eta","ceta")
+    labels6 <- c("probs","tune")
     all.labels<-c(labels1,labels2,labels3,labels4,labels5)
     if (missing(labels)) labels <- all.labels
-    mtch<-match(labels,all.labels)
+    mtch<-match(labels,c(all.labels,labels6))
 	p<-mvrmObj$p
 	R<-NULL
     if (any(mtch==1) && mvrmObj$LD > 0){
@@ -761,7 +762,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
     if (any(mtch==12)){
         file <- paste(mvrmObj$DIR,"BNSP.nmembers.txt",sep="")
         if (file.exists(file))R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$H,dimnames=list(c(),paste("cor cluster ",seq(1,mvrmObj$H)))))
-    }
+    }    
     if (any(mtch==13)){
         file <- paste(mvrmObj$DIR,"BNSP.DPconc.txt",sep="")
         if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=1,dimnames=list(c(),c("DPconc"))))
@@ -813,7 +814,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
             if (p == 1) names1<-paste("cpsi")
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*p,dimnames=list(c(),names1)))
 		}
-    }
+    }    
     if (any(mtch==20) && mvrmObj$LGc > 0){
         file <- paste(mvrmObj$DIR,"BNSP.nu.txt",sep="")
         if (file.exists(file)){ 
@@ -861,8 +862,44 @@ mvrm2mcmc <- function(mvrmObj,labels){
         if (file.exists(file))
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$H,dimnames=list(c(),seq(1,mvrmObj$H))))
     }
-	if (!is.null(R)){
+    if (any(mtch==27)){ 
+        file <- paste(mvrmObj$DIR,"BNSP.tune.txt",sep="")
+        if (file.exists(file)){
+			
+			if (p > 1) names1<-paste("alpha",rep(mvrmObj$varsY,each=mvrmObj$ND),rep(mvrmObj$varsZ,p),sep=".") 
+            if (p == 1) names1<-paste("alpha",mvrmObj$varsZ,sep=".")
+            
+            if (p > 1) names2<-paste(rep("sigma2",p),mvrmObj$varsY,sep=".")
+            if (p == 1) names2<-"sigma2"
+            			
+			if (p > 1) names3<-paste(rep("c_alpha",p),mvrmObj$varsY,sep=".")
+            if (p == 1) names3<-"c_alpha"
+            
+            if (p > 1){ 
+                e <- cbind(rep(unlist(mvrmObj$varsY),each=p),rep(unlist(mvrmObj$varsY),p))
+                e <- paste(e[,1],e[,2],sep=".")
+                names4<-paste("cpsi",e,sep=".")
+			}
+            if (p == 1) names4<-paste("cpsi")
+            
+            names5<-NULL
+            if (p > 1) names5<-paste("R",seq(1,mvrmObj$LUT))
+            
+            names6<-NULL; names7<-NULL
+            if (p > 1) {names6<-"omega";names7<-"c_eta"}
+            
+            tune.names<-c("c_beta",names1,names2,names3[mvrmObj$HNca==1],names4[mvrmObj$HNcpsi==1],names5,names6,"sigms2R"[mvrmObj$HNscor==1],
+                          names7,"c_omega"[mvrmObj$HNco==1])
+            
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=length(tune.names),dimnames=list(c(),tune.names)))
+		}
+    }
+	if (!is.null(R) && !any(mtch==27)){
 	    attr(R, "mcpar") <- mvrmObj$mcpar
+        attr(R, "class") <- "mcmc"
+	}
+	if (!is.null(R) && any(mtch==27)){
+	    attr(R, "mcpar") <- c(1,mvrmObj$mcpar[2],50)
         attr(R, "class") <- "mcmc"
 	}
 	return(R)

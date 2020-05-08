@@ -167,6 +167,8 @@ DM<-function(formula,data,n,knots=NULL,predInd=FALSE,meanVector,indicator,mvrmOb
                 if (length(remove.cols)>0) Design.Xt<-Design.Xt[,-remove.cols,drop=FALSE]
                 count<-c(count,1)
                 vars[[i]]<-as.character(attr(trms2,"variables")[[2]])
+                LF<-which(vars[[i]]=="as.factor")
+                if (length(LF)>0) {vars[[i]]<-vars[[i]][-which(vars[[i]]=="as.factor")];labels[i]<-vars[[i]]}
                 is.D.i<-0
                 lvs<-levels(with(data,eval(attr(trms2,"variables")))[[1]])
                 if (length(lvs)>=2) is.D.i<-1
@@ -244,6 +246,7 @@ DM<-function(formula,data,n,knots=NULL,predInd=FALSE,meanVector,indicator,mvrmOb
 	    for (i in 1:length(mat.arg))
 		    indicator[which(assign==mat.arg[i])]<-TRUE
 	}
+	#indicator<-rep(TRUE,length(indicator))
 	Design.X[,!indicator]<-Design.X[,!indicator]-matrix(1,nrow=n)%*%matrix(meanVector[!indicator],nrow=1)
     return(list(y=y,X=Design.X,assign=assign,Rknots=Rknots,meanVector=meanVector,
                 indicator=indicator,labels=labels,count=count,vars=vars,is.D=is.D,

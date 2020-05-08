@@ -13,8 +13,8 @@
 \tabular{ll}{
 Package: \tab BNSP\cr
 Type: \tab Package\cr
-Version: \tab 2.1.3\cr
-Date: \tab 2020-02-23\cr
+Version: \tab 2.1.4\cr
+Date: \tab 2020-05-08\cr
 License: \tab GPL (>=2)\cr}
 
 This program is free software; you can redistribute it and/or
@@ -40,7 +40,7 @@ Maintainer: Georgios Papageorgiou <gpapageo@gmail.com>}
 \section{Acknowledgments}{This work was partly supported by the Medical Research Council grant number G09018401.}
 
 \references{
-Papageorgiou, G. and Marshall, B.C. (2020). Bayesian semiparametric analysis of multivariate continuous responses, with variable selection. arXiv:1905.08393 [stat.ME].
+Papageorgiou, G. and Marshall, B.C. (2020). Bayesian semiparametric analysis of multivariate continuous responses, with variable selection. Journal of Computational and Graphical Statistics, DOI: 10.1080/10618600.2020.1739534
 
 Papageorgiou, G. (2018). BNSP: an R Package for fitting Bayesian semiparametric regression models and variable selection. The R Journal, 10(2):526-548.
 

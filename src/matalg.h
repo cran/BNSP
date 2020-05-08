@@ -126,6 +126,7 @@ void matHalf(int p, double tol, gsl_matrix *A){
     for (i=0; i < p; i++){ //D = diag{sqrt(eigen) for eigen > tol and 0 otherwise}
         temp = gsl_vector_get(eval,i);
 	    if (temp > tol * max) gsl_matrix_set(D,i,i,sqrt(temp));else{gsl_matrix_set(D,i,i,0.0);}
+	    //if (temp <= tol * max) puts("hi!");
     }
     gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,evec,D,0.0,M);  //D1 = V D
     gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,M,evec,0.0,N); //D2 = D1 A = ginv(A)

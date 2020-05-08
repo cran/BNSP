@@ -1156,7 +1156,7 @@ logPropDRC,logPropDRP,priorLogR,detR,SPP,SPC,Acp);
             fprintf(out_file6, "%f %f \n", dev0, dev1);
         }
         // If sw needs to be printed
-        if ((sw==(sweeps-1)) && (!(sweeps % 1000)==0)) Rprintf("%i %s \n",sweeps, "posterior samples...");
+        if ((sw==(sweeps-1)) && (!((sweeps % 1000)==0))) Rprintf("%i %s \n",sweeps, "posterior samples...");
     }//end of sw
 
     //Update LASTWB

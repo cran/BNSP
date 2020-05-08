@@ -50,6 +50,7 @@
 #include "cubature.h"
 #define MAX(x, y) (((x) > (y)) ? (x) : (y)) 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define MAX_PATH 300
 
 extern int (*p_pcubature)(unsigned, integrand, void *, unsigned, const double *, const double *,
 	                    size_t, double, double, error_norm, double *, double *);
@@ -151,7 +152,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
 
     // Specify directory
     int WF = WF1[0]; // indicator: 1 = write files, 0 = no files.
-    const int MAX_PATH = 300;
+    //const int MAX_PATH = 300;
     char path_name[MAX_PATH + 1];
 
     // Open files
@@ -1117,7 +1118,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
 
         }
         if (Iend == 1) sw -= 1;
-        if ((sw==(sweeps-1)) && (!((sw+1) % 500)==0)) Rprintf("%i %s \n",sw+1, "posterior samples...");
+        if ((sw==(sweeps-1)) && (!(((sw+1) % 500)==0))) Rprintf("%i %s \n",sw+1, "posterior samples...");
     }//end of sw
     //Free up random number
     gsl_rng_free (r);

@@ -45,7 +45,8 @@ void sampleTUN(unsigned long int s, int i, double tnmean, double tnsd, double lo
 
 //Sample from a multivariate truncated normal distribution. Arguments: seed, dim, lower bounds,
 //upper bounds, sample from previous iteration, mean, covariance, tolerance.
-//Samples are stored in gsl vector y.
+//Samples are stored in gsl vector y. Uses Robert (2009) Simulation of truncated normal variables, 
+//and formula (3.2) for inverting the matrices. 
 void sampleTMN(unsigned long int s, int p, double *L, double *U, gsl_vector *y, gsl_vector *m,
                gsl_matrix *Sigma, double tol){
     gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
@@ -106,6 +107,69 @@ void sampleTMN(unsigned long int s, int p, double *L, double *U, gsl_vector *y, 
     gsl_rng_free(r);
 }
 
+//Sample from a multivariate truncated normal distribution, with lower bound fixed at zero and no upper bound. 
+//Arguments: seed, dimension, gsl vector for storing samples, mean, covariance, tolerance.
+//Uses Robert (2009) Simulation of truncated normal variables, and formula (3.2) for inverting the matrices.
+void sampleTMN2(unsigned long int s, int p, gsl_vector *y, gsl_vector *m, gsl_matrix *Sigma, double tol){
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+    int i, k;
+    double res1, res2, res3, temp;
+    double cm[2*p];
+    gsl_vector *V1, *V2;
+    gsl_matrix *cSigma, *V;
+    V1 = gsl_vector_alloc(p);
+    V2 = gsl_vector_alloc(p);
+    cSigma = gsl_matrix_alloc(p,p);
+    V = gsl_matrix_alloc(p,p);
+    gsl_matrix_memcpy(V,Sigma);
+    ginv(p,tol,V);    
+    gsl_vector_view Sigmai;
+    gsl_vector_view Vi;
+    //initialize vector y to be the mean or if mean is out of bounds, set it to zero
+    for (i=0; i < p; i++){
+		temp = gsl_vector_get(m,i); 
+		if (temp < 0) temp = 0;
+		gsl_vector_set(y,i,temp);
+	}
+    for (k=0; k < 3; k++){ //repeat 3 times, the first 2 are burn-in
+        for (i=0; i < p; i++){
+            gsl_vector_memcpy(V1,y);
+            gsl_matrix_memcpy(cSigma,Sigma);
+            gsl_vector_sub(V1,m);
+            gsl_vector_set(V1,i,0);
+            gsl_blas_dgemv(CblasNoTrans,1.0,V,V1,0.0,V2);
+            gsl_vector_set(V2,i,0);
+            Sigmai = gsl_matrix_row(cSigma,i);
+            gsl_vector_set(&Sigmai.vector,i,0);
+            gsl_blas_ddot(&Sigmai.vector,V2,&res1);
+            Vi = gsl_matrix_row(V,i);
+            gsl_blas_ddot(&Sigmai.vector,&Vi.vector,&res2);
+            gsl_blas_ddot(&Vi.vector,V1,&res3);
+            cm[i] = gsl_vector_get(m,i) + res1 - res2*res3/gsl_matrix_get(V,i,i);
+            gsl_blas_dgemv(CblasNoTrans,1.0,V,&Sigmai.vector,0.0,V1);
+            gsl_blas_ddot(&Sigmai.vector,V1,&res1);
+            cm[i+p] = gsl_matrix_get(Sigma,i,i) - res1 + res2*res2/gsl_matrix_get(V,i,i);
+            if (cm[i] > 0){
+                temp = cm[i]+gsl_ran_gaussian(r,sqrt(cm[i+p]));
+                while (temp < 0)
+                    temp = cm[i]+gsl_ran_gaussian(r,sqrt(cm[i+p]));	
+            }
+            else{
+			    temp = cm[i]+gsl_ran_gaussian_tail(r,-cm[i],sqrt(cm[i+p]));
+                while (temp < 0)
+                    temp = cm[i]+gsl_ran_gaussian_tail(r,-cm[i],sqrt(cm[i+p]));
+            }
+            gsl_vector_set(y,i,temp);
+        }
+	}
+    gsl_vector_free(V1);
+    gsl_vector_free(V2);
+    gsl_matrix_free(cSigma);
+    gsl_matrix_free(V);
+    gsl_rng_free(r);
+}
+ 
 //Sample from a multivariate normal distribution. Arguments: seed, dim, vector to store sample, mean, covariance, tolerance.
 //Samples are stored in gsl vector y.
 void sampleMN(unsigned long int s, int p, gsl_vector *y, gsl_vector *mu, gsl_matrix *Sigma, double tol){

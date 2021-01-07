@@ -97,7 +97,7 @@ Defaults at 1.}
 \item{...}{Other options that will be ignored.}
 }
 
-\details{Function \code{mmvrm} returns samples from the posterior distributions of the parameters of
+\details{Function \code{mvrm} returns samples from the posterior distributions of the parameters of
 a regression model with normally distributed multivariate responses and mean and variance functions modeled
 in terms of covariates. For instance, in the presence of two responses (\eqn{y_1, y_2}) and two covariates
 in the mean model (\eqn{u_1, u_2}) and two in the variance model (\eqn{w_1, w_2}), we may choose to fit
@@ -169,7 +169,7 @@ with the priors on these two parameters being normal and half-normal, respective
 the grouped correlations model can be specified. It considers a mixture of normal distributions for the means \eqn{\mu_R}. The grouped correlations model can also be specified. It clusters the variables instead of the correlations.  
 }
 
-\value{Function \code{mmvrm} returns the following:
+\value{Function \code{mvrm} returns the following:
 \item{call}{the matched call.}
 \item{formula}{model formula.}
 \item{seed}{the seed that was used (in case replication of the results is needed).}
@@ -224,7 +224,8 @@ Chan, D., Kohn, R., Nott, D., & Kirby, C. (2006). Locally adaptive semiparametri
 \author{Georgios Papageorgiou \email{gpapageo@gmail.com}}
 
 \examples{
-# Fit a mean/variance regression model on the cps71 dataset from package np
+# Fit a mean/variance regression model on the cps71 dataset from package np. 
+#This is a univariate response model
 require(np)
 require(ggplot2)
 data(cps71)

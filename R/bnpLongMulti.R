@@ -1,6 +1,6 @@
 lmrm <- function(formula,data=list(),id,time,
                  sweeps,burn=0,thin=1,seed,StorageDir,
-                 c.betaPrior="IG(0.5,0.5 * n * p)", pi.muPrior="Beta(1,1)", c.alphaPrior="IG(1.1,1.1)",
+                 c.betaPrior="IG(0.5,0.5*n*p)", pi.muPrior="Beta(1,1)", c.alphaPrior="IG(1.1,1.1)",
                  pi.phiPrior="Beta(1,1)", c.psiPrior="HN(2)",
                  sigmaPrior="HN(2)", pi.sigmaPrior="Beta(1,1)", 
                  corr.Model=c("common",nClust=1), DP.concPrior="Gamma(5,2)",
@@ -51,6 +51,7 @@ lmrm <- function(formula,data=list(),id,time,
     id<-eval(substitute(id), data)
     if (is.null(id)) stop("unrecognised id")
     n<-length(unique(id))
+    #print("n");print(n)
     niVec<-table(id)[1:n] 
     niMax<-max(niVec)
     N<-sum(niVec)
@@ -63,11 +64,8 @@ lmrm <- function(formula,data=list(),id,time,
     SUT<-sort(unique(time2))
     FUT<-table(time2)
     intime<-time2
-    #print(time2)
     for (i in 1:length(intime)) intime[i] <- which(intime[i]==SUT)-1   
     intime2 <- rep(intime,each=p)
-    #print(intime2)
-    #print(c(length(time2),length(intime2)))
     #Desing matrix C (dependence)
     dataNew<-as.data.frame(cbind(data,lag=rnorm(dim(data)[1])))
     bb<-DM(formula=formula.d,data=dataNew,n=dim(data)[1])
@@ -128,6 +126,7 @@ lmrm <- function(formula,data=list(),id,time,
     is.Dx<-XYK$is.D
     which.SpecX<-XYK$which.Spec
     formula.termsX<-XYK$formula.terms    
+    #print("2")
     #Desing matrix Z (variances)
     ZK<-DM(formula=formula.v,data=data,n=N)
     Z<-as.matrix(ZK$X)
@@ -198,13 +197,22 @@ lmrm <- function(formula,data=list(),id,time,
     which.SpecZc<-XYK$which.Spec
     formula.termsZc<-XYK$formula.terms   
     #Initialize covariance & correlation matrix
+    #print("3")
     LASTR<-LASTD<-LASTE<-rep(1,LUT)    
     if (p>1){        
         LASTR<-LASTD<-LASTE<-NULL
         for (t in SUT){
             Res<-NULL
-            for (i in 1:p){                 
-                Xinit<-X[time2==t,-grep("(",colnames(X),fixed=TRUE)]
+            for (i in 1:p){            
+				#print(head(X))
+				#print(grep("(",colnames(X),fixed=TRUE)) 
+				#RM<-grep("(",colnames(X),fixed=TRUE)
+				#print(RM)    			
+                RM<-grep("(",colnames(X),fixed=TRUE)[-1]
+				#print(RM)
+				Xinit<-X[time2==t,]
+                if (length(RM) > 0) Xinit<-Xinit[,-RM]
+                #print(head(Xinit))
                 lm1<-lm(Y[time2==t,i] ~ Xinit)
                 Res<-cbind(Res,residuals(lm1))
 			}
@@ -222,8 +230,8 @@ lmrm <- function(formula,data=list(),id,time,
             #print(cov2cor(CR))            
 		}
     }  
-    LASTAll<-c(LASTR,LASTD,LASTE)
-    #print("1")
+    LASTAll<-c(LASTR,LASTD,LASTE)    
+    #print("4")
     #print(LASTAll)
     #print("2")     
     #Prior for pi.mu
@@ -376,10 +384,11 @@ lmrm <- function(formula,data=list(),id,time,
 	#Prior for sigma2Cor
 	if (!length(sigmaCorPrior)==1)
         stop("sigmaCorPrior has incorrect dimension")
+    HNscor<-0    
     specials<-c("HN","IG")
     sp<-strsplit(sigmaCorPrior,"\\(")
     if (sp[[1]][1] %in% specials){ 
-        if (match(sp[[1]][1],specials)==1) HNscor<-1
+        if (match(sp[[1]][1],specials)==1 && p > 1) HNscor<-1
         if (match(sp[[1]][1],specials)==2) HNscor<-0
     } else stop("unrecognised prior for sigma2Cor")
     sp<-strsplit(sp[[1]][2],"\\)")
@@ -639,11 +648,152 @@ lmrm <- function(formula,data=list(),id,time,
     return(fit)
 } 
 
-postSigma<-function(x, subject){
-    psiAll <- mvrm2mcmc(x,"psi")
-    alphaAll <- mvrm2mcmc(x,"alpha") 
-    sigma2All <- mvrm2mcmc(x,"sigma2")
-    RAll <- mvrm2mcmc(x,"R")    
+#psiAll <- mvrm2mcmc(x,"psi")
+#alphaAll <- mvrm2mcmc(x,"alpha") 
+#sigma2All <- mvrm2mcmc(x,"sigma2")
+#RAll <- mvrm2mcmc(x,"R")    
+
+postSigma<-function(x, time, psi, alpha, sigma2, R, samples, ...){
+    p<-x$p
+    ifelse(missing(time), t<-x$SUT, t<-time)
+    T<-length(t)
+    postS<-matrix(0,nrow=T*p,ncol=T*p)    
+
+    # Vars
+    varsd<-as.list(substitute(list(...)))[-1]
+    if (x$varTime %in% names(varsd)) 
+        varsd <-varsd[-which(names(varsd)==x$varTime)]
+    if ("lag" %in% names(varsd)) 
+        varsd <-varsd[-which(names(varsd)=="lag")]
+
+    comp.des.mats<-1
+    if (comp.des.mats==1){
+		comp.des.mats<-0
+        # Zmat
+        vars<-x$varsZ
+        wv<-NULL 
+        newdata<-t
+        for (v in 1:length(vars)){
+	    	if (vars[[v]] %in% names(varsd)){
+                min1<-eval(varsd[[which(vars[[v]]==names(varsd))]])
+                newdata<-cbind(newdata,rep(min1,T))
+                wv<-c(wv,v)
+		    }
+        }
+        if (! (length(wv)+1) == length(vars)) stop("insufficient input on covariates")
+        newdata <- as.data.frame(newdata) 
+        colnames(newdata)<-c(x$varTime,vars[wv])
+        terms.reform<-NULL
+        k<-0
+        for (i in 1:length(x$formula.termsZ)){
+            term<-x$formula.termsZ[i]
+            if (!i %in%  which(unlist(x$which.SpecZ)==-99)){
+                k<-k+1
+                if (!grepl("knots",term)){
+                    term<-substr(term,1,nchar(term)-1)
+     		        term<-paste(term,",knots= knots[[",k,"]])")
+			    }
+	        }
+            terms.reform<-c(terms.reform,term)
+        }
+        formula2<-reformulate(terms.reform)
+        if (length(x$data)>0){
+            nd<-x$data[0,match(colnames(newdata),colnames(x$data)),drop=FALSE]
+            for (j in 1:dim(nd)[2])
+                nd[,j]<-drop(nd[,j])  
+            nd[1:NROW(newdata),] <- newdata
+        }else{nd<-newdata}
+        Zmat<-DM(formula=formula2,data=nd,n=NROW(nd),knots=x$Zknots,meanVector=x$storeMeanVectorZ,indicator=x$storeIndicatorZ)$X
+        Zmat<-as.matrix(Zmat)[,-1]
+    
+        # Cmat  
+        vars<-x$varsC
+        wv<-NULL 
+        C<-cbind(rep(seq(2,T,1),seq(1,T-1,1)), unlist(sapply(1:(T-1), function(i) seq(1,i,1))))
+        lag<-t[C[,1]]-t[C[,2]]
+        newdata<-lag
+        for (v in 1:length(vars)){
+	    	if (vars[[v]] %in% names(varsd)){
+                min1<-eval(varsd[[which(vars[[v]]==names(varsd))]])
+                newdata<-cbind(newdata,rep(min1,T))
+                wv<-c(wv,v)
+		    }
+        }
+        if (! (length(wv)+1) == length(vars)) stop("insufficient input on covariates")
+        newdata<-as.data.frame(newdata)
+        colnames(newdata)<-c("lag",vars[wv])
+        newdata <- as.data.frame(newdata) 
+        terms.reform<-NULL
+        k<-0
+        for (i in 1:length(x$formula.termsC)){
+            term<-x$formula.termsC[i]
+            if (!i %in%  which(unlist(x$which.SpecC)==-99)){
+                k<-k+1
+                if (!grepl("knots",term)){
+                    term<-substr(term,1,nchar(term)-1)
+     		        term<-paste(term,",knots= knots[[",k,"]])")
+			    }
+	        }
+            terms.reform<-c(terms.reform,term)
+        }
+        formula2<-reformulate(terms.reform)
+        if (length(x$data)>0){
+	    	dataNew<-as.data.frame(cbind(x$data,lag=rnorm(dim(x$data)[1])))
+            nd<-dataNew[0,match(colnames(newdata),colnames(dataNew)),drop=FALSE]
+            for (j in 1:dim(nd)[2])
+                nd[,j]<-drop(nd[,j])
+            nd[1:NROW(newdata),] <- newdata
+        }else{nd<-newdata}    
+        Cmat<-DM(formula=formula2,data=nd,n=NROW(newdata),knots=x$Cknots,meanVector=x$storeMeanVectorC,indicator=x$storeIndicatorC)$X   
+        Cmat<-as.matrix(Cmat)
+    }
+    
+    # #
+    Sij<-matrix(0,p,p)
+    RA<-diag(rep(1,p))
+    Li<-diag(rep(1,p*T))
+    Di<-matrix(0,p*T,p*T)
+    
+    if (missing(samples)) samples <- 1:x$nSamples
+    
+    for (sw in samples){		        
+	    buildPhi<-NULL
+		for (r1 in 1:p){
+	        for (r2 in 1:p){
+		        Pair<-(r1-1)*p + r2
+		        psiA<-psi[sw,(1+((Pair-1)*x$LK)):(Pair*x$LK)]		        
+		        buildPhi<-cbind(buildPhi,Cmat%*%matrix(psiA))
+            }
+		}				        
+		move<-1
+        if (T > 1){
+            for (j in 2:T){
+                for (k in 1:(j-1)){
+                    Li[(j*p-p+1):(j*p),(k*p-p+1):(k*p)] <- -matrix(buildPhi[move,],p,p,byrow=TRUE) 		
+                    move <- move + 1
+			    }
+		    }
+		}
+		Sr<-NULL
+		for (r in 1:p){
+			s2<-sigma2[sw,r]
+            alphaA<-alpha[sw,(1+((r-1)*x$LD)):(r*x$LD)]                                                            
+            Sr<-cbind(Sr,sqrt(s2*exp(Zmat%*%matrix(alphaA))))
+        }
+        for (j in 1:T){
+            diag(Sij) <- Sr[j,]  
+            pick.time<-which(t[j]==x$SUT)#j ; x$intime[cusumniVec[subject]+j]+1
+            RA[lower.tri(RA)] <- R[sw,(1+(pick.time-1)*p*(p-1)/2):(pick.time*p*(p-1)/2)]
+            RA[upper.tri(RA)] <- t(RA)[upper.tri(RA)] 
+            Di[((j-1)*p+1):(j*p),((j-1)*p+1):(j*p)] <- Sij %*% RA %*% Sij
+        }       
+        SigmaSW <- solve(Li)%*%Di%*%solve(t(Li))
+        postS <- postS + SigmaSW
+	}
+	return(postS/length(samples))
+}
+
+postSigma2<-function(x, subject, psi, alpha, sigma2, R, samples, ...){
     niVec<-x$niVec
     p<-x$p
     T<-niVec[subject]
@@ -653,16 +803,17 @@ postSigma<-function(x, subject){
     Cmat<-x$C[(cusumC[subject]+1):cusumC[subject+1],]      
     Zmat<-x$Z[(cusumniVec[subject]+1):cusumniVec[subject+1],-1]        
     Sij<-matrix(0,p,p)
-    R<-diag(rep(1,p))
+    RA<-diag(rep(1,p))
     Li<-diag(rep(1,p*T))
     Di<-matrix(0,p*T,p*T)
-    for (sw in 1:x$nSamples){		        
+    if (missing(samples)) samples <- 1:x$nSamples
+    for (sw in samples){		        
 	    buildPhi<-NULL
 		for (r1 in 1:p){
 	        for (r2 in 1:p){
 		        Pair<-(r1-1)*p + r2
-		        psi<-psiAll[sw,(1+((Pair-1)*x$LK)):(Pair*x$LK)]		        
-		        buildPhi<-cbind(buildPhi,Cmat%*%matrix(psi))
+		        psiA<-psi[sw,(1+((Pair-1)*x$LK)):(Pair*x$LK)]		        
+		        buildPhi<-cbind(buildPhi,Cmat%*%matrix(psiA))
             }
 		}				        
 		move<-1
@@ -674,21 +825,21 @@ postSigma<-function(x, subject){
 		}
 		Sr<-NULL
 		for (r in 1:p){
-			s2<-sigma2All[sw,r]
-            alpha<-alphaAll[sw,(1+((r-1)*x$LD)):(r*x$LD)]                                                            
-            Sr<-cbind(Sr,sqrt(s2*exp(Zmat%*%matrix(alpha))))
+			s2<-sigma2[sw,r]
+            alphaA<-alpha[sw,(1+((r-1)*x$LD)):(r*x$LD)]                                                            
+            Sr<-cbind(Sr,sqrt(s2*exp(Zmat%*%matrix(alphaA))))
         }
         for (j in 1:T){
             diag(Sij) <- Sr[j,]  
             pick.time<-x$intime[cusumniVec[subject]+j]+1              
-            R[lower.tri(R)] <- RAll[sw,(1+(pick.time-1)*p*(p-1)/2):(pick.time*p*(p-1)/2)]
-            R[upper.tri(R)] <- t(R)[upper.tri(R)]                                    
-            Di[((j-1)*p+1):(j*p),((j-1)*p+1):(j*p)] <- Sij %*% R %*% Sij
+            RA[lower.tri(RA)] <- R[sw,(1+(pick.time-1)*p*(p-1)/2):(pick.time*p*(p-1)/2)]
+            RA[upper.tri(RA)] <- t(RA)[upper.tri(RA)]                                    
+            Di[((j-1)*p+1):(j*p),((j-1)*p+1):(j*p)] <- Sij %*% RA %*% Sij
         }       
         SigmaSW <- solve(Li)%*%Di%*%solve(t(Li))
         postS <- postS + SigmaSW
 	}
-	return(postS/x$nSamples)
+	return(postS/length(samples))
 }
 
 plot3.bcmg<-function(x, model="mean", centre=mean, quantiles=c(0.10,0.90), plotEmptyCluster=FALSE, plotOptions=list(), ...){

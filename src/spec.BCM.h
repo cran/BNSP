@@ -948,13 +948,13 @@ void setVij(int i, int j, int p, int m, int LK, int NKsi, double *rsd, int ksi[p
 }
 
 //Compute vector of residuals
-void cRes(int p, int m, int LG, int gamma[p][LG], int Ngamma, double *X, gsl_vector *MeanEta, double *Y, double *sqRes){
+void cRes(int p, int m, int LG, int gamma[p][LG], int Ngamma, double *X, gsl_vector *MeanEta, double *Y, double *sqRes,
+          double *BaseXg){
     int i;
-    double BaseXg[m*p*(Ngamma+p)];    
+    //double BaseXg[m*p*(Ngamma+p)];    
     for (i = 0; i < (m*p*(Ngamma+p)); i++) 
         BaseXg[i] = 0;                                     
-    gsl_vector *yHat = gsl_vector_alloc(
-    p*m);
+    gsl_vector *yHat = gsl_vector_alloc(p*m);
     gsl_matrix_view Z;
     setBaseXg(p,m,LG,Ngamma,X,gamma,BaseXg);
 	Z = gsl_matrix_view_array(BaseXg,m*p,Ngamma+p);

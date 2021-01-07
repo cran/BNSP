@@ -38,14 +38,14 @@
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_roots.h>
 #include <gsl/gsl_multiset.h>
-
-//#include "matalg.h"
-//#include "pdfs.h"
-//#include "sampling.h"
-//#include "other.functions.h"
-//#include "mathm.h"
-//#include "spec.BCM.h"
-
+/* 
+#include "matalg.h"
+#include "pdfs.h"
+#include "sampling.h"
+#include "other.functions.h"
+#include "mathm.h"
+#include "spec.BCM.h"
+*/
 extern void   computeStStar(double *Y, int *time, int N, int t, int p, gsl_matrix *StStar); 
 extern void   ginv(int p, double tol, gsl_matrix *A);
 extern double FisherTr(double r, int I);
@@ -69,7 +69,7 @@ extern double ScalcMultLong(int m, int p, double tol, int LG, int Ngamma, int ni
 extern void compAllocVtoCompAlloc(int G, int p, int *compAllocV, int * compAlloc);
 extern double SPh(int T, int d, int H, int h, double tol, double *thetaTilde, int LG, int gamma[H][LG], int Ngamma, int *compAlloc, int nmembers, double ceta, double *AllBases, double *LPV, double *qf2);
 extern void postMeanVarEtaLong(int m, int p, double tol, int LG, int Ngamma, int niMax, int *niVec, int *cusumniVec, int N, double sigma2ij[N][p], int dimLPC, double LPC[m][dimLPC][p][p], double *Y, double *X, int gamma[p][LG], gsl_matrix *RiAll, int *intime, double ceta, gsl_vector *MeanEta, gsl_matrix *varEta);
-extern void cRes(int p, int m, int LG, int gamma[p][LG], int Ngamma, double *X, gsl_vector *MeanEta, double *Y, double *sqRes);
+extern void cRes(int p, int m, int LG, int gamma[p][LG], int Ngamma, double *X, gsl_vector *MeanEta, double *Y, double *sqRes, double *BaseXg);
 extern void cResCheck(int p, int m, int N, int niMax, int *niVec, int *cusumniVec, double sigma2ij[N][p], int dimLPC, double LPC[m][dimLPC][p][p], double *ResC, double *ResCheck, int SL);
 extern void postMeanVarPSI(int m, int p, double tol, int *niVec,  int *cusumniVec, int LK, int NKsi, double *rsd, int ksi[p][p][LK], int *cusumC, double *C, int N, double sigma2ij[N][p], gsl_matrix *RiAll, int *intime, double *cpsi, gsl_vector *Mean, gsl_matrix *Var);
 extern void MNCond(double tol, int start, int end, gsl_vector *mu, gsl_matrix *Sigma, double *W, gsl_vector *condMu, gsl_matrix *condSigma);
@@ -474,6 +474,8 @@ void longmultgv(int *seed1, char **WorkingDir, int *WF1,
     int compAlloc2[d];
     for (j = 0; j < d; j++)
         compAlloc2[j] = H+2;  
+    //
+    double *BaseXg = (double*) malloc (N*p*p*(LG+1) * sizeof(double));
         
     // Declare and allocate gsl vectors and matrices
     gsl_matrix *St = gsl_matrix_alloc(p,p);
@@ -1028,13 +1030,13 @@ void longmultgv(int *seed1, char **WorkingDir, int *WF1,
         postMeanVarEtaLong(m,p,tol,LG,Ngamma,niMax,niVec,cusumniVec,N,sigma2ij,dimLPC,LPC,Y,X,gamma,
                            RiAll,intime,ceta,&subMeanEta.vector,&subVarEta.matrix);                           
         //cSqRes2(p,N,LG,gamma,Ngamma,X,&subMeanEta.vector,Y,sqResC);         
-        cRes(p,N,LG,gamma,Ngamma,X,&subMeanEta.vector,Y,ResC);
+        cRes(p,N,LG,gamma,Ngamma,X,&subMeanEta.vector,Y,ResC,BaseXg);
 	    cResCheck(p,m,N,niMax,niVec,cusumniVec,sigma2ij,dimLPC,LPC,ResC,ResCheck,0);               
         for (l2 = 0; l2 < (N*p); l2++) 
             sqResC[l2] = pow(ResCheck[l2],2);        
         for (l = 0; l < p; l++){
             for (j = 0; j < ND; j++){
-		        if ((sw % batchL)==0 && WB > 0){
+		        if ((sw % batchL)==0 && WB > 0){ 
 	                if (acceptAlpha[l][j] > 0.25 && tuneAlpha[ND*l+j] < HUL) tuneAlpha[ND*l+j] += MIN(0.01,1/sqrt(WB)) * tuneAlpha[ND*l+j];
 	                if (acceptAlpha[l][j] <= 0.25 && tuneAlpha[ND*l+j] > HLL) tuneAlpha[ND*l+j] -= MIN(0.01,1/sqrt(WB)) * tuneAlpha[ND*l+j];
 	                acceptAlpha[l][j] = 0.0;
@@ -1113,7 +1115,7 @@ void longmultgv(int *seed1, char **WorkingDir, int *WF1,
                     postMeanVarEtaLong(m,p,tol,LG,Ngamma,niMax,niVec,cusumniVec,N,sigma2ijP,dimLPC,LPC,Y,X,gamma,
                                        RiAll,intime,ceta,&subMeanEta.vector,&subVarEta.matrix);                                        
                     //cSqRes2(p,N,LG,gamma,Ngamma,X,&subMeanEta.vector,Y,sqResP);                        
-                    cRes(p,N,LG,gamma,Ngamma,X,&subMeanEta.vector,Y,ResC);
+                    cRes(p,N,LG,gamma,Ngamma,X,&subMeanEta.vector,Y,ResC,BaseXg);
 	                cResCheck(p,m,N,niMax,niVec,cusumniVec,sigma2ij,dimLPC,LPC,ResC,ResCheck,0);               
                     for (l2 = 0; l2 < (N*p); l2++) 
                         sqResP[l2] = pow(ResCheck[l2],2);                                                    
@@ -1267,7 +1269,7 @@ void longmultgv(int *seed1, char **WorkingDir, int *WF1,
 	     
 	    // - 7 - Psi & Ksi
         //Rprintf("%i %s \n",sw,"psi & ksi");        
-        cRes(p,N,LG,gamma,Ngamma,X,&vecEta.vector,Y,ResC);                         
+        cRes(p,N,LG,gamma,Ngamma,X,&vecEta.vector,Y,ResC,BaseXg);                         
         start = 0;                
         for (k = 0; k < p; k++){
             for (l = 0; l < p; l++){
@@ -1359,7 +1361,7 @@ void longmultgv(int *seed1, char **WorkingDir, int *WF1,
                         sampleMN(s,Ngamma+p,&vecEta.vector,&subMeanEta.vector,&subVarEta.matrix,tol);                         
                         //Rprintf("%s %i \n","eta2 ",sw);
                         //print_vector(&vecEta.vector);                                                                       
-                        cRes(p,N,LG,gamma,Ngamma,X,&vecEta.vector,Y,ResP);                                                                                
+                        cRes(p,N,LG,gamma,Ngamma,X,&vecEta.vector,Y,ResP,BaseXg);                                                                                
                         //Rprintf("%i %s \n",sw,"3");
                         if (NCJ > 0){							
 							subMeanPsi = gsl_vector_subvector(meanPsi,0,Nksi);
@@ -1479,7 +1481,7 @@ void longmultgv(int *seed1, char **WorkingDir, int *WF1,
                 vecEta = gsl_vector_view_array(eta,Ngamma+p);
                 s = gsl_ran_flat(r,1.0,100000);
                 sampleMN(s,Ngamma+p,&vecEta.vector,&subMeanEta.vector,&subVarEta.matrix,tol);	
-	            cRes(p,N,LG,gamma,Ngamma,X,&vecEta.vector,Y,ResC);
+	            cRes(p,N,LG,gamma,Ngamma,X,&vecEta.vector,Y,ResC,BaseXg);
 	            cResCheck(p,m,N,niMax,niVec,cusumniVec,sigma2ij,dimLPC,LPC,ResC,ResCheck,1);
 			}
 			 
@@ -2183,6 +2185,9 @@ void longmultgv(int *seed1, char **WorkingDir, int *WF1,
     gsl_matrix_free(varEta2);
     gsl_vector_free(mutheta);
     gsl_vector_free(meanEta2);
+    
+    //
+    free(BaseXg);
 
     //Free jagged vectors
 	for (j = 0; j < NG; j++) {free(indexG[j]); free(vecGamma[j]); free(vecGammaP[j]);}

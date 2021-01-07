@@ -72,7 +72,8 @@ ls.mvrm <- function(x){
         }
         #Find clustering
         tab <- table(apply(compAllocPer+1, 1, paste, collapse=", "))
-        ls$clusters<-names(which.max(tab))
+        ls$clusters <- as.numeric(unlist(strsplit(names(which.max(tab)), ', ')))
+        
         #From permutation matrix of variables to permuation matrix of the correlations
         fpm<-matrix(-99,nrow=x$nSamples,ncol=x$H)
         for (sw in 1:x$nSamples){
@@ -214,7 +215,8 @@ plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, term, response, 
                 clusFN <- paste(mvrmObj$DIR,"BNSP.clusters.txt",sep="")
                 if (!file.exists(etaFN) || !file.exists(clusFN)) 
                     quiet(ls.mvrm(mvrmObj))                  
-                tabs<-table(array(unlist(read.table(clusFN))))
+                clus<-array(unlist(read.table(clusFN)))
+                tabs<-table(clus)
 		        labs<-array(0,mvrmObj$H)
                 labs[as.numeric(names(tabs))]<-tabs 
                 V <- rep(V,mvrmObj$H) + rep(seq(0,max(V)*(mvrmObj$H-1),by=max(V)),each=length(V))
@@ -285,33 +287,43 @@ plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, term, response, 
 	    if (CORM==1 && mvrmObj$H > 1){
             dataM<-data.frame(dataM,group=factor(rep(1:mvrmObj$H,each=grid)),size=rep(labs,each=grid))		       
             dataM<-dataM[order(-dataM$size, dataM[,1]),]            
-            if (!plotEmptyCluster) dataM<-dataM[dataM$size > 0,]
-            labs2<-labs[labs>0]      
+            labs2<-labs
+            if (!plotEmptyCluster) {
+				dataM<-dataM[dataM$size > 0,]
+				labs2<-labs[labs>0]
+			}            
         }        	    	    	    	    	    
-	    dataRug<-data.frame(b=with(data,eval(as.name(vars))))	    
+	    #dataRug<-data.frame(b=with(data,eval(as.name(vars))))	    
 	    plotElM<-c(geom_line(aes_string(x=as.name(vars),y=centreM),col=4,alpha=0.5),
-                   geom_rug(mapping=aes(x=dataRug$b),data=dataRug,alpha=0.3),
+                   #geom_rug(mapping=aes(x=dataRug$b),data=dataRug,alpha=0.3),
                    list(ylab(label)))        
         if (!is.null(quantiles))
             plotElM<-c(geom_ribbon(data=dataM,aes_string(x=vars, ymin="QLM", ymax="QUM"),alpha=0.2),plotElM)			    	                    
         if (CORM==1 && mvrmObj$H > 1){
 	        plotElM<-c(geom_line(aes_string(x=as.name(vars),y="centreM",group="group",linetype="group"),col=4,alpha=0.5),
-                       geom_rug(mapping=aes(x=dataRug$b),data=dataRug,alpha=0.3),
+                       #geom_rug(mapping=aes(x=dataRug$b),data=dataRug,alpha=0.3),
                        list(ylab(label)))        
             if (!is.null(quantiles))
                 plotElM<-c(geom_ribbon(data=dataM,aes_string(x=vars,ymin="QLM",ymax="QUM",group="group"),alpha=0.2),plotElM)			    	            
         }           
         ggM<-ggplot(data=dataM)
 	    plotM<-ggM + plotElM + plotOptions        
-        if (CORM==1 && mvrmObj$H > 1)
+        if (CORM==1 && mvrmObj$H > 1){
+			cns<-noquote(unlist(lapply(seq(1,p-1),function (k) paste(rep(k,p-k),seq(k+1,p),sep=""))))
+			cgsa<-noquote(paste(lapply(1:length(labs2), function(k)cns[clus==k]))) 		
             plotM <- ggM + plotElM + guides(fill=FALSE) +                 
-                     scale_linetype_manual(name = "group [size]", labels = paste("[",labs2,"]",sep=""),values=seq(1:mvrmObj$H)) + 
+                     scale_linetype_manual(name = "correlation groups: ",                      
+                     labels = cgsa, 
+                     values=seq(1:length(labs2))) + 
+                     theme(legend.position = "bottom") +
                      plotOptions 
+		}
 	    	    
 	}     
 	if (count==1 && is.D){	
 		lvs<-levels(with(data,eval(as.name(vars[1]))))
-		if (is.null(lvs)) lvs<-unique(with(data,eval(as.name(vars[1]))))
+		if (is.null(lvs)) lvs<-sort(unique(with(data,eval(as.name(vars[1])))))
+		                          #sort(unique(with(data,eval(as.name(vars[1])))))
 	    df<-data.frame(x=rep(lvs,each=mvrmObj$nSamples),y=c(fit))
         plotElM<-c(geom_boxplot(),list(xlab(label),ylab("")))
         ggM<-ggplot(data=df,aes(x=factor(df$x),y=df$y))
@@ -329,7 +341,8 @@ plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, term, response, 
 			dataM<-data.frame(dataM,c(t(QM[1,,])),c(t(QM[2,,])))					    		    
 		}
 		colnames(dataM) <- nms
-		DG<-data.frame(b=with(data,eval(as.name(cont.var))),c=with(data,eval(as.name(disc.var))))
+		
+		#DG<-data.frame(b=with(data,eval(as.name(cont.var))),c=with(data,eval(as.name(disc.var))))
 		
 		#plotElM<-c(geom_line(aes_string(x=as.name(vars),y="centreM",group="group",linetype="group"),col=4,alpha=0.5),
         #               geom_rug(mapping=aes(x=dataRug$b),data=dataRug,alpha=0.3),
@@ -340,7 +353,7 @@ plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, term, response, 
 		
 		plotElM<-c(geom_line(aes_string(x=cont.var,y=centreM,
 		           group=disc.var,linetype=disc.var),col=4,alpha=0.5),
-                   geom_rug(mapping=aes(x=DG$b,group=c,linetype=c),data=DG,alpha=0.3),
+                   #geom_rug(mapping=aes(x=DG$b,group=c,linetype=c),data=DG,alpha=0.3),
                    list(ylab(label)))
         
         if (!is.null(quantiles))

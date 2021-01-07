@@ -1,4 +1,4 @@
-citHeader("To cite BNSP in publications, please use the 2018 paper for univariate responses, and the 2020 paper for multivariate responses.")
+citHeader("To cite BNSP in publications, please use the 2018 paper for univariate, the 2020 paper for multivariate regression, or the 2020 paper on arxiv for covariance matrix modelling.")
   
 citEntry(entry="Article",
     title = "{BNSP}: an {R} Package for Fitting {B}ayesian Semiparametric Regression Models and Variable Selection",
@@ -20,12 +20,12 @@ citEntry(entry="Article",
     author = personList(as.person("Georgios Papageorgiou"), as.person("Benjamin C. Marshall")),
     journal = "Journal of Computational and Graphical Statistics",         
     year = {2020}, 
-    volume = {0},
-    number = {0},
-    pages = {1-14},
+    volume = {29},
+    number = {4},
+    pages = {896-909},
     doi = "10.1080/10618600.2020.1739534",
-    url = "10.1080/10618600.2020.1739534",
+    url = "https://doi.org/10.1080/10618600.2020.1739534",
     textVersion = paste("Georgios Papageorgiou and Benjamin C. Marshall (2020).",
                         "Bayesian Semiparametric Analysis of Multivariate Continuous Responses, With Variable Selection.",
-                         "Journal of Computational and Graphical Statistics, 0(0), 1--14")
+                         "Journal of Computational and Graphical Statistics, 29(4), 896-909")
 )

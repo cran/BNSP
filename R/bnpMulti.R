@@ -883,13 +883,15 @@ mvrm2mcmc <- function(mvrmObj,labels){
             if (p == 1) names4<-paste("cpsi")
             
             names5<-NULL
-            if (p > 1) names5<-paste("R",seq(1,mvrmObj$LUT))
+            if (p > 1) names5<-paste("R",seq(1,mvrmObj$LUT),sep="_")
             
-            names6<-NULL; names7<-NULL
-            if (p > 1) {names6<-"omega";names7<-"c_eta"}
+            names6<-NULL
+            if (p > 1 && mvrmObj$NDc > 0) {names6<-"omega"}
+            names7<-NULL
+            if (p > 1) {names7<-"c_eta"}
             
-            tune.names<-c("c_beta",names1,names2,names3[mvrmObj$HNca==1],names4[mvrmObj$HNcpsi==1],names5,names6,"sigms2R"[mvrmObj$HNscor==1],
-                          names7,"c_omega"[mvrmObj$HNco==1])
+            tune.names<-c("c_beta",names1,names2,names3[mvrmObj$HNca==1],names4[mvrmObj$HNcpsi==1],names5,names6,
+                          "sigms2R"[mvrmObj$HNscor==1],names7,"c_omega"[mvrmObj$HNco==1])
             
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=length(tune.names),dimnames=list(c(),tune.names)))
 		}
@@ -986,6 +988,8 @@ predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction
     formula2<-reformulate(terms.reform)
     if (length(object$data)>0){
         nd<-object$data[0,match(colnames(newdata),colnames(object$data)),drop=FALSE]
+        for (j in 1:dim(nd)[2])
+            nd[,j]<-drop(nd[,j])
         nd[1:NROW(newdata),] <- newdata
     }else{nd<-newdata}
     npred<-NROW(newdata)

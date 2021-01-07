@@ -70,7 +70,8 @@ sm<-function(...,k=10,knots=NULL,bs="rd"){
             knots<-seq(from = 0, to = 1, length = nknots + 2)[-c(1, nknots + 2)]            
             knots<-seq(from = 0, to = 1, length = nknots)            
             knots<-unique(round(quantile(x2,knots,type=type),5))           
-            knots<-data.frame(knots=knots)            
+            knots<-data.frame(knots=knots) 
+            #print(knots)           
         }
         if (!is.null(knots)){
 			knots<-data.frame(knots=knots)
@@ -131,7 +132,7 @@ sm<-function(...,k=10,knots=NULL,bs="rd"){
 DM<-function(formula,data,n,knots=NULL,predInd=FALSE,meanVector,indicator,mvrmObj){
     is.M <- NULL
     count <- NULL
-    k<-0
+    k <- 0
     Rknots <- list()
     vars <- list()
     is.D <- list()

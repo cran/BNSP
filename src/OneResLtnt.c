@@ -412,7 +412,10 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     
      //Rprintf("%s %f %f \n", "oops:", cdf_generalized_poisson_P3(0,4.7,0.006,&temp),exp(-4.7/0.006));  
     
-    //for (sw = 0; sw < -2; sw++) puts("this");      
+    //for (sw = 0; sw < -2; sw++) puts("this");  
+    
+    
+        
     //#############################################SAMPLER 
     for (sw = 0; sw < sweeps; sw++){ 
 

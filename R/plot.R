@@ -424,8 +424,8 @@ plot.mvrm <- function(x, model, term, response, response2,
     if ((model=="all" || model=="stdev") && (x$ND > 0)) STDEV <- 1
 #    if ((model=="all" || model=="corm") && (x$NGc > 0)) CORM <- 1
 #    if ((model=="all" || model=="cors") && (x$NDc > 0)) CORS <- 1
-    if ((model=="all" || model=="corm") && x$p > 1) CORM <- 1
-    if ((model=="all" || model=="cors") && x$p > 1) CORS <- 1
+    if ((model=="all" || model=="corm") && x$p > 1 && x$LUT > 1) CORM <- 1
+    if ((model=="all" || model=="cors") && x$p > 1 && x$LUT > 1) CORS <- 1
     if ((model=="all" || model=="dep") && (x$NK > 0)) DEP <- 1
     
     if (MEAN==0 && STDEV==0 && CORM==0 && CORS==0 && DEP==0) stop("no terms to plot");    

@@ -339,7 +339,7 @@ void longmultgv(int *seed1, char **WorkingDir, int *WF1,
     double ResC[N*p];
     double ResP[N*p];
     double ResCheck[N*p];
-    double priorLogR, Acp, unifRV, QFC, QFP, QFD, detR, detS, 
+    double priorLogR, Acp, unifRV, QFC, QFP, QFD, detR,
            logMVNormC, logMVNormP, SPC, SPP, temp, sigma2P, dev0, dev1,
            logLikP, logLikC, logPropDRP,logPropDRC, logAcp;
     int NPJ, NCJ, start;
@@ -374,7 +374,6 @@ void longmultgv(int *seed1, char **WorkingDir, int *WF1,
     double vizTheta[LUT*d];
     double vizZstar[(LUT*d)*(LGc+1)];
     int x, y, pos;
-    double baseThetaKL[LUT];
     double Zeta[LUT];
     double ZetaStore[H][LUT];
     
@@ -502,7 +501,7 @@ void longmultgv(int *seed1, char **WorkingDir, int *WF1,
     
     // GSL matrix and vector views
     gsl_matrix_view subD, subVarEta, subVarPsi, EtC, DtC, RtC,subA, Zstar;
-    gsl_vector_view subAlphaHat, subAlphaP, subMeanEta, subMeanPsi, vecEta, vecTheta, Ar, subMutheta, thetaKL, vecMean;
+    gsl_vector_view subAlphaHat, subAlphaP, subMeanEta, subMeanPsi, vecEta, vecTheta, Ar, subMutheta, vecMean;
     
     //Make adaptive
     int batchL = 50; //batch length

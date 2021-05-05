@@ -308,8 +308,8 @@ void   longmult(int *seed1, char **WorkingDir, int *WF1,
     double ResC[N*p];
     double ResP[N*p];
     double ResCheck[N*p];
-    double priorLogR, Acp, unifRV, QFC, QFP, QFD, detR, detS, 
-           logMVNormC, logMVNormP, SPC, SPP, temp, sigma2P, dev0, dev1,
+    double priorLogR, Acp, unifRV, QFC, QFP, QFD, detR, //detS, 
+           logMVNormC, logMVNormP, SPC, SPP, sigma2P, dev0, dev1,
            logLikP, logLikC, logPropDRP,logPropDRC, logAcp;
     int NPJ, NCJ, start;
     double cetahat, Sprime, SDprime, elPrime, elDPrime, Q2, cetaP, calphaP, cPsiP, omegaP;
@@ -1594,8 +1594,8 @@ void   longmult(int *seed1, char **WorkingDir, int *WF1,
 	            for (k = 0; k < vecLGc[j]; k++)
 	                gammaPCor[cusumVecLGc[j]+k] = vecGammaPCor[j][k];	            	            
 	            NPJ = 0;
-                for (k = 0; k < vecLGc[j]; k++)
-                    NPJ += vecGammaPCor[j][k];
+                for (k = 0; k < vecLGc[j]; k++){
+                    NPJ += vecGammaPCor[j][k];}
 	            NgammaPCor = NgammaCor - vecNgammaCor[j] + NPJ; 
 	            SPP = SPcalc(LUT,d,tol,thetaTilde,gammaPCor,NgammaPCor,LGc,cetaCor,Xc,LPVcor,&Q2);
                 Acp = exp((-SPP+SPC)/(2*sigma2cor))*pow(cetaCor+1,0.5*(vecNgammaCor[j]-NPJ));

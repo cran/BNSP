@@ -545,15 +545,15 @@ void computeStStar(double *Y, int *time, int N, int t, int p, gsl_matrix *StStar
     int i;
     int c = 0;
     double Yit[p];
-    gsl_matrix_view YitVec;    
+    gsl_vector_view YitVec;    
     gsl_matrix_set_zero(StStar);  
     for (i = 0; i < N; i++){       
         if (time[i]==t) Yit[c++] = Y[i];
         if (c == p){
-		    c=0;
-		    YitVec = gsl_matrix_view_array(Yit,p,1);
-            gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,&YitVec.matrix,&YitVec.matrix,1.0,StStar); 
-            //gsl_blas_dger(double alpha, const gsl_vector * x, const gsl_vector * y, gsl_matrix * A) UPDATE and use this function     
+		    c = 0;
+		    YitVec = gsl_vector_view_array(Yit,p);
+            //gsl_blas_dgemm(CblasNoTrans,CblasTrans,1.0,&YitVec.matrix,&YitVec.matrix,1.0,StStar); 
+            gsl_blas_dger(1.0, &YitVec.vector, &YitVec.vector, StStar);
 		}         
     }    
 }
@@ -568,10 +568,22 @@ void setXigammaStarT(int p, int m, int i, int LG, int Ngamma, double sigma2ij[m]
             if ((j==0) || (j>0 && gamma[k][j-1]==1)) base[k*(Ngamma+p)+move++] = X[i*(LG+1)+j]/sqrt(sigma2ij[i][k]);
 }
 
+//Sets up X_{i,gamma} tilde for t errors. Inputs are: 1. dim of y-vec, 2. number of sampling units, 3. sampling unit,
+// 4. length of gamma, 5. N(gamma) total, 6. LPV, 7. X matrix: one row per sampling unit, 8. gamma matrix, 9. U, 10.vec to store
+void setXigammaStarTR(int p, int m, int i, int LG, int Ngamma, double sigma2ij[m][p], double *X, int gamma[p][LG], double U[m][p],
+                      double *base){
+    int j, k, move;    
+    move = 0;    
+    for (k = 0; k < p; k++)
+        for (j = 0; j < (LG+1); j++)
+            if ((j==0) || (j>0 && gamma[k][j-1]==1)) base[k*(Ngamma+p)+move++] = X[i*(LG+1)+j]*sqrt(U[i][k]/sigma2ij[i][k]);
+}
+
+
 // Function S for multivariate responses: dim of response, # sampling units, length of gammas per regression, tol, ceta,
 // total Ngamma, vec of all Y-tilde, LPV, X = [X1,X2,...Xm], gamma mat, R^(-1), Sstar.  
 double ScalcMult(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, 
-                 int gamma[p][LG], gsl_matrix *Ri, gsl_matrix *St, double *qf2){
+                 int gamma[p][LG], gsl_matrix *Ri, gsl_matrix *St, double *qf2, double U[m][p], int mcm){
     int i, k;
     double S;
     double trace = 0.0;
@@ -589,8 +601,13 @@ double ScalcMult(int p, int m, int LG, double tol, double ceta, int Ngamma, doub
     for (i = 0; i < m; i++){
 	    for (k = 0; k < p; k++)        
             Yi[k] = Ytilde[i*p+k];
-    	YiVec = gsl_vector_view_array(Yi,p);		
-        setXigammaStarT(p,m,i,LG,Ngamma,sigma2ij,X,gamma,base);
+    	YiVec = gsl_vector_view_array(Yi,p);		    	
+        if (mcm < 8){
+		    setXigammaStarT(p,m,i,LG,Ngamma,sigma2ij,X,gamma,base);
+		}
+        else{
+			setXigammaStarTR(p,m,i,LG,Ngamma,sigma2ij,X,gamma,U,base);
+		}        
 	    Xig = gsl_matrix_view_array(base,p,(Ngamma+p));	           
         if (0==1){  
             Rprintf("%s %i \n", "base:", i);
@@ -614,8 +631,7 @@ double ScalcMult(int p, int m, int LG, double tol, double ceta, int Ngamma, doub
     //                            gsl_matrix_get(XRiX,1,4)*0.014);
 	
 		        
-	gsl_blas_dgemv(CblasTrans,1.0,XRiX,XRiY,0.0,AB);
-	
+	gsl_blas_dgemv(CblasTrans,1.0,XRiX,XRiY,0.0,AB);	
 	gsl_blas_ddot(XRiY,AB,qf2);
 	S = -(ceta/(1+ceta))*(*qf2);
     gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,Ri,St,0.0,RiS);	            
@@ -632,7 +648,7 @@ double ScalcMult(int p, int m, int LG, double tol, double ceta, int Ngamma, doub
 
 // Function that computes tr(R^{-1} sum_{i=1}^m (Ytil_i-Xtil_i^* beta^*)(Ytil_i-Xtil_i^* beta^*)^T) for multivariate responses
 double NormalQuadr(int p, int m, int LG, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, 
-                   int gamma[p][LG], gsl_matrix *Ri, double *beta){        
+                   int gamma[p][LG], gsl_matrix *Ri, double *beta, double U[m][p], int mcm){        
     int i, k;
     double trace = 0.0;
     double Yi[p];
@@ -646,8 +662,13 @@ double NormalQuadr(int p, int m, int LG, int Ngamma, double *Ytilde, double sigm
     for (i = 0; i < m; i++){
 	    for (k = 0; k < p; k++)        
             Yi[k] = Ytilde[i*p+k];
-    	YiVec = gsl_matrix_view_array(Yi,p,1);		
-        setXigammaStarT(p,m,i,LG,Ngamma,sigma2ij,X,gamma,base);
+    	YiVec = gsl_matrix_view_array(Yi,p,1);		        
+        if (mcm < 8){
+		    setXigammaStarT(p,m,i,LG,Ngamma,sigma2ij,X,gamma,base);		    
+		}
+        else{
+			setXigammaStarTR(p,m,i,LG,Ngamma,sigma2ij,X,gamma,U,base);
+		}        
 	    Xig = gsl_matrix_view_array(base,p,(Ngamma+p));	         	              
 		gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,&Xig.matrix,&Beta.matrix,0.0,XBeta);
 		gsl_matrix_sub(&YiVec.matrix,XBeta);		
@@ -663,7 +684,7 @@ double NormalQuadr(int p, int m, int LG, int Ngamma, double *Ytilde, double sigm
 // Function that computes the posterior mean and variance of \ubeta: dim of response, # sampling units, length of gammas per regression, tol, ceta,
 // total Ngamma, vec of all Y-tilde, LPV, X = [X1,X2,...Xm], gamma mat, R^(-1), mean, var.  
 void postMeanVarEta2(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, 
-                       int gamma[p][LG], gsl_matrix *Ri, gsl_vector *MeanEta, gsl_matrix *varEta){
+                       int gamma[p][LG], gsl_matrix *Ri, gsl_vector *MeanEta, gsl_matrix *varEta, double U[m][p], int mcm){
     int i, k;
     double Yi[p];
     double base[p*(Ngamma+p)];
@@ -679,10 +700,14 @@ void postMeanVarEta2(int p, int m, int LG, double tol, double ceta, int Ngamma, 
             Yi[k] = Ytilde[i*p+k];
     	YiVec = gsl_vector_view_array(Yi,p);		
         setXigammaStarT(p,m,i,LG,Ngamma,sigma2ij,X,gamma,base);
+        if (mcm < 8){
+		    setXigammaStarT(p,m,i,LG,Ngamma,sigma2ij,X,gamma,base);		    
+		}
+        else{
+			setXigammaStarTR(p,m,i,LG,Ngamma,sigma2ij,X,gamma,U,base);
+		}        
 	    Xig = gsl_matrix_view_array(base,p,Ngamma+p);	           
-	    
 	    //if (i<2) print_matrix(&Xig.matrix);
-	    
         gsl_blas_dgemm(CblasTrans,CblasNoTrans,1.0,&Xig.matrix,Ri,0.0,XRi);
         gsl_blas_dgemm(CblasNoTrans,CblasNoTrans,1.0,XRi,&Xig.matrix,1.0,XRiX);
         gsl_blas_dgemv(CblasNoTrans,1.0,XRi,&YiVec.vector,1.0,XRiY);
@@ -710,7 +735,8 @@ void setBaseXg(int p, int m, int LG, int Ngamma, double *X, int gamma[p][LG], do
 void cSqRes2(int p, int m, int LG, int gamma[p][LG], int Ngamma, double *X, gsl_vector *MeanEta, double *Y, double *sqRes){
     int i;
     double BaseXg[m*p*(Ngamma+p)];    
-    for (i = 0; i < (m*p*(Ngamma+p)); i++) BaseXg[i] = 0;                                     
+    for (i = 0; i < (m*p*(Ngamma+p)); i++) 
+        BaseXg[i] = 0;                                     
     gsl_vector *yHat = gsl_vector_alloc(p*m);
     gsl_matrix_view Z;
     setBaseXg(p,m,LG,Ngamma,X,gamma,BaseXg);
@@ -731,7 +757,7 @@ void cSqRes2(int p, int m, int LG, int gamma[p][LG], int Ngamma, double *X, gsl_
 //Compute alpha^hat_delta and Delta_delta
 void DeltaAlphaHatExp(int m, int p, int l, double tol, double LPV[m][p], double *sqRes, int *delta, int Ndelta, 
     int start, int end, double *AllBases, double sigma2, double sigma2ij[m][p], double calpha, 
-    gsl_matrix *D, gsl_vector *alphaHat){    
+    gsl_matrix *D, gsl_vector *alphaHat, double U[m][p], int mcm){    
     double base[m*Ndelta];
     int i, j, move;
     double vecd[m];
@@ -739,11 +765,15 @@ void DeltaAlphaHatExp(int m, int p, int l, double tol, double LPV[m][p], double 
     gsl_matrix *V = gsl_matrix_alloc(Ndelta,m);
     gsl_matrix_set_identity(I);
     gsl_matrix_view Z;
-    gsl_vector_view smallD;    
-    for (i = 0; i < m; i++){                         
-        vecd[i] = log(sigma2) + LPV[i][l] + (sqRes[i*p+l] - sigma2ij[i][l])/sigma2ij[i][l];
-	    //Rprintf("%s %f %f %f %f \n","vec d: ",vecd[i],log(sigma2),LPV[i][l],sqRes[i*p+l]);
+    gsl_vector_view smallD;  
+    if (mcm < 8){
+        for (i = 0; i < m; i++)
+            vecd[i] = log(sigma2) + LPV[i][l] + (sqRes[i*p+l] - sigma2ij[i][l])/sigma2ij[i][l];		    
 	}
+    else{
+        for (i = 0; i < m; i++)
+            vecd[i] = log(sigma2) + LPV[i][l] + (U[i][l]*sqRes[i*p+l] - sigma2ij[i][l])/sigma2ij[i][l];
+	}          
     move = 0;    
     for (i = 0; i < m; i++)
         for (j = start; j < end; j++)

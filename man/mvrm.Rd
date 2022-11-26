@@ -9,19 +9,26 @@ utilizes spike-slab priors for variable selection and regularization. See `Detai
 of the model.}
 
 \usage{
-mvrm(formula, data = list(), sweeps, burn = 0, thin = 1, seed, StorageDir,
-c.betaPrior = "IG(0.5, 0.5 * n * p)", pi.muPrior = "Beta(1, 1)", 
-c.alphaPrior = "IG(1.1, 1.1)", sigmaPrior = "HN(2)", pi.sigmaPrior = "Beta(1, 1)",
-mu.RPrior = "N(0, 1)", sigma.RPrior = "HN(1)", corr.Model = c("common", nClust = 1),
-DP.concPrior = "Gamma(5, 2)", tuneAlpha, tuneSigma2, tuneCb, tuneCa, tuneR, 
-tuneSigma2R, tau, FT = 1, ...) }
+mvrm(formula, distribution = "normal", data = list(), centre = TRUE, sweeps, 
+burn = 0, thin = 1, seed, StorageDir, c.betaPrior = "IG(0.5, 0.5 * n * p)", 
+pi.muPrior = "Beta(1, 1)", c.alphaPrior = "IG(1.1, 1.1)", sigmaPrior = "HN(2)", 
+pi.sigmaPrior = "Beta(1, 1)", c.psiPrior = "HN(1)", phiPrior = "HN(2)", 
+pi.omegaPrior = "Beta(1, 1)", mu.RPrior = "N(0, 1)", sigma.RPrior = "HN(1)", 
+corr.Model = c("common", nClust = 1), DP.concPrior = "Gamma(5, 2)", 
+tuneCbeta, tuneCalpha, tuneAlpha, tuneSigma2, tuneCpsi, tunePsi, 
+tunePhi, tuneR, tuneSigma2R, tuneHar, tau, FT = 1, compDeviance = FALSE, ...) }
 
 \arguments{
+
 \item{formula}{a formula defining the responses and the covariates in the mean and variance models e.g. \code{y1 | y2 ~ x | z} or
 for smooth effects \code{y1 | y2 ~ sm(x) | sm(z)}. The package uses the extended formula notation, where the responses are
 defined on the left of \code{~} and the mean and variance models on the right.}
 
+\item{distribution}{The distribution for the response variables. Currently two options are supported: "normal" and "t".}
+
 \item{data}{a data frame.}
+
+\item{centre}{Binary indicator. If set equal to TRUE, the design matrices are centred, to have column mean equl to zero, otherwise, if set to FALSE, the columns are not centred.}
 
 \item{sweeps}{total number of posterior samples, including those discarded in burn-in period
 (see argument \code{burn}) and those discarded by the thinning process
@@ -43,7 +50,7 @@ The default is "IG(0.5,0.5*n*p)", that is, an inverse Gamma with parameters \eqn
 The default is "Beta(1,1)". It can be of dimension \eqn{1}, of dimension \eqn{K} (the number of effects that enter the mean model),
 or of dimension \eqn{pK}}
 
-\item{c.alphaPrior}{The inverse Gamma prior of \eqn{c_{\alpha}}.
+\item{c.alphaPrior}{The prior of \eqn{c_{\alpha}}.
 The default is "IG(1.1,1.1)". Half-normal priors for \eqn{\sqrt{c_{\alpha}}} are also available, declared using "HN(a)", where "a"
 is a positive number. It can be of dimension \eqn{1} or \eqn{p} (the length of the multivariate response).}
 
@@ -54,6 +61,21 @@ declared using "IG(a,b)". It can be of dimension \eqn{1} or \eqn{p} (the length 
 
 \item{pi.sigmaPrior}{The Beta prior of \eqn{\pi_{\sigma}}.
 The default is "Beta(1,1)". It can be of dimension \eqn{1}, of dimension \eqn{Q} (the number of effects that enter the variance model), or of dimension \eqn{pQ}}
+
+\item{c.psiPrior}{The prior of \eqn{c_{\psi}}.
+The default is half-normal for \eqn{\sqrt{c_{\psi}}}, declared using "HN(a)", where "a"
+is a positive number. The default value for "a" is one. Inverse-gamma priors are also available 
+and they can be declared using "IG(a,b)", where "a" and "b" are positive constants. The prior can 
+be of dimension \eqn{1} or \eqn{p} (the length of the multivariate response).}
+
+\item{phiPrior}{The prior of \eqn{varphi^2}.
+The default is half-normal for \eqn{varphi}, declared using "HN(a)", where "a"
+is a positive number. The default value for "a" is two. Inverse-gamma priors are also available 
+and they can be declared using "IG(a,b)", where "a" and "b" are positive constants. The prior can 
+be of dimension \eqn{1} or \eqn{p} (the length of the multivariate response).}
+
+\item{pi.omegaPrior}{The Beta prior of \eqn{\pi_{\omega}}.
+The default is "Beta(1,1)". It can be of dimension \eqn{1}, of dimension \eqn{B} (the number of effects that enter the shape parameter model), or of dimension \eqn{pB}}
 
 \item{mu.RPrior}{The normal prior for \eqn{\mu_{R}}.
 The default is the standard normal distribution.}
@@ -72,27 +94,41 @@ For the "groupC" model, it is taken to be \eqn{d = p(p-1)/2}, the number of free
 
 \item{DP.concPrior}{The Gamma prior for the Dirichlet process concentration parameter.}
 
+\item{tuneCbeta}{Starting value of the tuning parameter for sampling \eqn{c_{\beta}}.
+Defaults at 20.}
+
+\item{tuneCalpha}{Starting value of the tuning parameter for sampling \eqn{c_{\alpha}}.
+Defaults at 1.}
+
 \item{tuneAlpha}{Starting value of the tuning parameter for sampling regression coefficients of the variance model
 \eqn{\alpha}. Defaults at 5.}
 
 \item{tuneSigma2}{Starting value of the tuning parameter for sampling variances \eqn{\sigma^2_j}.
 Defaults at 1.}
 
-\item{tuneCb}{Starting value of the tuning parameter for sampling \eqn{c_{\beta}}.
-Defaults at 10.}
-
-\item{tuneCa}{Starting value of the tuning parameter for sampling \eqn{c_{\alpha}}.
+\item{tuneCpsi}{Starting value of the tuning parameter for sampling \eqn{c_{\psi}}.
 Defaults at 1.}
 
+\item{tunePsi}{Starting value of the tuning parameter for sampling \eqn{\psi}.
+Defaults at 5.}
+
+\item{tunePhi}{Starting value of the tuning parameter for sampling \eqn{\varphi}.
+Defaults at 0.5.}
+
 \item{tuneR}{Starting value of the tuning parameter for sampling correlation matrices.
-Defaults at \eqn{100(p+2)}.}
+Defaults at \eqn{40*(p+2)^3}.}
 
 \item{tuneSigma2R}{Starting value of the tuning parameter for sampling \eqn{\sigma_{R}^2}.
 Defaults at 1.}
 
+\item{tuneHar}{Starting value of the tuning parameter for sampling the regression coefficients of
+the harmonics. Defaults at 100.}
+
 \item{tau}{The \eqn{tau} of the shadow prior. Defaults at 0.01.}
 
 \item{FT}{Binary indicator. If set equal to 1, the Fisher's z transform of the correlations is modelled, otherwise if set equal to 0, the untransformed correlations are modelled.}
+
+\item{compDeviance}{Binary indicator. If set equal to 1, the deviance is computed.}
 
 \item{...}{Other options that will be ignored.}
 }

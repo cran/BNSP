@@ -53,10 +53,9 @@
 #define MAX_PATH 300
 
 extern int (*p_pcubature)(unsigned, integrand, void *, unsigned, const double *, const double *,
-	                    size_t, double, double, error_norm, double *, double *);
+	                      size_t, double, double, error_norm, double *, double *);
 extern int (*p_hcubature)(unsigned, integrand, void *, unsigned, const double *, const double *,
-	                    size_t, double, double, error_norm, double *, double *);
-
+	                      size_t, double, double, error_norm, double *, double *);
 
 void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                 int *sweeps1, int *burn1, int *thin1, int *ncomp1, 
@@ -419,7 +418,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
     //#############################################SAMPLER 
     for (sw = 0; sw < sweeps; sw++){ 
 
-        if (sw==0) Rprintf("%i %s \n",sw, "posterior samples...");
+        if (sw==0) Rprintf("%i %s \n",sw, "posterior sample...");
         if (((sw+1) % 500)==0) Rprintf("%i %s \n",sw+1, "posterior samples...");
         
         modf(sw/batchL,&WB);
@@ -935,7 +934,7 @@ void OneResLtnt(int *seed1, double *X, int *Y, double *H,
                                 if (lower[k]==-lmt) lower[k] = params[k] - tol2 / params[NDVPi+k];
                                 if (upper[k]==lmt) upper[k] = params[k] + tol2 / params[NDVPi+k];
                             }                    
-                            if (NDVPi > 3) p_hcubature(1,MultiNormalPDF,params,NDVPi,lower,upper,0,0.0001,0,ERROR_INDIVIDUAL,&val,&err);
+                            if (NDVPi > 3)  p_hcubature(1,MultiNormalPDF,params,NDVPi,lower,upper,0,0.0001,0,ERROR_INDIVIDUAL,&val,&err);
                             if (NDVPi <= 3) p_pcubature(1,MultiNormalPDF,params,NDVPi,lower,upper,0,0.0001,0,ERROR_INDIVIDUAL,&val,&err);                                 
                             if (sw==3800 && i==4 && start==5 && h==20 && 1==0) Rprintf("%s %f %f %f %f %f %f %f %f %f \n","val:",
                             val,StoreUpper[h][0],StoreUpper[h][1],StoreUpper[h][2],StoreUpper[h][3],StoreUpper[h][4],StoreUpper[h][5],lower[0],upper[0]);                        

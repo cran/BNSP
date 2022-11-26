@@ -9,7 +9,7 @@ utilizes spike-slab priors for variable selection and function regularization. S
 of the model.}
 
 \usage{
-lmrm(formula, data = list(), id, time,
+lmrm(formula, data = list(), centre=TRUE, id, time,
 sweeps, burn = 0, thin = 1, seed, StorageDir,
 c.betaPrior = "IG(0.5,0.5*n*p)", pi.muPrior = "Beta(1,1)", 
 c.alphaPrior = "IG(1.1,1.1)", pi.phiPrior = "Beta(1,1)", c.psiPrior = "HN(2)",
@@ -17,7 +17,7 @@ sigmaPrior = "HN(2)", pi.sigmaPrior = "Beta(1,1)",
 corr.Model = c("common", nClust = 1), DP.concPrior = "Gamma(5,2)",
 c.etaPrior = "IG(0.5,0.5*samp)", pi.nuPrior = "Beta(1,1)", 
 pi.fiPrior = "Beta(1,1)", c.omegaPrior = "IG(1.1,1.1)", sigmaCorPrior = "HN(2)",
-tuneCa, tuneSigma2, tuneCb, tuneAlpha, tuneSigma2R, tuneR, tuneCpsi, 
+tuneCalpha, tuneSigma2, tuneCbeta, tuneAlpha, tuneSigma2R, tuneR, tuneCpsi, 
 tuneCbCor, tuneOmega, tuneComega, tau, FT = 1,...)
 }
 
@@ -27,6 +27,8 @@ for smooth effects \code{y1 | y2 ~ sm(x) | sm(w) | sm(z) | sm(t) | sm(t)}. The p
 defined on the left of \code{~} and the models on the right.}
 
 \item{data}{a data frame.}
+
+\item{centre}{Binary indicator. If set equal to TRUE, the design matrices are centred, to have column mean equl to zero, otherwise, if set to FALSE, the columns are not centred.}
 
 \item{id}{identifiers of the individuals or other sampling units that are observed over time.}
 
@@ -103,13 +105,13 @@ The default is "HN(2)", a half-normal prior for \eqn{\sigma^2} with variance equ
 \eqn{\sigma \sim N(0,2) I[\sigma > 0]}. Inverse Gamma priors for \eqn{\sigma^2} are also available,
 declared using "IG(a,b)". It can be of dimension \eqn{1}.}
 
-\item{tuneCa}{Starting value of the tuning parameter for sampling \eqn{c_{\alpha k}, k=1,\dots,p}.
+\item{tuneCalpha}{Starting value of the tuning parameter for sampling \eqn{c_{\alpha k}, k=1,\dots,p}.
 Defaults at a vector of $p$ ones. It could be of dimension \eqn{p}.}
 
 \item{tuneSigma2}{Starting value of the tuning parameter for sampling \eqn{\sigma^2_k, k=1,\dots,p}.
 Defaults at a vector of $p$ ones. It could be of dimension \eqn{p}.}
 
-\item{tuneCb}{Starting value of the tuning parameter for sampling \eqn{c_{\beta}}.
+\item{tuneCbeta}{Starting value of the tuning parameter for sampling \eqn{c_{\beta}}.
 Defaults at 100.}
 
 \item{tuneAlpha}{Starting value of the tuning parameter for sampling regression coefficients of the variance models

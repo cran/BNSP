@@ -49,11 +49,11 @@
 extern void   computeStStar(double *Y, int *time, int N, int t, int p, gsl_matrix *StStar); 
 extern void   ginv(int p, double tol, gsl_matrix *A);
 extern double FisherTr(double r, int I);
-extern double ScalcMult(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, gsl_matrix *St, double *qf2);
+extern double ScalcMult(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, gsl_matrix *St, double *qf2, double U[m][p], int mcm);
 extern void   proposeBlockInd(unsigned long int s, int *vecInd, int L, int B, int BS, int *shufInd, double c, double d, int *vecIndP);
-extern void   postMeanVarEta2(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, gsl_vector *MeanEta, gsl_matrix *varEta);
+extern void   postMeanVarEta2(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, gsl_vector *MeanEta, gsl_matrix *varEta, double U[m][p], int mcm);
 extern void   cSqRes2(int p, int m, int LG, int gamma[p][LG], int Ngamma, double *X, gsl_vector *MeanEta, double *Y, double *sqRes);
-extern void   DeltaAlphaHatExp(int m, int p, int l, double tol, double LPV[m][p], double *sqRes, int *delta, int Ndelta, int start, int end, double *AllBases, double sigma2, double sigma2ij[m][p], double calpha, gsl_matrix *D, gsl_vector *alphaHat);
+extern void   DeltaAlphaHatExp(int m, int p, int l, double tol, double LPV[m][p], double *sqRes, int *delta, int Ndelta, int start, int end, double *AllBases, double sigma2, double sigma2ij[m][p], double calpha, gsl_matrix *D, gsl_vector *alphaHat, double U[m][p], int mcm);
 extern void   sampleMN(unsigned long int s, int p, gsl_vector *y, gsl_vector *mu, gsl_matrix *Sigma, double tol);
 extern double logMVNormalpdf(int dim, gsl_vector *x, gsl_vector *mu, gsl_matrix *S, double tol);
 extern void   rwish(unsigned long int s, int p, double n, gsl_matrix *scale, gsl_matrix *rw);
@@ -63,7 +63,7 @@ extern double det(int p, gsl_matrix *E);
 extern void allocation(unsigned long int s, int n, int ncomp, double Prob[ncomp][n], int *compAlloc, int sw);
 extern void findNmembers(int n, int ncomp, int *compAlloc, int *nmembers);
 extern double updateAlpha(unsigned long int s, int n, int ncomp, double a, double b, double TruncAlpha, int *nmembers, double alpha);
-extern double NormalQuadr(int p, int m, int LG, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, double *beta);
+extern double NormalQuadr(int p, int m, int LG, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, double *beta, double U[m][p], int mcm);
 
 extern double ScalcMultLong(int m, int p, double tol, int LG, int Ngamma, int niMax, int *niVec, int *cusumniVec, int N, double sigma2ij[N][p], int dimLPC, double LPC[m][dimLPC][p][p], double *Y, double *X, int gamma[p][LG], gsl_matrix *RiAll, int *intime, double ceta, double *qf2);
 extern double SPh(int T, int d, int H, int h, double tol, double *thetaTilde, int LG, int gamma[H][LG], int Ngamma, int *compAlloc, int nmembers, double ceta, double *AllBases, double *LPV, double *qf2);
@@ -77,12 +77,12 @@ extern void postMeanVarEtaH(int T, int d, int H, int h, double tol, int LG, int 
 extern void setBaseZBSgh(int T, int d, int H, int h, int LG, int gamma[H][LG], int *compAlloc, double *AllBases, double *BaseZBSgh);
 extern void cSqResh(int T, int d, int h, int *compAlloc, int *gamma, int *Ngamma, int LG, double *AllBases, gsl_vector *MeanEta, double *theta, double *sqRes);
 extern void DeltaAlphaHat(int T, int d, double tol, double *LPV, double *sqRes, int *delta, int Ndelta, int start, int end, double *AllBases, double sigma2, double *sigma2t, double calpha, gsl_matrix *D, gsl_vector *alphaHat);
- 
+
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX_PATH 300
  
-void  longmultg(int *seed1, char **WorkingDir, int *WF1,
+void  longmultg(int *seed1, char **WorkingDir, 
                 int *sbtmpN, 
                 int *niVec, int *cusumniVec, int *intime2, int *intime, int *niMaxLUT, int *FUT,                
                 int *cusumC, double *C, double *Y, double *X, double *Z, double *Xc, double *Zc, 
@@ -93,13 +93,13 @@ void  longmultg(int *seed1, char **WorkingDir, int *WF1,
                 double *tuneR, double *tuneCpsi, double *tuneCbCor, double *tuneOmega, double *tuneComega, 
                 double *pimu, double *cetaParams, double *pisigma, int *HNca, double *calphaParams,
                 int *HNszk, double *szkParams, double *piphi, int *HNcpsi, double *cpsiParams, 
-                double *cetaCorParams, int *HNco, double *comegaParams, double *pinu, double *pifi,
+                double *cetaCorParams, int *HNco, double *comegaParams, double *pinufi,
                 int *HNsigcor, double *sigmaCorParams,
-                double *tau1, int *FT, double *dev,
+                double *tau1, int *FT, double *dev, int *isDz,
                 int *contParams, double *LASTAll,
                 int *H1, double *DPparams)
 {
-    //gsl_set_error_handler_off();
+    gsl_set_error_handler_off();
 
     // Random number generator initialization
     int seed = seed1[0]; //random number generator seed
@@ -107,8 +107,7 @@ void  longmultg(int *seed1, char **WorkingDir, int *WF1,
     gsl_rng_set(r, seed);
     unsigned long int s; //for calling random number generating functions
 
-    // Specify directory
-    int WF = WF1[0]; // indicator: 1 = write files, 0 = no files.
+    // Specify directory    
     char path_name[MAX_PATH + 1];
 
     // Open files
@@ -192,6 +191,7 @@ void  longmultg(int *seed1, char **WorkingDir, int *WF1,
     int MVLD = sbtmpN[6];
     int d = p*(p-1)/2;
     int H = H1[0];//number of surfaces
+    int mcm = sbtmpN[7];
 
     //Tolerance level
     double tol = 0.000000015; //tolerance level for eigen values when inverting matrices
@@ -234,13 +234,12 @@ void  longmultg(int *seed1, char **WorkingDir, int *WF1,
     double dfi[NDc];     
     move = 0;
     for (k = 0; k < NGc; k++){
-        cnu[k] = pinu[move++];
-        dnu[k] = pinu[move++];
+        cnu[k] = pinufi[move++];
+        dnu[k] = pinufi[move++];
 	}    
-	move = 0;
     for (k = 0; k < NDc; k++){
-        cfi[k] = pifi[move++];
-        dfi[k] = pifi[move++];
+        cfi[k] = pinufi[move++];
+        dfi[k] = pinufi[move++];
 	}
 
     //c.alpha & sigma^2_{zero k} & c.psi & sigma^2_cor
@@ -362,6 +361,7 @@ void  longmultg(int *seed1, char **WorkingDir, int *WF1,
     double vizTheta[LUT*d];
     double vizZstar[(LUT*d)*(LGc+1)];
     double Zeta[LUT];
+    double U[N][p];
     
     //Selecting block size: gamma_B, delta_B, ksi_B
     int block, blockSize;
@@ -551,7 +551,7 @@ void  longmultg(int *seed1, char **WorkingDir, int *WF1,
     // Sampler initialization
     move2 = 0;
     
-    // - 7 - R related: RiAll, Et, Dt, Rt, rt, theta
+    // - 0 - R related: RiAll, Et, Dt, Rt, rt, theta
     //if (contParams[0]==1){
 		for (t = 0; t < LUT; t++){
             for (j = 0; j < p*p; j++){            
@@ -603,7 +603,6 @@ void  longmultg(int *seed1, char **WorkingDir, int *WF1,
             theta[i+t*d] = FisherTr(rt[i+t*d],FT[0]) + gsl_ran_gaussian(r,tau1[0]);
 
     // - 1 - Gamma
-    move2 = 0;
     if (contParams[0]==1){
         for (j = 0; j < p; j++)
             for (k = 0; k < LG; k++)
@@ -1051,8 +1050,13 @@ void  longmultg(int *seed1, char **WorkingDir, int *WF1,
                     if (NPJ > 0){
                         subAlphaHat = gsl_vector_subvector(alphaHat,0,NPJ);
                         subD = gsl_matrix_submatrix(D,0,0,NPJ,NPJ);                      
-                        DeltaAlphaHatExp(N,p,l,tol,LPV,sqResC,vecDeltaP[j],NPJ,cusumVecLD[j],cusumVecLD[j+1],
-                                         Z,sigma2zk[l],sigma2ij,calpha[l],&subD.matrix,&subAlphaHat.vector);                        
+                        if (isDz[j] == 0){
+                            DeltaAlphaHatExp(N,p,l,tol,LPV,sqResC,vecDeltaP[j],NPJ,cusumVecLD[j],cusumVecLD[j+1],
+                                             Z,sigma2zk[l],sigma2ij,calpha[l],&subD.matrix,&subAlphaHat.vector,U,mcm);                        
+                        }else{ 
+                            gsl_vector_set(&subAlphaHat.vector,0,alpha[l][cusumVecLD[j]]);
+                            gsl_matrix_set(&subD.matrix,0,0,1);
+					    }                                         
                         subAlphaP = gsl_vector_subvector(alphaP,0,NPJ);
                         gsl_matrix_scale(&subD.matrix,tuneAlpha[ND*l+j]);
                         s = gsl_ran_flat(r,1.0,100000);
@@ -1111,8 +1115,13 @@ void  longmultg(int *seed1, char **WorkingDir, int *WF1,
                     if (NCJ > 0){
 	                    subAlphaHat = gsl_vector_subvector(alphaHat,0,NCJ);
                         subD = gsl_matrix_submatrix(D,0,0,NCJ,NCJ);
-                        DeltaAlphaHatExp(N,p,l,tol,LPVP,sqResP,vecDelta[j],NCJ,cusumVecLD[j],cusumVecLD[j+1],
-                                         Z,sigma2zk[l],sigma2ijP,calpha[l],&subD.matrix,&subAlphaHat.vector);
+                        if (isDz[j] == 0){ 
+                            DeltaAlphaHatExp(N,p,l,tol,LPVP,sqResP,vecDelta[j],NCJ,cusumVecLD[j],cusumVecLD[j+1],
+                                             Z,sigma2zk[l],sigma2ijP,calpha[l],&subD.matrix,&subAlphaHat.vector,U,mcm);
+                        }else{
+                            gsl_vector_set(&subAlphaHat.vector,0,alphaPD[cusumVecLD[j]]);
+                            gsl_matrix_set(&subD.matrix,0,0,1);
+					    }                      
                         gsl_matrix_scale(&subD.matrix,tuneAlpha[ND*l+j]);
                         move=0;
                         for (k = 0; k < vecLD[j]; k++)
@@ -1678,7 +1687,7 @@ void  longmultg(int *seed1, char **WorkingDir, int *WF1,
                 for (j = 0; j < NgammaCor[h]+1; j++)
                     etaCor[j] = gsl_ran_gaussian(r,sqrt(sigma2cor*cetaCor));                                                                               
                
-            if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0) && (WF == 1)){
+            if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0)){
                 move = 0;
                 fprintf(out_file18, "%f ", etaCor[move++]);
                 for (j = 0; j < LGc; j++)
@@ -1981,7 +1990,7 @@ void  longmultg(int *seed1, char **WorkingDir, int *WF1,
 	    }
         
 	    //Post burn-in 	    
-        if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0) && (WF == 1)){
+        if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0)){
 
             // - 16 - etaCor           
             //subMeanEta = gsl_vector_subvector(meanEta2,0,NgammaCor+1);//not needed

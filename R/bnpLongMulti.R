@@ -1,12 +1,33 @@
-lmrm <- function(formula,data=list(),id,time,
+# lmrm, postSigma, postSigma2, plot3.bcmg  
+lmrm <- function(formula,
+                 data=list(),centre=TRUE,
+                 id,
+                 time,
                  sweeps,burn=0,thin=1,seed,StorageDir,
-                 c.betaPrior="IG(0.5,0.5*n*p)", pi.muPrior="Beta(1,1)", c.alphaPrior="IG(1.1,1.1)",
-                 pi.phiPrior="Beta(1,1)", c.psiPrior="HN(2)",
-                 sigmaPrior="HN(2)", pi.sigmaPrior="Beta(1,1)", 
-                 corr.Model=c("common",nClust=1), DP.concPrior="Gamma(5,2)",
-                 c.etaPrior="IG(0.5,0.5*samp)", pi.nuPrior="Beta(1,1)", pi.fiPrior="Beta(1,1)",
-                 c.omegaPrior="IG(1.1,1.1)",sigmaCorPrior="HN(2)",
-                 tuneCa,tuneSigma2,tuneCb,tuneAlpha,tuneSigma2R,tuneR,tuneCpsi,tuneCbCor,tuneOmega,tuneComega,
+                 c.betaPrior="IG(0.5,0.5*n*p)", 
+                 pi.muPrior="Beta(1,1)", 
+                 c.alphaPrior="IG(1.1,1.1)",
+                 pi.phiPrior="Beta(1,1)", 
+                 c.psiPrior="HN(2)",
+                 sigmaPrior="HN(2)", 
+                 pi.sigmaPrior="Beta(1,1)", 
+                 corr.Model=c("common",nClust=1), 
+                 DP.concPrior="Gamma(5,2)",
+                 c.etaPrior="IG(0.5,0.5*samp)", 
+                 pi.nuPrior="Beta(1,1)", 
+                 pi.fiPrior="Beta(1,1)",
+                 c.omegaPrior="IG(1.1,1.1)",
+                 sigmaCorPrior="HN(2)",
+                 tuneCalpha,
+                 tuneSigma2,
+                 tuneCbeta,
+                 tuneAlpha,
+                 tuneSigma2R,
+                 tuneR,
+                 tuneCpsi,
+                 tuneCbCor,
+                 tuneOmega,
+                 tuneComega,
                  tau,FT=1,...){
     #Samples etc
     if (thin <= 0) thin <- 1
@@ -68,7 +89,7 @@ lmrm <- function(formula,data=list(),id,time,
     intime2 <- rep(intime,each=p)
     #Desing matrix C (dependence)
     dataNew<-as.data.frame(cbind(data,lag=rnorm(dim(data)[1])))
-    bb<-DM(formula=formula.d,data=dataNew,n=dim(data)[1])
+    bb<-DM(formula=formula.d,data=dataNew,n=dim(data)[1],centre=centre)
     vars <- unlist(bb$vars)
     if ("lag" %in% vars)
         vars <- vars[-which(vars=="lag")]   
@@ -88,7 +109,7 @@ lmrm <- function(formula,data=list(),id,time,
 	}
 	#print(lag)
 	if (niMax>1){    
-        XYK<-DM(formula=formula.d,data=lag,n=dim(lag)[1])
+        XYK<-DM(formula=formula.d,data=lag,n=dim(lag)[1],centre=centre)
         C<-as.matrix(XYK$X)
     }else{
     	XYK<-NULL
@@ -110,7 +131,7 @@ lmrm <- function(formula,data=list(),id,time,
     which.SpecC<-XYK$which.Spec
     formula.termsC<-XYK$formula.terms
     #Desing matrix X (mean)
-    XYK<-DM(formula=formula.m,data=data,n=N)
+    XYK<-DM(formula=formula.m,data=data,n=N,centre=centre)
     X<-as.matrix(XYK$X)
     Xknots<-XYK$Rknots
     storeMeanVectorX<-XYK$meanVector
@@ -128,32 +149,41 @@ lmrm <- function(formula,data=list(),id,time,
     formula.termsX<-XYK$formula.terms    
     #print("2")
     #Desing matrix Z (variances)
-    ZK<-DM(formula=formula.v,data=data,n=N)
+    ZK<-DM(formula=formula.v,data=data,n=N,centre=centre)
     Z<-as.matrix(ZK$X)
     Zknots<-ZK$Rknots
     storeMeanVectorZ<-ZK$meanVector
     storeIndicatorZ<-ZK$indicator
     LD<-NCOL(Z)-1
-    vecLD<-table(ZK$assign)[-1]
-    ND<-length(vecLD)
-    cusumVecLD<-c(0,cumsum(vecLD))
-    MVLD <- 1
-    if (LD > 0 || LK > 0) MVLD<-max(vecLD,vecLK)
-    assignZ<-ZK$assign
     labelsZ<-ZK$labels
     countZ<-ZK$count
     varsZ<-ZK$vars
-    is.Dz<-ZK$is.D
     which.SpecZ<-ZK$which.Spec
     formula.termsZ<-ZK$formula.terms
+    is.Dz<-ZK$is.D
+    assignZ<-ZK$assign    
+    #vecLD<-table(assignZ)[-1]
+    #cusumVecLD<-c(0,cumsum(vecLD))
+    ND<-max(assignZ)#length(vecLD)    
+    repeats<-rep(1,ND)
+    repeats[which(is.Dz==1)]<-table(assignZ)[which(is.Dz==1)+1]
+    oneHE<-1; if (ND > 0) oneHE<-rep(c(1:ND),repeats)
+    assignZ2<-ZK$assign2        
+    vecLD<-table(assignZ2)[-1]
+    cusumVecLD<-c(0,cumsum(vecLD))
+    ND2<-max(assignZ2)#length(vecLD)    
+    isDz2<-as.numeric(is.Dz)[oneHE]
+    if (is.na(isDz2)) isDz2<-1
+    MVLD <- 1
+    if (LD > 0 || LK > 0) MVLD<-max(vecLD,vecLK)
     #Design matrix Xc (mean of correlations)
     d<-p*(p-1)/2
     t <- rep(SUT,each=d)
     dataCor<-data.frame(t)
     if (p > 1){
-		lab<-DM(formula=formula.corm,data=data,n=1)        
+		lab<-DM(formula=formula.corm,data=data,n=1,centre=centre)        
         if (length(lab$vars) > 0) colnames(dataCor)<-lab$vars[[1]]   
-		XYK<-DM(formula=formula.corm,data=dataCor,n=(LUT*d))
+		XYK<-DM(formula=formula.corm,data=dataCor,n=(LUT*d),centre=centre)
 		Xc<-as.matrix(XYK$X)
 	}else{
 	    XYK<-NULL
@@ -175,7 +205,7 @@ lmrm <- function(formula,data=list(),id,time,
     formula.termsXc<-XYK$formula.terms
     #Design matrix Zc (variance of correlations)
     if (p > 1){
-		XYK<-DM(formula=formula.corv,data=dataCor,n=(LUT*d))    
+		XYK<-DM(formula=formula.corv,data=dataCor,n=(LUT*d),centre=centre)    
         Zc<-as.matrix(XYK$X)
     }else{
 		XYK<-NULL
@@ -216,7 +246,7 @@ lmrm <- function(formula,data=list(),id,time,
                 lm1<-lm(Y[time2==t,i] ~ Xinit)
                 Res<-cbind(Res,residuals(lm1))
 			}
-            CR<-0.9*cov(Res)+0.1*diag(1,p)            
+            CR<-0.9*cov(Res)+0.1*diag(mean(eigen(cov(Res))$values),p)         
             LASTR<-c(LASTR,c(cov2cor(CR)))            
             D<-matrix(0,p,p)
             diag(D)<-sqrt(diag(CR))
@@ -276,17 +306,22 @@ lmrm <- function(formula,data=list(),id,time,
     sp<-strsplit(sp[[1]][1],",")
     cetaCorParams<-c(as.numeric(sp[[1]][1]),eval(parse(text=sp[[1]][2])))
     #Prior for pi.sigma
-    if (!length(pi.sigmaPrior)==1 && !length(pi.sigmaPrior)==ND && !length(pi.sigmaPrior)==(p*ND))
-        stop("pi.sigmaPrior has incorrect dimension")
-    pisigma<-NULL
-    for (k in 1:length(pi.sigmaPrior)){
-        sp<-strsplit(pi.sigmaPrior[k],"Beta\\(")
-        sp<-strsplit(sp[[1]][2],"\\)")
-        sp<-strsplit(sp[[1]][1],",")
-        pisigma<-c(pisigma,as.numeric(sp[[1]]))
-    }
-    if (length(pi.sigmaPrior)==1) pisigma<-rep(pisigma,p*ND)
-    if (length(pi.sigmaPrior)==ND) pisigma<-rep(pisigma,p)
+    if (ND > 0){
+        if (!length(pi.sigmaPrior)==1 && !length(pi.sigmaPrior)==ND && !length(pi.sigmaPrior)==(p*ND))
+            stop("pi.sigmaPrior has incorrect dimension")
+        if (length(pi.sigmaPrior)==(p*ND)) 
+            pi.sigmaPrior<-pi.sigmaPrior[oneHE+rep(seq(from=0,to=p*ND-1,by=ND),each=length(oneHE))]
+        if (length(pi.sigmaPrior)==ND) pi.sigmaPrior<-pi.sigmaPrior[oneHE]    
+        pisigma<-NULL
+        for (k in 1:length(pi.sigmaPrior)){
+            sp<-strsplit(pi.sigmaPrior[k],"Beta\\(")
+            sp<-strsplit(sp[[1]][2],"\\)")
+            sp<-strsplit(sp[[1]][1],",")
+            pisigma<-c(pisigma,as.numeric(sp[[1]]))
+        }
+        if (length(pi.sigmaPrior)==1) pisigma<-rep(pisigma,p*ND2)
+        if (length(pi.sigmaPrior)==ND2) pisigma<-rep(pisigma,p)
+	}else{pisigma<-1}
     #Prior for c.alpha
     if (!length(c.alphaPrior)==1 && !length(c.alphaPrior)==p)
         stop("c.alphaPrior has incorrect dimension")
@@ -397,8 +432,7 @@ lmrm <- function(formula,data=list(),id,time,
     #Cor model
     corModels<-c("common","groupC","groupV")
     mcm<-4+match(corr.Model[1],corModels)
-    if (p==1) mcm=5
-    if (p==2) mcm=5
+    if (p==1 || p==2) mcm <- 5
     if (is.na(mcm)) stop("unrecognised correlation model")
     H <- G <- 1
     if (mcm==6){
@@ -413,7 +447,7 @@ lmrm <- function(formula,data=list(),id,time,
         H<-G*(G-1)/2+G #min(d,G*(G-1)/2+G) #min(G,abs(p-G))
 	}
     #Prior for alpha DP
-    if (mcm > 5){
+    if (mcm == 6 || mcm==7){
         sp<-strsplit(DP.concPrior,"Gamma\\(")
         sp<-strsplit(sp[[1]][2],"\\)")
         sp<-strsplit(sp[[1]][1],",")
@@ -423,7 +457,6 @@ lmrm <- function(formula,data=list(),id,time,
     #Seed
     if (missing(seed)) seed<-as.integer((as.double(Sys.time())*1000+Sys.getpid()) %% 2^31)
     # Storage directory & files
-    WF <- 1
     if (!missing(StorageDir)){
         StorageDir <- path.expand(StorageDir)
         ncharwd <- nchar(StorageDir)}
@@ -434,19 +467,29 @@ lmrm <- function(formula,data=list(),id,time,
             "sigma2R","ceta","comega","eta", "deviance", 
             "compAlloc", "nmembers", "DPconc",
             "compAllocV","nmembersV",
-            "DE", "test","nu.ls","eta.ls","nmembers.ls","clusters","probs","tune")
+            "DE", "test","nu.ls","eta.ls","nmembers.ls","clusters","probs","tune",
+            "muR", "phi2")
     for (i in 1:length(FL)){
         oneFile <- paste(StorageDir, paste("BNSP",FL[i], "txt",sep="."),sep="/")
         if (file.exists(oneFile)) file.remove(oneFile)
 	}
     #Tuning Parameters            
-    if (missing(tuneCa)) tuneCa<-rep(1,p)
-    if (!length(tuneCa)==p) tuneCa<-rep(mean(tuneCa),p)        
+    if (missing(tuneCalpha)) tuneCalpha<-rep(1,p)
+    if (!length(tuneCalpha)==p) tuneCalpha<-rep(mean(tuneCalpha),p)        
     if (missing(tuneSigma2)) tuneSigma2<-rep(1,p)
     if (!length(tuneSigma2)==p) tuneSigma2<-rep(mean(tuneSigma2),p)                 
-    if (missing(tuneCb)) tuneCb<-100
-    if (missing(tuneAlpha)) tuneAlpha<-rep(5,ND*p)
-    if (!length(tuneAlpha)==(ND*p)) tuneAlpha<-rep(mean(tuneAlpha),ND*p)
+    if (missing(tuneCbeta)) tuneCbeta<-100
+    if (ND>0){
+        if (missing(tuneAlpha) || !length(tuneAlpha)==ND || !length(tuneAlpha)==(ND*p)){
+		    tuneAlpha<-rep(5,ND)
+		    tuneAlpha[which(is.Dz==1)]<-1
+	    }    
+	    if (length(tuneAlpha)==(ND*p)) 
+            tuneAlpha<-tuneAlpha[oneHE+rep(seq(from=0,to=p*ND-1,by=ND),each=length(oneHE))]                
+        if (length(tuneAlpha)==ND) tuneAlpha<-tuneAlpha[oneHE]
+        if (length(tuneAlpha)==ND2) tuneAlpha<-rep(tuneAlpha,p)
+    }else{tuneAlpha<-1}
+    
     if (missing(tuneSigma2R)) tuneSigma2R<-1
     if (missing(tuneR)) tuneR<-rep(40*(p+2)^3,LUT)
     tuneR[which(tuneR<p+2)]<-p+2
@@ -489,85 +532,95 @@ lmrm <- function(formula,data=list(),id,time,
     #print(as.integer(c(maxBSG,maxBSD,maxBSK,maxBSGc,maxBSDc)))
     
     #Deviance
-    deviance <- c(0,0)  
+    deviance <- c(0,0)
+    #Cont
+    cont <- 0  
     #tol
     tol <- sqrt(.Machine$double.eps)  
     #Call C
     if (mcm==5){
         out<-.C("longmult",
-        as.integer(seed), as.character(StorageDir), as.integer(WF),
-        as.integer(c(sweeps,burn,thin,n,p,N,MVLD)),
+        as.integer(seed), as.character(StorageDir), 
+        as.integer(c(sweeps,burn,thin,n,p,N,MVLD,mcm)),
         as.integer(niVec), as.integer(cusumniVec), as.integer(intime2), as.integer(intime), 
         as.integer(c(niMax,LUT)), as.integer(FUT),
         as.integer(cusumC), as.double(C), as.double(c(t(Y))), as.double(t(X)), as.double(Z), 
         as.double(Xc),as.double(Zc),
-        as.integer(c(LG,LD,LK,LGc,LDc)), as.integer(c(NG,ND,NK,NGc,NDc)), 
+        as.integer(c(LG,LD,LK,LGc,LDc)), as.integer(c(NG,ND2,NK,NGc,NDc)), 
         as.integer(vecLG), as.integer(vecLD), as.integer(vecLK), as.integer(vecLGc),as.integer(vecLDc), 
-        as.integer(cusumVecLG), as.integer(cusumVecLD), as.integer(cusumVecLK), as.integer(cusumVecLGc),as.integer(cusumVecLDc),        
+        as.integer(cusumVecLG), as.integer(cusumVecLD), as.integer(cusumVecLK), as.integer(cusumVecLGc),
+        as.integer(cusumVecLDc),        
         as.double(c(blockSizeProbG, blockSizeProbD, blockSizeProbK, blockSizeProbGc, blockSizeProbDc)), 
         as.integer(c(maxBSG,maxBSD,maxBSK,maxBSGc,maxBSDc)),                        
-        as.double(tuneCa), as.double(tuneSigma2), as.double(tuneCb), as.double(tuneAlpha), as.double(tuneSigma2R), 
-        as.double(tuneR), as.double(tuneCpsi), as.double(tuneCbCor), as.double(tuneOmega), as.double(tuneComega),                                    
-        as.double(pimu), as.double(cetaParams), as.double(pisigma), as.integer(HNca), as.double(calphaParams),            
-        as.integer(HNsg), as.double(sigmaParams), as.double(piphi), as.integer(HNcpsi), as.double(cpsiParams),
-        as.double(cetaCorParams),as.integer(HNco),as.double(comegaParams),as.double(pinu),as.double(pifi),
+        as.double(tuneCalpha), as.double(tuneSigma2), as.double(tuneCbeta), as.double(tuneAlpha), 
+        as.double(tuneSigma2R), 
+        as.double(tuneR), as.double(tuneCpsi), as.double(tuneCbCor), as.double(tuneOmega), 
+        as.double(tuneComega),                                    
+        as.double(pimu), as.double(cetaParams), as.double(pisigma), as.integer(HNca), 
+        as.double(calphaParams),            
+        as.integer(HNsg), as.double(sigmaParams), as.double(piphi), as.integer(HNcpsi), 
+        as.double(cpsiParams),
+        as.double(cetaCorParams),as.integer(HNco),as.double(comegaParams),as.double(c(pinu,pifi)),
         as.integer(HNscor),as.double(sigmaCorParams),
-        as.double(c(tau,tol)), as.integer(FT), as.double(deviance),            
-        as.integer(c(0,LASTsw,LASTWB)),as.double(LASTAll))}
+        as.double(c(tau,tol)), as.integer(FT), as.double(deviance),as.integer(isDz2),            
+        as.integer(c(cont,LASTsw,LASTWB)),as.double(LASTAll))}
     if (mcm==6){
         out<-.C("longmultg",
-        as.integer(seed), as.character(StorageDir), as.integer(WF),
-        as.integer(c(sweeps,burn,thin,n,p,N,MVLD)),
+        as.integer(seed), as.character(StorageDir), 
+        as.integer(c(sweeps,burn,thin,n,p,N,MVLD,mcm)),
         as.integer(niVec), as.integer(cusumniVec), as.integer(intime2), as.integer(intime), 
         as.integer(c(niMax,LUT)), as.integer(FUT),
         as.integer(cusumC), as.double(C), as.double(c(t(Y))), as.double(t(X)), as.double(Z), 
         as.double(Xc),as.double(Zc),
-        as.integer(c(LG,LD,LK,LGc,LDc)), as.integer(c(NG,ND,NK,NGc,NDc)), 
+        as.integer(c(LG,LD,LK,LGc,LDc)), as.integer(c(NG,ND2,NK,NGc,NDc)), 
         as.integer(vecLG), as.integer(vecLD), as.integer(vecLK), as.integer(vecLGc),as.integer(vecLDc), 
-        as.integer(cusumVecLG), as.integer(cusumVecLD), as.integer(cusumVecLK), as.integer(cusumVecLGc),as.integer(cusumVecLDc),
+        as.integer(cusumVecLG), as.integer(cusumVecLD), as.integer(cusumVecLK), as.integer(cusumVecLGc),
+        as.integer(cusumVecLDc),
         as.double(c(blockSizeProbG, blockSizeProbD, blockSizeProbK, blockSizeProbGc, blockSizeProbDc)), 
         as.integer(c(maxBSG,maxBSD,maxBSK,maxBSGc,maxBSDc)),                        
-        as.double(tuneCa), as.double(tuneSigma2), as.double(tuneCb), as.double(tuneAlpha), as.double(tuneSigma2R), 
-        as.double(tuneR), as.double(tuneCpsi), as.double(tuneCbCor), as.double(tuneOmega), as.double(tuneComega),  
-        as.double(pimu), as.double(cetaParams), as.double(pisigma), as.integer(HNca), as.double(calphaParams),            
-        as.integer(HNsg), as.double(sigmaParams), as.double(piphi), as.integer(HNcpsi), as.double(cpsiParams),
-        as.double(cetaCorParams),as.integer(HNco),as.double(comegaParams),as.double(pinu),as.double(pifi),
+        as.double(tuneCalpha), as.double(tuneSigma2), as.double(tuneCbeta), as.double(tuneAlpha), 
+        as.double(tuneSigma2R), 
+        as.double(tuneR), as.double(tuneCpsi), as.double(tuneCbCor), as.double(tuneOmega), 
+        as.double(tuneComega),  
+        as.double(pimu), as.double(cetaParams), as.double(pisigma), as.integer(HNca), 
+        as.double(calphaParams),            
+        as.integer(HNsg), as.double(sigmaParams), as.double(piphi), as.integer(HNcpsi), 
+        as.double(cpsiParams),
+        as.double(cetaCorParams),as.integer(HNco),as.double(comegaParams),as.double(c(pinu,pifi)),
         as.integer(HNscor),as.double(sigmaCorParams),
-        as.double(tau), as.integer(FT), as.double(deviance),            
-        as.integer(c(0,LASTsw,LASTWB)),as.double(LASTAll),
+        as.double(tau), as.integer(FT), as.double(deviance),as.integer(isDz2),            
+        as.integer(c(cont,LASTsw,LASTWB)),as.double(LASTAll),
         as.integer(H), as.double(DPparams))}   
     if (mcm==7){
         out<-.C("longmultgv",
-        as.integer(seed), as.character(StorageDir), as.integer(WF),
-        as.integer(c(sweeps,burn,thin,n,p,N,MVLD)),
+        as.integer(seed), as.character(StorageDir), 
+        as.integer(c(sweeps,burn,thin,n,p,N,MVLD,mcm)),
         as.integer(niVec), as.integer(cusumniVec), as.integer(intime2), as.integer(intime), 
         as.integer(c(niMax,LUT)), as.integer(FUT),
         as.integer(cusumC), as.double(C), as.double(c(t(Y))), as.double(t(X)), as.double(Z), 
         as.double(Xc),as.double(Zc),
-        as.integer(c(LG,LD,LK,LGc,LDc)), as.integer(c(NG,ND,NK,NGc,NDc)), 
+        as.integer(c(LG,LD,LK,LGc,LDc)), as.integer(c(NG,ND2,NK,NGc,NDc)), 
         as.integer(vecLG), as.integer(vecLD), as.integer(vecLK), as.integer(vecLGc),as.integer(vecLDc), 
         as.integer(cusumVecLG), as.integer(cusumVecLD), as.integer(cusumVecLK), as.integer(cusumVecLGc),as.integer(cusumVecLDc),          
         as.double(c(blockSizeProbG, blockSizeProbD, blockSizeProbK, blockSizeProbGc, blockSizeProbDc)), 
         as.integer(c(maxBSG,maxBSD,maxBSK,maxBSGc,maxBSDc)),                        
-        as.double(tuneCa), as.double(tuneSigma2), as.double(tuneCb), as.double(tuneAlpha), as.double(tuneSigma2R), 
+        as.double(tuneCalpha), as.double(tuneSigma2), as.double(tuneCbeta), as.double(tuneAlpha), as.double(tuneSigma2R), 
         as.double(tuneR), as.double(tuneCpsi), as.double(tuneCbCor), as.double(tuneOmega), as.double(tuneComega),  
         as.double(pimu), as.double(cetaParams), as.double(pisigma), as.integer(HNca), as.double(calphaParams),            
         as.integer(HNsg), as.double(sigmaParams), as.double(piphi), as.integer(HNcpsi), as.double(cpsiParams),
-        as.double(cetaCorParams),as.integer(HNco),as.double(comegaParams),as.double(pinu),as.double(pifi),
+        as.double(cetaCorParams),as.integer(HNco),as.double(comegaParams),as.double(c(pinu,pifi)),
         as.integer(HNscor),as.double(sigmaCorParams),
-        as.double(tau), as.integer(FT), as.double(deviance),            
-        as.integer(c(0,LASTsw,LASTWB)), as.double(LASTAll),
+        as.double(tau), as.integer(FT), as.double(deviance),as.integer(isDz2),            
+        as.integer(c(cont,LASTsw,LASTWB)), as.double(LASTAll),
         as.integer(G), as.double(DPparams))}   
     #Output  
     if (!is.null(C)) C<-t(C)
-    loc1<-32 
-    loc2<-41 
-    tuneSigma2Ra<-out[[loc1+4]][1]
-    tuneRa<-out[[loc1+5]][1:LUT]
+    loc1<-31 
+    loc2<-60 
     fit <- list(call=call,call2=call2,formula=formula,seed=seed,p=p,d=p*(p-1)/2,
                 data=data,lag=lag,Y=Y,
                 X=X,Xknots=Xknots,LG=LG,NG=NG,
-                Z=Z,Zknots=Zknots,LD=LD,ND=ND,
+                Z=Z,Zknots=Zknots,LD=LD,ND=ND,ND2=ND2,
                 storeMeanVectorX=storeMeanVectorX,
                 storeMeanVectorZ=storeMeanVectorZ,
                 storeIndicatorX=storeIndicatorX,
@@ -591,12 +644,16 @@ lmrm <- function(formula,data=list(),id,time,
                 totalSweeps=sweeps,
                 mcpar=c(as.integer(burn+1),as.integer(seq(from=burn+1,by=thin,length.out=nSamples)[nSamples]),as.integer(thin)),                                
                 mcm=mcm,H=H,G=G,                
-                tuneCa=c(tuneCa,out[[loc1+0]][1:p]),        
+                tuneCalpha=c(tuneCalpha,out[[loc1+0]][1:p]),        
                 tuneSigma2=c(tuneSigma2,out[[loc1+1]][1:p]),
-                tuneCb=c(tuneCb,out[[loc1+2]][1]),                                
-                tuneAlpha=c(tuneAlpha,out[[loc1+3]][1:(p*ND)]),                
-                tuneSigma2R=c(tuneSigma2R,tuneSigma2Ra),
-                tuneR=c(tuneR,tuneRa),
+                tuneCbeta=c(tuneCbeta,out[[loc1+2]][1]),                                
+                tuneAlpha=c(tuneAlpha,out[[loc1+3]][1:(p*ND2)]),                
+                tuneSigma2R=c(tuneSigma2R,out[[loc1+4]][1]),
+                tuneR=c(tuneR,out[[loc1+5]][1:LUT]),
+                tuneCpsi=c(tuneCpsi,out[[loc1+6]][1:(p*p)]),                
+	            tuneCbCor=c(tuneCbCor,out[[loc1+7]][1]),	            
+	            tuneOmega=c(tuneOmega,out[[loc1+8]][1:NDc]),	            
+                tuneComega=c(tuneComega,out[[loc1+9]][1]),
                 deviance=c(out[[loc2]][1:2]),
                 nullDeviance=nullDeviance,
                 DIR=StorageDir,  
@@ -634,16 +691,16 @@ lmrm <- function(formula,data=list(),id,time,
                 formula.termsC=formula.termsC,
                 formula.termsXc=formula.termsXc,
                 formula.termsZc=formula.termsZc,                 
-                tuneCpsi=c(tuneCpsi,out[[38]][1:(p*p)]),                
-	            tuneCbCor=c(tuneCbCor,out[[39]][1]),	            
-	            tuneOmega=c(tuneOmega,out[[40]][1:NDc]),	            
-                tuneComega=c(tuneComega,out[[41]][1]),
                 HNca=HNca,
-                HNcpsi=HNcpsi,
-                HNscor=HNscor,
+                HNcpsi=HNcpsi,                
+                HNsg=HNsg,
                 HNco=HNco,
+                HNscor=HNscor,
                 niVec=niVec,
-                intime=intime)                                                    
+                intime=intime,
+                NC=0,
+                FT=FT,
+                qCont=0)                                                    
     class(fit) <- 'mvrm'
     return(fit)
 } 
@@ -703,9 +760,8 @@ postSigma<-function(x, time, psi, alpha, sigma2, R, samples, ...){
                 nd[,j]<-drop(nd[,j])  
             nd[1:NROW(newdata),] <- newdata
         }else{nd<-newdata}
-        Zmat<-DM(formula=formula2,data=nd,n=NROW(nd),knots=x$Zknots,meanVector=x$storeMeanVectorZ,indicator=x$storeIndicatorZ)$X
-        Zmat<-as.matrix(Zmat)[,-1]
-    
+        Zmat<-DM(formula=formula2,data=nd,n=NROW(nd),knots=x$Zknots,meanVector=x$storeMeanVectorZ,indicator=x$storeIndicatorZ,centre=TRUE)$X
+        Zmat<-as.matrix(Zmat)[,-1]    
         # Cmat  
         vars<-x$varsC
         wv<-NULL 
@@ -744,7 +800,7 @@ postSigma<-function(x, time, psi, alpha, sigma2, R, samples, ...){
                 nd[,j]<-drop(nd[,j])
             nd[1:NROW(newdata),] <- newdata
         }else{nd<-newdata}    
-        Cmat<-DM(formula=formula2,data=nd,n=NROW(newdata),knots=x$Cknots,meanVector=x$storeMeanVectorC,indicator=x$storeIndicatorC)$X   
+        Cmat<-DM(formula=formula2,data=nd,n=NROW(newdata),knots=x$Cknots,meanVector=x$storeMeanVectorC,indicator=x$storeIndicatorC,centre=TRUE)$X   
         Cmat<-as.matrix(Cmat)
     }
     
@@ -857,7 +913,7 @@ plot3.bcmg<-function(x, model="mean", centre=mean, quantiles=c(0.10,0.90), plotE
         labs[as.numeric(names(tabs))]<-tabs
         for (i in 1:x$nSamples)
             meanReg[i,,] <- eta[i,,]%*%t(uXc)
-        if (x$out[[60]]==1) meanReg <- tanh(meanReg)
+        if (x$FT==1) meanReg <- tanh(meanReg)
         centreM<- apply(meanReg,c(2,3),centre)
         QM<-NULL; SQM<-matrix(NA,ncol=2,nrow=NROW(centreM))
         if (!is.null(quantiles)){ 
@@ -905,4 +961,100 @@ plot3.bcmg<-function(x, model="mean", centre=mean, quantiles=c(0.10,0.90), plotE
 	}
 	return(plotM)
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

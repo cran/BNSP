@@ -12,7 +12,7 @@ importFrom("utils", "write.table")
 export(dpmj)
 S3method(print,bnp)
 
-export(mvrm,lmrm,sm,s,te,ti,mvrm2mcmc)
+export(mvrm,lmrm,sm,s,te,ti,mvrm2mcmc,sinusoid)
 S3method(plot,mvrm)
 S3method(predict,mvrm)
 S3method(print,mvrm)

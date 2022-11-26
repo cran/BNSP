@@ -762,3 +762,36 @@ int NormalBpdf(unsigned dim, const double *x, void *parameters, unsigned fdim, d
                                  gsl_cdf_ugaussian_P((cut2-beta1*(x[0]-m1)-beta2*(x2-m2))/sqrt(var2)));
     return 0;
 }
+
+//params are y[i]-mu[i], diag elems of Sigma^{-1}, off diag elems of Sigma^{-1} (upper diagonal), omega/2. 
+int MultiNormalGammaPDF(unsigned dim, const double *u, void *parameters, unsigned fdim, double *fval){
+    double *params = parameters;
+    int ncovs = dim*(dim-1)/2; 
+    int i, j, k;
+    double yMm[dim];
+    double vars[dim];
+    double covs[ncovs+1];//add 1 to avoid problems with dim 0
+    double omegao2[dim];
+    double Q, logval;    
+    for (i = 0; i < dim; i++) 
+        yMm[i] = params[i];    
+    for (i = 0; i < dim; i++) 
+        vars[i] = params[dim+i];
+    for (i = 0; i < ncovs; i++) 
+        covs[i] = params[2*dim+i];
+    for (i = 0; i < dim; i++)
+        omegao2[i] = params[2*dim+ncovs+i];      
+    Q = 0.0;    
+    for (i = 0; i < dim; i++)
+        Q += vars[i]*yMm[i]*yMm[i]*u[i];
+    k = 0;
+    for (i = 0; i < (dim-1); i++)
+        for (j = i+1; j < dim; j++)
+            Q += 2*covs[k++]*yMm[i]*yMm[j]*sqrt(u[i]*u[j]);            
+    logval = -Q/2;    
+    for (i = 0; i < dim; i++)
+        logval += (omegao2[i]-0.5)*log(u[i]) - omegao2[i]*u[i];    
+    fval[0] = exp(logval);
+    //Rprintf("%s %i %f %f %f \n","from MNG:", dim, yMm[0], vars[0], omegao2[0]);
+    return 0;
+}

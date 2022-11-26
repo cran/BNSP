@@ -38,22 +38,22 @@
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_roots.h>
 #include <gsl/gsl_multiset.h>
-
-//#include "matalg.h"
-//#include "pdfs.h"
-//#include "sampling.h"
-//#include "other.functions.h"
-//#include "mathm.h"
-//#include "spec.BCM.h"
-
+/*
+#include "matalg.h"
+#include "pdfs.h"
+#include "sampling.h"
+#include "other.functions.h"
+#include "mathm.h"
+#include "spec.BCM.h"
+*/
 extern void   computeStStar(double *Y, int *time, int N, int t, int p, gsl_matrix *StStar); 
 extern void   ginv(int p, double tol, gsl_matrix *A);
 extern double FisherTr(double r, int I);
-extern double ScalcMult(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, gsl_matrix *St, double *qf2);
+extern double ScalcMult(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, gsl_matrix *St, double *qf2, double U[m][p], int mcm);
 extern void   proposeBlockInd(unsigned long int s, int *vecInd, int L, int B, int BS, int *shufInd, double c, double d, int *vecIndP);
-extern void   postMeanVarEta2(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, gsl_vector *MeanEta, gsl_matrix *varEta);
+extern void   postMeanVarEta2(int p, int m, int LG, double tol, double ceta, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, gsl_vector *MeanEta, gsl_matrix *varEta, double U[m][p], int mcm);
 extern void   cSqRes2(int p, int m, int LG, int gamma[p][LG], int Ngamma, double *X, gsl_vector *MeanEta, double *Y, double *sqRes);
-extern void   DeltaAlphaHatExp(int m, int p, int l, double tol, double LPV[m][p], double *sqRes, int *delta, int Ndelta, int start, int end, double *AllBases, double sigma2, double sigma2ij[m][p], double calpha, gsl_matrix *D, gsl_vector *alphaHat);
+extern void   DeltaAlphaHatExp(int m, int p, int l, double tol, double LPV[m][p], double *sqRes, int *delta, int Ndelta, int start, int end, double *AllBases, double sigma2, double sigma2ij[m][p], double calpha, gsl_matrix *D, gsl_vector *alphaHat, double U[m][p], int mcm);
 extern void   sampleMN(unsigned long int s, int p, gsl_vector *y, gsl_vector *mu, gsl_matrix *Sigma, double tol);
 extern double logMVNormalpdf(int dim, gsl_vector *x, gsl_vector *mu, gsl_matrix *S, double tol);
 extern void   rwish(unsigned long int s, int p, double n, gsl_matrix *scale, gsl_matrix *rw);
@@ -64,13 +64,13 @@ extern void allocation(unsigned long int s, int n, int ncomp, double Prob[ncomp]
 extern void findNmembers(int n, int ncomp, int *compAlloc, int *nmembers);
 extern double updateAlpha(unsigned long int s, int n, int ncomp, double a, double b, double TruncAlpha, int *nmembers, double alpha);
 extern void compAllocVtoCompAlloc(int G, int p, int *compAllocV, int * compAlloc);
-extern double NormalQuadr(int p, int m, int LG, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, double *beta);
+extern double NormalQuadr(int p, int m, int LG, int Ngamma, double *Ytilde, double sigma2ij[m][p], double *X, int gamma[p][LG], gsl_matrix *Ri, double *beta, double U[m][p], int mcm);
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX_PATH 300   
 
-void multgv(int *seed1, char **WorkingDir, int *WF1,
+void multgv(int *seed1, char **WorkingDir, 
             int *sweeps1, int *burn1, int *thin1,
             int *m1, int *p1,  
             double *Y, double *X, double *Z, int *LG1, int *LD1, 
@@ -80,10 +80,10 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
             double *tuneCa, double *tuneSigma2, double *tuneCb, double *tuneAlpha, double *tuneSigma2R, double *tuneR, 
             double *pimu, double *cetaParams, double *pisigma, int *HNca, double *calphaParams, 
             double *Rparams, int *HNszk, double *szkParams, 
-            double *tau1, int *FT, double *dev, int *G1, double *DPparams,
+            double *tau1, int *FT, double *dev, int *G1, double *DPparams, int *isDz,
             int *cont, int *LASTgamma, int *LASTdelta, double *LASTalpha, double *LASTsigma2zk, double *LASTR, 
             double *LASTmuR, double *LASTsigma2R, double *LASTceta, double *LASTcalpha, int *LASTcompAllocV, 
-            double *LASTalphaDP, int *LASTsw, double *LASTDE, int *LASTWB)
+            double *LASTalphaDP, int *LASTsw, double *LASTDE, int *LASTWB, int *isSin)
 {
     gsl_set_error_handler_off(); 
 
@@ -94,7 +94,6 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
     unsigned long int s; //for calling random number generating functions
 
     // Specify directory
-    int WF = WF1[0]; // indicator: 1 = write files, 0 = no files.
     char path_name[MAX_PATH + 1];
 
     // Open files
@@ -145,6 +144,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
     // Dimensions
     int m = m1[0];
     int p = p1[0]; 
+    int mcm = p1[1];
     int d = p*(p-1)/2;
     if (d==0) d=1;
     int LG = LG1[0];
@@ -261,6 +261,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
     double YtildeP[m*p];
     double sumtheta, sstheta;
     double sigma2ijP[m][p];
+    double U[m][p];
     
     //For selecting block size gamma_B or delta_B
     int block, blockSize;
@@ -299,7 +300,9 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
         vecGammaP[j] = malloc(sizeof(int) * vecLG[j]);        
     int *vecDeltaP[ND];
     for (j = 0; j < ND; j++)
-        vecDeltaP[j] = malloc(sizeof(int) * vecLD[j]);    
+        vecDeltaP[j] = malloc(sizeof(int) * vecLD[j]);   
+    int vecGammaSin[2];//for sinusoidals
+    int vecGammaSinP[2];//for sinusoidals fix to pointers 
 
     // Declare and allocate gsl vectors and matrices
     gsl_matrix *PSIt = gsl_matrix_alloc(p,p);
@@ -400,13 +403,13 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
 	}
 	
 	// - 3 - Sigma2zk
-    if (cont[0]==1){
+    //if (cont[0]==1){
         for (j = 0; j < p; j++)
             sigma2zk[j] = LASTsigma2zk[j];
-	}else{    
-        for (j = 0; j < p; j++)
-            sigma2zk[j] = 1.0;
-    }
+	//}else{    
+    //    for (j = 0; j < p; j++)
+    //        sigma2zk[j] = 1.0;
+    //}
     
     // - 4 - LPV, sigma2ij, Ytilde, St          
     for (i = 0; i < m; i++){
@@ -446,7 +449,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
     //    sigma2R = 1.0; 
     //}else{    
         for (j = 0; j < H; j++) 
-            muR[j] = LASTmuR[0]; 
+            muR[j] = LASTmuR[j]; 
         sigma2R = LASTsigma2R[0]; 
     //}
     
@@ -463,7 +466,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
         ceta = 1;
         cetahat = ceta; //starting value is the current value
         //Rprintf("%s %i %i %i %i \n","SPC & ceta ",p,m,LG,Ngamma);
-        SPC = ScalcMult(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2);
+        SPC = ScalcMult(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2,U,mcm);
         elPrime = 99.9;
         while(elPrime > 0.000000001 || -elPrime > 0.000000001){
             Sprime = -Q2/pow(cetahat+1,2);
@@ -522,7 +525,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
 
     //#############################################SAMPLER
     for (sw = 0; sw < sweeps; sw++){
-        if (sw==0) Rprintf("%i %s \n",sw+1, "posterior samples...");
+        if (sw==0) Rprintf("%i %s \n",sw+1, "posterior sample...");
         if (((sw+1) % 1000)==0) Rprintf("%i %s \n",sw+1, "posterior samples...");
         
 	    modf((sw+1)/batchL,&WB);
@@ -531,7 +534,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
         // - 1 - gamma  
         //Rprintf("%i %s \n",sw,"gamma");				        
         computeStStar(Ytilde,time,m*p,0,p,St);                
-		SPC = ScalcMult(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2);		
+		SPC = ScalcMult(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2,U,mcm);		
 		
 		//Rprintf("%s %i %i %f %f %f \n","before gamma: ",sw,Ngamma,sigma2zk[0]*SPC,sigma2zk[0]*Q2,ceta);				
 		
@@ -539,15 +542,28 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
 		    for (j = 0; j < NG; j++){				        		        		        
 		        for (k = 0; k < vecLG[j]; k++) 
 		            vecGamma[j][k] = gamma[l][cusumVecLG[j]+k];			        		        		        
-		        gsl_ran_multinomial(r,maxBSG,1,blockSizeProbG,vecBSG);
-                blockSize = 0;
-	            while(vecBSG[blockSize]==0) blockSize++;
-                blockSize += 1;
-                nBlocks = ceil((double)vecLG[j]/blockSize);
-                gsl_ran_shuffle(r,indexG[j],vecLG[j],sizeof(int));	            	            
+		        if (!isSin[j]){
+		            gsl_ran_multinomial(r,maxBSG,1,blockSizeProbG,vecBSG);
+                    blockSize = 0;
+	                while(vecBSG[blockSize]==0) blockSize++;
+                    blockSize += 1;
+                    nBlocks = ceil((double)vecLG[j]/blockSize);
+                    gsl_ran_shuffle(r,indexG[j],vecLG[j],sizeof(int));
+                }
+     		    else{
+			        blockSize=1; 
+			        nBlocks=1;
+			    }	            	            
 	            for (block = 0; block < nBlocks; block++){                    
-                    s = gsl_ran_flat(r,1.0,100000);	                	                
-	                proposeBlockInd(s,vecGamma[j],vecLG[j],block,blockSize,indexG[j],cmu[l][j],dmu[l][j],vecGammaP[j]);
+                    s = gsl_ran_flat(r,1.0,100000);
+                    if (!isSin[j])	                	                
+	                    proposeBlockInd(s,vecGamma[j],vecLG[j],block,blockSize,indexG[j],cmu[l][j],dmu[l][j],vecGammaP[j]);
+	                else{
+	                    vecGammaSin[0]=vecGamma[j][0];
+	                    proposeBlockInd(s,vecGammaSin,1,block,blockSize,indexG[j],cmu[l][j],dmu[l][j],vecGammaSinP); 	                
+	                    vecGammaP[j][0]=vecGammaSinP[0];
+	                    vecGammaP[j][1]=vecGammaSinP[0];
+				    } 	                    
 	                for (k = 0; k < vecLG[j]; k++)
 	                    gamma[l][cusumVecLG[j]+k] = vecGammaP[j][k];	                    	            	            	                
 	                NPJ = 0;  
@@ -557,7 +573,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
                         NCJ += vecGamma[j][k];
 					} 					
 					NgammaP = Ngamma - NCJ + NPJ;    						       	            	     	                	                	                
-	                SPP = ScalcMult(p,m,LG,tol,ceta,NgammaP,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2);                                        
+	                SPP = ScalcMult(p,m,LG,tol,ceta,NgammaP,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2,U,mcm);                                        
                     Acp = exp((SPC-SPP)/2)*pow(ceta+1,0.5*(NCJ-NPJ));                    
                     //Rprintf("%s %i %i %i %i %f %f %f %f %i %i\n","gamma: ",sw,l,j,block,Acp,SPC,SPP,ceta,NCJ,NPJ);				
                     unifRV = gsl_ran_flat(r,0.0,1.0);                                
@@ -583,7 +599,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
         
         //Rprintf("%s %i %i %i %f %f %i \n","before alpha: ",p,m,LG,tol,ceta,Ngamma);	                        
         
-        postMeanVarEta2(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,&subMeanEta.vector,&subVarEta.matrix); 
+        postMeanVarEta2(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,&subMeanEta.vector,&subVarEta.matrix,U,mcm); 
         
         //puts("var");
         //print_matrix(&subVarEta.matrix);
@@ -639,9 +655,14 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
                     }                      
                     if (NPJ > 0){                 
                         subAlphaHat = gsl_vector_subvector(alphaHat,0,NPJ);
-                        subD = gsl_matrix_submatrix(D,0,0,NPJ,NPJ);                        
-                        DeltaAlphaHatExp(m,p,l,tol,LPV,sqResC,vecDeltaP[j],NPJ,cusumVecLD[j],cusumVecLD[j+1], 
-                                         Z,sigma2zk[l],sigma2ij,calpha[l],&subD.matrix,&subAlphaHat.vector);                        
+                        subD = gsl_matrix_submatrix(D,0,0,NPJ,NPJ);    
+                        if (isDz[j] == 0){                    
+                            DeltaAlphaHatExp(m,p,l,tol,LPV,sqResC,vecDeltaP[j],NPJ,cusumVecLD[j],cusumVecLD[j+1], 
+                                             Z,sigma2zk[l],sigma2ij,calpha[l],&subD.matrix,&subAlphaHat.vector,U,mcm);                        
+                        }else{ 
+                            gsl_vector_set(&subAlphaHat.vector,0,alpha[l][cusumVecLD[j]]);
+                            gsl_matrix_set(&subD.matrix,0,0,1);
+					    }                                               
                         subAlphaP = gsl_vector_subvector(alphaP,0,NPJ);                        
                         gsl_matrix_scale(&subD.matrix,tuneAlpha[ND*l+j]);                        
                         s = gsl_ran_flat(r,1.0,100000);
@@ -691,7 +712,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
 					//}
 					//print_matrix(StP);                                           
                     					
-                    SPP = ScalcMult(p,m,LG,tol,ceta,Ngamma,YtildeP,sigma2ijP,X,gamma,RtCinv,StP,&Q2);                    
+                    SPP = ScalcMult(p,m,LG,tol,ceta,Ngamma,YtildeP,sigma2ijP,X,gamma,RtCinv,StP,&Q2,U,mcm);                    
                     //if (1==0 && sw==3 && l==1 && j==0 && block==0){ 
                     //    Rprintf("%s %i %i %i %i %f %i %i %i %f %f %i \n","spp int: ",sw,l,j,block,SPP,p,m,LG,tol,ceta,Ngamma);
                     //    for (k = 0; k < (m*p); k++)
@@ -707,13 +728,18 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
                         detR += LPV[i][l] - LPVP[i][l];
                     detR *= 0.5;     	               	                
 	                //probability of reverse direction 	                
-	                postMeanVarEta2(p,m,LG,tol,ceta,Ngamma,YtildeP,sigma2ijP,X,gamma,RtCinv,&subMeanEta.vector,&subVarEta.matrix);
+	                postMeanVarEta2(p,m,LG,tol,ceta,Ngamma,YtildeP,sigma2ijP,X,gamma,RtCinv,&subMeanEta.vector,&subVarEta.matrix,U,mcm);
                     cSqRes2(p,m,LG,gamma,Ngamma,X,&subMeanEta.vector,Y,sqResP);                    
                     if (NCJ > 0){                
 	                    subAlphaHat = gsl_vector_subvector(alphaHat,0,NCJ);
                         subD = gsl_matrix_submatrix(D,0,0,NCJ,NCJ);                        
-                        DeltaAlphaHatExp(m,p,l,tol,LPVP,sqResP,vecDelta[j],NCJ,cusumVecLD[j],cusumVecLD[j+1], 
-                                         Z,sigma2zk[l],sigma2ijP,calpha[l],&subD.matrix,&subAlphaHat.vector);                        
+                        if (isDz[j] == 0){
+                            DeltaAlphaHatExp(m,p,l,tol,LPVP,sqResP,vecDelta[j],NCJ,cusumVecLD[j],cusumVecLD[j+1], 
+                                             Z,sigma2zk[l],sigma2ijP,calpha[l],&subD.matrix,&subAlphaHat.vector,U,mcm);                        
+                        }else{
+                            gsl_vector_set(&subAlphaHat.vector,0,alphaPD[cusumVecLD[j]]);
+                            gsl_matrix_set(&subD.matrix,0,0,1);
+					    }  
                         gsl_matrix_scale(&subD.matrix,tuneAlpha[ND*l+j]);                        
                         move=0;                        
                         for (k = 0; k < vecLD[j]; k++)
@@ -786,7 +812,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
             }               
             computeStStar(YtildeP,time,m*p,0,p,StP);                          
             //print_matrix(StP);
-            SPP = ScalcMult(p,m,LG,tol,ceta,Ngamma,YtildeP,sigma2ijP,X,gamma,RtCinv,StP,&Q2);                    
+            SPP = ScalcMult(p,m,LG,tol,ceta,Ngamma,YtildeP,sigma2ijP,X,gamma,RtCinv,StP,&Q2,U,mcm);                    
             //detR = 0.0;                    
             //for (i = 0; i < m; i++)
             //    detR += log(sigma2ij[i][k]/sigma2ijP[i][k]);
@@ -835,7 +861,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
         }     
         cetahat = 1;
         
-        SPC = ScalcMult(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2);
+        SPC = ScalcMult(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2,U,mcm);
                         
         elPrime = 99.9;        
         while(elPrime > 0.000000001 || -elPrime > 0.000000001){
@@ -851,7 +877,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
         cetaP = cetahat + gsl_ran_gaussian(r,sqrt(-tuneCb[0]/elDPrime));	    
         //cetaP = 545;
 	    while(cetaP < 0) cetaP = cetahat + gsl_ran_gaussian(r,sqrt(-tuneCb[0]/elDPrime));
-	    SPP = ScalcMult(p,m,LG,tol,cetaP,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2);
+	    SPP = ScalcMult(p,m,LG,tol,cetaP,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2,U,mcm);
 	    Acp = exp(-0.5*(Ngamma+p)*(log(cetaP+1)-log(ceta+1))+(-SPP+SPC)/2-(alphaeta+1)*(log(cetaP)-log(ceta))
               + betaeta*(1/ceta-1/cetaP))*
                 gsl_ran_gaussian_pdf(ceta-cetahat,sqrt(-tuneCb[0]/elDPrime))/
@@ -910,7 +936,7 @@ void multgv(int *seed1, char **WorkingDir, int *WF1,
             //Rprintf("%i %s \n",sw,"eta");
 			subMeanEta = gsl_vector_subvector(meanEta,0,Ngamma+p);
             subVarEta = gsl_matrix_submatrix(varEta,0,0,Ngamma+p,Ngamma+p);         
-            postMeanVarEta2(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,&subMeanEta.vector,&subVarEta.matrix);                                               
+            postMeanVarEta2(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,&subMeanEta.vector,&subVarEta.matrix,U,mcm);                                               
             vecEta = gsl_vector_view_array(eta,Ngamma+p); 
             s = gsl_ran_flat(r,1.0,100000);
             sampleMN(s,Ngamma+p,&vecEta.vector,&subMeanEta.vector,&subVarEta.matrix,tol);
@@ -1250,7 +1276,7 @@ Acp,logAcp,logPropDRP,logPropDRC,priorLogR,detR,SPP,SPC,tuneR[0]);
             newAlphaDP = updateAlpha(s,p,G,Alphaa,Alphab,TruncAlpha,nmembersV,alphaDP);           
             alphaDP = newAlphaDP;
 	    }//if (p > 1) 	    
-        if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0) && (WF == 1)){
+        if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0)){
             // - 14 - eta           
             
             if (p==1){
@@ -1265,7 +1291,7 @@ Acp,logAcp,logPropDRP,logPropDRC,priorLogR,detR,SPP,SPC,tuneR[0]);
                     Rprintf("\n");
                 }
                 */ 
-                postMeanVarEta2(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,&subMeanEta.vector,&subVarEta.matrix);                                   
+                postMeanVarEta2(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,&subMeanEta.vector,&subVarEta.matrix,U,mcm);                                   
                 //print_matrix(&subVarEta.matrix);
                 vecEta = gsl_vector_view_array(eta,Ngamma+p); 
                 s = gsl_ran_flat(r,1.0,100000);
@@ -1274,7 +1300,7 @@ Acp,logAcp,logPropDRP,logPropDRC,priorLogR,detR,SPP,SPC,tuneR[0]);
 		    
             // - 15 - deviance = -2*LogLikelihood
             
-            SPC = ScalcMult(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2);            
+            SPC = ScalcMult(p,m,LG,tol,ceta,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,St,&Q2,U,mcm);            
             detR = 0.0;
             for (i = 0; i < m; i++)
                 for (j = 0; j < p; j++)
@@ -1289,7 +1315,7 @@ Acp,logAcp,logPropDRP,logPropDRC,priorLogR,detR,SPP,SPC,tuneR[0]);
             dev0 = SPC + (Ngamma+p)*log(ceta+1) + detR + m*p*log(2*M_PI); 
             dev[0] += dev0;
             
-            SPP = NormalQuadr(p,m,LG,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,eta);
+            SPP = NormalQuadr(p,m,LG,Ngamma,Ytilde,sigma2ij,X,gamma,RtCinv,eta,U,mcm);
             dev1 = SPP + detR + m*p*log(2*M_PI); 
             dev[1] += dev1; 
 	        

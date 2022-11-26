@@ -71,7 +71,6 @@ sm<-function(...,k=10,knots=NULL,bs="rd"){
             knots<-seq(from = 0, to = 1, length = nknots)            
             knots<-unique(round(quantile(x2,knots,type=type),5))           
             knots<-data.frame(knots=knots) 
-            #print(knots)           
         }
         if (!is.null(knots)){
 			knots<-data.frame(knots=knots)
@@ -129,7 +128,55 @@ sm<-function(...,k=10,knots=NULL,bs="rd"){
     return(XK)
 }
 
-DM<-function(formula,data,n,knots=NULL,predInd=FALSE,meanVector,indicator,mvrmObj){
+sinusoid<-function(..., harmonics = 1, amplitude = 1, period = 1, knots = NULL){
+    pf <- parent.frame()
+    vars<-as.list(substitute(list(...)))[-1]
+    d<-length(vars)
+    if (d > 1) stop("univariate effects supported; other arguments are harmonics, amplitude, period")
+    term<-NULL
+    for (i in 1:d){
+	    term[i]<-deparse(vars[[i]],backtick=TRUE,width.cutoff=500)
+	    term[i] <- attr(terms(reformulate(term[i])),"term.labels")
+    }
+    if (length(unique(term))!=d) stop("repeated variables are not permitted")
+    if (harmonics <= 0) stop("harmonics should be a positive integer")    
+    if (harmonics!=round(harmonics)) {warning("number of harmonics should be a positive integer; it has been rounded")
+		                              harmonics <- round(harmonics)}    
+    label<-paste("sinusoid(",term[1],sep="")
+    if (d>1) for (i in 2:d) label<-paste(label,",",term[i],sep="")
+    label<-paste(label,")",sep="")
+    is.D<-rep(0,d)
+    X<-NULL
+    Xnames<-NULL
+    for (k in 1:harmonics){ 
+        X<-cbind(X,sin(2 * k * pi * eval(vars[[1]],pf)/period))            
+        X<-cbind(X,cos(2 * k * pi * eval(vars[[1]],pf)/period))
+        Xnames<-c(Xnames,paste(paste("sin(",2*k,sep=""),"pi", vars, "/ p)",sep=" "),paste(paste("cos(",2*k,sep=""),"pi", vars, "/ p)",sep=" "))
+	}                    
+    X<-data.frame(X)
+    colnames(X)[1:NCOL(X)]<-Xnames
+    Dynamic <- NULL
+    if (amplitude > 1){ 
+        #XK<-with(data,sm(eval(parse(text=vars)),k=amplitude,knots=knots))
+        XK<-sm(eval(parse(text=vars),pf),k=amplitude,knots=knots)        
+        Design.Xamp<-XK$X 
+        knots<-XK$knots
+        Dynamic<-sweep(Design.Xamp, MARGIN=1, X[,1], `*`)
+        interMat2<-Dynamic/sqrt(2)
+        for(j in 2:NCOL(X)){ 
+            interMat<-sweep(Design.Xamp, MARGIN=1, X[,j], `*`)
+            interMat2<-interMat2+interMat/sqrt(2)
+            Dynamic<-cbind(Dynamic,interMat)
+		}
+        X<-interMat2
+        colnames(X)[1:NCOL(X)] <- paste("sm(amplitude)",seq(1:(amplitude+1)),sep=".")
+	}
+    XK<-list(X=X,knots=knots,count=d,vars=unlist(term),is.D=is.D,label=label,
+             amplitude=amplitude,harmonics=harmonics,Dynamic=Dynamic)
+    return(XK)
+}
+
+DM<-function(formula,data,n,knots=NULL,predInd=FALSE,meanVector,indicator,mvrmObj,centre=centre){
     is.M <- NULL
     count <- NULL
     k <- 0
@@ -137,7 +184,7 @@ DM<-function(formula,data,n,knots=NULL,predInd=FALSE,meanVector,indicator,mvrmOb
     vars <- list()
     is.D <- list()
     which.Spec<-list()
-    specials <- c('sm','s','te','ti')
+    specials <- c('sm','s','te','ti','sinusoid')
     trms<-terms.formula(formula,specials=specials)
     attr(trms,"intercept")<-1
     nFactors<-dim(attr(trms,"factors"))[2]
@@ -153,19 +200,33 @@ DM<-function(formula,data,n,knots=NULL,predInd=FALSE,meanVector,indicator,mvrmOb
 	Design.X<-matrix(1,ncol=1,nrow=n)
     colnames(Design.X)<-"(Intercept)"
     assign <- 0
+    assign2 <- 0 # for 1-hot encoding
+    
+    assign3 <- 0 # for breaking up couples of sinusoidal terms
+    repsX <- NULL # repeats for fixing differences between NG abd NG2
+    isSin <- 0
+    
+    amplitude <- 0
+    harmonics <- 0
+    startSin <- 0
+    Dynamic <- NULL
+    
+    if (!is.null(nFactors)) isSin<-rep(0,nFactors)
     if (!is.null(nFactors)){
         for (i in 1:nFactors){
             trms2<-drop.terms(trms, dropx = -i)
             is.spec<-sum(unlist(lapply(attr(trms2,"specials"),sum))) > 0
             is.sm<-!is.null(attr(trms2,"specials")$sm)
+            is.sin<-!is.null(attr(trms2,"specials")$sinusoid)
             is.s<-!is.null(attr(trms2,"specials")$s) || !is.null(attr(trms2,"specials")$te) ||!is.null(attr(trms2,"specials")$ti)
             is.M.i<-0
             if (!is.spec && (length(with(data,eval(attr(trms2,"variables"))[[1]]))/n > 1)) is.M.i <-1
             is.M <- c(is.M, is.M.i)
+            repsX <- c(repsX,i)
             if (!is.spec){
                 Design.Xt<-model.matrix(trms2,data=data)
                 remove.cols<-which(c(apply(Design.Xt,2,sd)==0))
-                if (length(remove.cols)>0) Design.Xt<-Design.Xt[,-remove.cols,drop=FALSE]
+                if (length(remove.cols)>0 && !predInd) Design.Xt<-Design.Xt[,-remove.cols,drop=FALSE]
                 count<-c(count,1)
                 vars[[i]]<-as.character(attr(trms2,"variables")[[2]])
                 LF<-which(vars[[i]]=="as.factor")
@@ -179,14 +240,43 @@ DM<-function(formula,data,n,knots=NULL,predInd=FALSE,meanVector,indicator,mvrmOb
 			}
             if (is.sm){
 			    XK<-with(data,eval(trms2[1][[2]]))
-                Design.Xt<-XK$X
-                remove.cols<-which(c(apply(Design.Xt,2,sd)==0))
-                Rknots[[k<-k+1]]<- XK$knots
+                Design.Xt<-XK$X                
                 count<-c(count,XK$count)
                 vars[[i]]<-XK$vars
                 is.D[[i]]<-XK$is.D
                 labels[i]<-XK$label
-                which.Spec[[i]]<-k
+                Rknots[[k<-k+1]]<- XK$knots
+                which.Spec[[i]]<-k                
+			}
+			if (is.sin){
+			    XK<-with(data,eval(trms2[1][[2]]))
+                Design.Xt<-XK$X                
+                count<-c(count,XK$count)
+                vars[[i]]<-XK$vars                
+                is.D[[i]]<-XK$is.D
+                labels[i]<-XK$label                
+                amplitude<-XK$amplitude 
+                harmonics<-XK$harmonics
+                repsX<-c(repsX,rep(i, harmonics - 1))
+                isSin[i]<-1 #is it a sinusoidal term?                
+                startSin<-NCOL(Design.X)
+                which.Spec[[i]]<--99
+                Dynamic<-XK$Dynamic 
+                if (amplitude > 1){ 
+                    #XK<-with(data,sm(eval(parse(text=XK$vars)),k=amplitude))
+                    #Design.Xamp<-XK$X   
+                    #Dynamic<-sweep(Design.Xamp, MARGIN=1, Design.Xt[,1], `*`)
+                    #interMat2<-Dynamic/sqrt(2)
+                    #for(j in 2:NCOL(Design.Xt)){ 
+                    #    interMat<-sweep(Design.Xamp, MARGIN=1, Design.Xt[,j], `*`)
+                    #    interMat2<-interMat2+interMat/sqrt(2)
+                    #    Dynamic<-cbind(Dynamic,interMat)                        
+					#}
+                    #Design.Xt<-interMat2
+                    Rknots[[k<-k+1]]<- XK$knots
+                    which.Spec[[i]]<-k                    
+				}
+                if (amplitude == 1) is.M[i] <- 1 #convention to avoid centering sinusoidals with fixed amplitude
 			}
 			if (is.s){
 			    dataPr<-match(c("data"), names(trms2[1][[2]]), 0L)
@@ -230,28 +320,41 @@ DM<-function(formula,data,n,knots=NULL,predInd=FALSE,meanVector,indicator,mvrmOb
      			    Design.Xt<-NULL
      			    for (j in 1:NL) Design.Xt<-cbind(Design.Xt,mgcv::PredictMat(evalS[[j]],data=data.frame(data)))
 				}
-			    remove.cols<-which(c(apply(Design.Xt,2,sd)==0))
+			    #remove.cols<-which(c(apply(Design.Xt,2,sd)==0))
 			    colnames(Design.Xt)<-paste(labels[i],1:NCOL(Design.Xt),sep=".")
-			}
+			}			
 			Design.X<-cbind(Design.X,Design.Xt)
 			assign<-c(assign,rep(i,NCOL(Design.Xt)))
+			ifelse(is.spec,assign2<-c(assign2,rep(max(assign2)+1,NCOL(Design.Xt))),
+			               assign2<-c(assign2,max(assign2)+c(1:NCOL(Design.Xt))))
+			               
+			ifelse(is.sin && amplitude==1,
+			       assign3<-c(assign3,max(assign3)+rep(seq(from=1,to=NCOL(Design.Xt)/2),each=2)),
+                   assign3<-c(assign3,rep(max(assign3)+1,NCOL(Design.Xt))))
+                          
         }
 	}
+	remove.cols <- which(colnames(Design.X) == "(Intercept)")
+    if (length(remove.cols) > 1) Design.X<-Design.X[,-remove.cols[-1],drop=FALSE]
 	if (missing(meanVector)) meanVector<-apply(as.matrix(Design.X),2,mean)
 	if (missing(indicator)){
 	    unique.values<-unlist(lapply(apply(Design.X,2,unique),length))
 	    indicator<-c(unique.values<=2)
-	}
+	}				
 	if (sum(is.M)){
 	    mat.arg<-which(is.M==1)
 	    for (i in 1:length(mat.arg))
 		    indicator[which(assign==mat.arg[i])]<-TRUE
 	}
-	#indicator<-rep(TRUE,length(indicator))
-	Design.X[,!indicator]<-Design.X[,!indicator]-matrix(1,nrow=n)%*%matrix(meanVector[!indicator],nrow=1)
+	if (centre) Design.X[,!indicator]<-Design.X[,!indicator]-matrix(1,nrow=n)%*%matrix(meanVector[!indicator],nrow=1)
+	if (!centre) meanVector <- 0*meanVector
+	rDyn <- NULL
+	if (!is.null(Dynamic)) rDyn <- as.matrix(Dynamic)
     return(list(y=y,X=Design.X,assign=assign,Rknots=Rknots,meanVector=meanVector,
                 indicator=indicator,labels=labels,count=count,vars=vars,is.D=is.D,
-                which.Spec=which.Spec,formula.terms=formula.terms))
+                which.Spec=which.Spec,formula.terms=formula.terms,assign2=assign2,
+                assign3=assign3,repsX=repsX,isSin=isSin,Dynamic=rDyn,
+                DSP=c(amplitude,startSin,harmonics)))
 }
 
 match.call.defaults <- function(...) {

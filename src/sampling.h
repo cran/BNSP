@@ -492,3 +492,31 @@ void propose2(unsigned long int s, double *XiC, double *XiP, int nRespPars, doub
     }
     gsl_rng_free(r);
 }
+
+// from (4) of Wood (1994): dimension m = 2, lambda, ksi, sample
+void rvMF(unsigned long int s, int m, double lambda, double *mode, double *out)
+{
+	gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+    double d = m - 1;
+    double b = d / (sqrt(4 * lambda * lambda + d * d) + 2 * lambda); 
+    double x = (1 - b) / (1 + b);
+    double c = lambda * x + d * log(1 - x * x);
+    double z, w, u;
+    double test = 0;
+    int rs;
+    double y[2];
+	while(!test){
+	    z = gsl_ran_beta(r, d / 2, d / 2); 
+	    w = (1 - (1 + b) * z) / (1 - (1 - b) * z);
+	    u = gsl_ran_flat(r, 0.0, 1.0);
+	    if(lambda * w + d * log(1 - x * w) - c >= log(u)) 
+		    test = 1;	   
+	}
+	rs = 2 * gsl_ran_bernoulli(r, 0.5) - 1;
+	y[0] = sqrt(1 - w * w) * rs;
+	y[1] = w;
+	out[0] = mode[1] * y[0] + mode[0] * y[1];
+	out[1] = -mode[0] * y[0] + mode[1] * y[1];
+	gsl_rng_free(r);
+}

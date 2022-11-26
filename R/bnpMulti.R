@@ -1,10 +1,31 @@
 # mvrm, continue, mvrm2mcmc, plotCorr, histCorr, predict.mvrm, print.mvrm, summary.mvrm, clustering
-mvrm <- function(formula,data=list(),
+mvrm <- function(formula,distribution="normal",
+                 data=list(),centre=TRUE,
                  sweeps,burn=0,thin=1,seed,StorageDir,
-                 c.betaPrior="IG(0.5, 0.5 * n * p)", pi.muPrior="Beta(1, 1)", c.alphaPrior="IG(1.1, 1.1)",
-                 sigmaPrior="HN(2)", pi.sigmaPrior="Beta(1, 1)", mu.RPrior="N(0, 1)",
-                 sigma.RPrior="HN(1)",corr.Model=c("common",nClust=1),DP.concPrior="Gamma(5, 2)",
-                 tuneAlpha,tuneSigma2,tuneCb,tuneCa,tuneR,tuneSigma2R,tau,FT=1,...){
+                 c.betaPrior="IG(0.5, 0.5 * n * p)",                  
+                 pi.muPrior="Beta(1, 1)",                  
+                 c.alphaPrior="IG(1.1, 1.1)",                                  
+                 sigmaPrior="HN(2)",                  
+                 pi.sigmaPrior="Beta(1, 1)",
+                 c.psiPrior = "HN(1)",
+                 phiPrior="HN(2)", 
+                 pi.omegaPrior="Beta(1, 1)",                  
+                 mu.RPrior="N(0, 1)",
+                 sigma.RPrior="HN(1)",
+                 corr.Model=c("common",nClust=1),
+                 DP.concPrior="Gamma(5, 2)",
+                 tuneCbeta,
+                 tuneCalpha,
+                 tuneAlpha,               
+                 tuneSigma2,
+                 tuneCpsi,
+                 tunePsi,
+                 tunePhi,
+                 tuneR,
+                 tuneSigma2R,                 
+                 tuneHar,
+                 tau,FT=1,
+                 compDeviance=FALSE,...){
     #Samples etc
     if (thin <= 0) thin <- 1
     thin <- as.integer(thin)
@@ -17,7 +38,12 @@ mvrm <- function(formula,data=list(),
 		nSamples <- length(seq(1,(sweeps-burn),by=thin))
 		LASTsw<-seq(burn,by=thin,length.out=nSamples)[nSamples]
 	}
+    if (nSamples<0) stop("problem with sweeps & burn arguments")
 	LASTWB<-1	
+	#Distribution
+    distributions <- c('normal','t')
+    fam<-match(distribution,distributions) 
+    if (is.na(fam)) stop("unrecognised distribution; should be one of: normal or t")
     # Match call
     call <- match.call(expand.dots = FALSE)
     call2 <- match.call.defaults()
@@ -26,19 +52,21 @@ mvrm <- function(formula,data=list(),
         data <- as.data.frame(data)
     #Formula & data dimensions
     p <- length(as.Formula(formula))[1]
-    if (length(as.Formula(formula))[2] > 2) stop("more than two regression models provided")
-    if (length(as.Formula(formula))[2] == 1) formula <- as.Formula(formula, ~1)
-    #formula.save <- formula(formula)
+    if (fam==1 && length(as.Formula(formula))[2] > 2) stop("more than two regression models provided")
+    if (fam==1 && length(as.Formula(formula))[2] == 1) formula <- as.Formula(formula, ~1)    
+    if (fam==2 && length(as.Formula(formula))[2] > 3) stop("more than three regression models provided")    
+    if (fam==2 && length(as.Formula(formula))[2] == 1) formula <- as.Formula(formula, ~1, ~1)
+    if (fam==2 && length(as.Formula(formula))[2] == 2) stop("ambiguous definition of regression model")        
     formula.m<-formula(as.Formula(formula),lhs=1,rhs=1)
     formula.v<-formula(as.Formula(formula),lhs=0,rhs=2)
+    if (fam==2) formula.s<-formula(as.Formula(formula),lhs=0,rhs=3)    
     # Responses, design matrices, indicators
     Y<-NULL
     varsY<-list()
-    #mf <- model.frame(as.Formula(formula), data = data)
     for (i in 1:p){
 		trms<-terms.formula(formula(as.Formula(formula,~1),lhs=i,rhs=0))
         Y<-cbind(Y,with(data,eval(attr(trms,"variables")[[2]])))
-        varsY[[i]] <- as.character(attr(trms,"variables")[[2]])
+        varsY[[i]] <- as.character(attr(trms,"variables")[[2]])        
     }
     # Null Deviance
     nullDeviance <- 0
@@ -46,61 +74,106 @@ mvrm <- function(formula,data=list(),
         nullDeviance <- nullDeviance - 2 * logLik(lm(Y[,i] ~ 1))
     # Sample size
     n<-length(c(Y))/p
-    #
-    XYK<-DM(formula=formula.m,data=data,n=n)
+    #X
+    XYK<-DM(formula=formula.m,data=data,n=n,centre=centre)
     X<-as.matrix(XYK$X)
     Xknots<-XYK$Rknots
     storeMeanVectorX<-XYK$meanVector
     storeIndicatorX<-XYK$indicator
     LG<-NCOL(X)-1
-    vecLG<-table(XYK$assign)[-1]
-    NG<-length(vecLG)
-    cusumVecLG<-c(0,cumsum(vecLG))
-    assignX<-XYK$assign
     labelsX<-XYK$labels
     countX<-XYK$count
     varsX<-XYK$vars
-    is.Dx<-XYK$is.D
     which.SpecX<-XYK$which.Spec
     formula.termsX<-XYK$formula.terms
-    #
-    ZK<-DM(formula=formula.v,data=data,n=n)
+    is.Dx<-XYK$is.D
+    assignX<-XYK$assign
+    NG<-max(assignX)
+    assignX3<-XYK$assign3
+    vecLG<-table(assignX3)[-1]    
+    cusumVecLG<-c(0,cumsum(vecLG))    
+    NG2<-max(assignX3)
+    repsX <- XYK$repsX
+    DynamicSinPar <-XYK$DSP
+    amplitude <- DynamicSinPar[1]
+    nHar <- DynamicSinPar[3]
+    Dynamic <- XYK$Dynamic
+    isSin <- XYK$isSin
+    varSin <- varsX[[min(which(isSin==1))]]
+    if (amplitude==1) isSin <- isSin[repsX]
+    #Z
+    ZK<-DM(formula=formula.v,data=data,n=n,centre=centre)
     Z<-as.matrix(ZK$X)
     Zknots<-ZK$Rknots
     storeMeanVectorZ<-ZK$meanVector
     storeIndicatorZ<-ZK$indicator
     LD<-NCOL(Z)-1
-    vecLD<-table(ZK$assign)[-1]
-    ND<-length(vecLD)
-    cusumVecLD<-c(0,cumsum(vecLD))
-    MVLD <- 1
-    if (LD > 0) MVLD<-max(vecLD)
-    assignZ<-ZK$assign
     labelsZ<-ZK$labels
     countZ<-ZK$count
     varsZ<-ZK$vars
-    is.Dz<-ZK$is.D
     which.SpecZ<-ZK$which.Spec
     formula.termsZ<-ZK$formula.terms
+    is.Dz<-ZK$is.D    
+    assignZ<-ZK$assign
+    #vecLD<-table(assignZ)[-1]
+    #cusumVecLD<-c(0,cumsum(vecLD))
+    ND<-max(assignZ)#length(vecLD)
+    repeats<-rep(1,ND)
+    repeats[which(is.Dz==1)]<-table(assignZ)[which(is.Dz==1)+1]
+    oneHE<-1; if (ND > 0) oneHE<-rep(c(1:ND),repeats)
+    assignZ2<-ZK$assign2        
+    vecLD<-table(assignZ2)[-1]
+    cusumVecLD<-c(0,cumsum(vecLD))
+    ND2<-max(assignZ2)#length(vecLD) 
+    isDz2<-as.numeric(is.Dz)[oneHE]
+    if (is.na(isDz2[1])) isDz2<-1
+    #W
+    W<-Wknots<-storeMeanVectorW<-storeIndicatorW<-assignW<-labelsW<-countW<-varsW<-is.Dw<-which.SpecW<-formula.termsW<-NULL
+    LC<-vecLC<-NC<-cusumVecLC<-0
+    if (fam==2){
+        WK<-DM(formula=formula.s,data=data,n=n,centre=centre)
+        W<-as.matrix(WK$X)
+        Wknots<-WK$Rknots
+        storeMeanVectorW<-WK$meanVector
+        storeIndicatorW<-WK$indicator
+        LC<-NCOL(W)-1
+        vecLC<-table(WK$assign)[-1]
+        NC<-length(vecLC)
+        cusumVecLC<-c(0,cumsum(vecLC))
+        assignW<-WK$assign
+        labelsW<-WK$labels
+        countW<-WK$count
+        varsW<-WK$vars
+        is.Dw<-WK$is.D
+        which.SpecW<-WK$which.Spec
+        formula.termsW<-WK$formula.terms    
+    }
+    MVLD <- 1
+    if (LD > 0 || LC > 0) MVLD<-max(vecLD,vecLC)    
     #Initialize covariance & correlation matrix
-    LASTDE <- LASTR <- LASTmuR <- LASTsigma2R <- 1   
-    if (p>1){
-        Res<-NULL
-        Xinit<-X[,-grep("(",colnames(X),fixed=TRUE)]
-        for (i in 1:p) 
-            Res<-cbind(Res,residuals(lm(Y[,i] ~ Xinit)))
-        CR<-0.9*cov(Res)+0.1*diag(1,p)
-        D<-matrix(0,p,p)
-        diag(D)<-sqrt(diag(CR))
-        LASTDE<-c(c(D),c(CR))
-        LASTR<-cov2cor(CR)
-        LASTmuR<-mean(LASTR[upper.tri(LASTR)])
-        LASTsigma2R<-1
-        if (p > 2) LASTsigma2R<-var(LASTR[upper.tri(LASTR)])
-    }    
+    LASTDE <- LASTR <- LASTmuR <- LASTsigma2R <- 1       
+    Res<-NULL
+    find.sm <- grep("sm(",colnames(X),fixed=TRUE)
+    Xmain <- X
+    if (length(find.sm) > 0) Xmain<-X[,-find.sm]
+    for (i in 1:p)
+        Res<-cbind(Res,residuals(lm(Y[,i] ~ Xmain - 1)))
+    CR<-0.9*cov(Res)+0.1*diag(mean(eigen(cov(Res))$values),p)
+    D<-matrix(0,p,p)
+    diag(D)<-sqrt(diag(CR))
+    LASTsigma2zk<-diag(CR)
+    LASTDE<-c(c(D),c(CR))
+    LASTR<-cov2cor(CR)
+    if (p > 1) LASTmuR<-mean(LASTR[upper.tri(LASTR)])
+    if (p > 2) LASTsigma2R<-var(LASTR[upper.tri(LASTR)])
     #Prior for pi.mu
     if (!length(pi.muPrior)==1 && !length(pi.muPrior)==NG && !length(pi.muPrior)==(p*NG))
         stop("pi.muPrior has incorrect dimension")
+    if (length(pi.muPrior)==NG && NG2!=NG) pi.muPrior <- pi.muPrior[repsX]    
+    if (length(pi.muPrior)==(p*NG) && NG2!=NG){ 
+	    for (i in 1:(p-1)) repsX<-c(repsX,repsX+max(repsX))	    
+	    pi.muPrior <- pi.muPrior[repsX]
+	}    
     pimu<-NULL
     for (k in 1:length(pi.muPrior)){
         sp<-strsplit(pi.muPrior[k],"Beta\\(")
@@ -108,25 +181,37 @@ mvrm <- function(formula,data=list(),
         sp<-strsplit(sp[[1]][1],",")
         pimu<-c(pimu,as.numeric(sp[[1]]))
     }
-    if (length(pi.muPrior)==1) pimu<-rep(pimu,p*NG)
-    if (length(pi.muPrior)==NG) pimu<-rep(pimu,p)
+    if (length(pi.muPrior)==1) pimu<-rep(pimu,p*NG2)
+    if (length(pi.muPrior)==NG2) pimu<-rep(pimu,p)
+    piHar<-1 #pi of the harminocs for forming the dynamic matrix
+    if (sum(isSin) && amplitude > 1){ 
+        loc <- 1+2*(which(isSin==1)-1)
+        loc <-c(loc,loc+1)
+        expand.loc <- rep(loc,p) + rep(seq(from=0,length.out=p,by=2*NG),each=2)
+        piHar <- pimu[loc]  
+	}    
     #Prior for c.beta
     sp<-strsplit(c.betaPrior,"IG\\(")
     sp<-strsplit(sp[[1]][2],"\\)")
     sp<-strsplit(sp[[1]][1],",")
     cetaParams<-c(as.numeric(sp[[1]][1]),eval(parse(text=sp[[1]][2])))
     #Prior for pi.sigma
-    if (!length(pi.sigmaPrior)==1 && !length(pi.sigmaPrior)==ND && !length(pi.sigmaPrior)==(p*ND))
-        stop("pi.sigmaPrior has incorrect dimension")
-    pisigma<-NULL
-    for (k in 1:length(pi.sigmaPrior)){
-        sp<-strsplit(pi.sigmaPrior[k],"Beta\\(")
-        sp<-strsplit(sp[[1]][2],"\\)")
-        sp<-strsplit(sp[[1]][1],",")
-        pisigma<-c(pisigma,as.numeric(sp[[1]]))
-    }
-    if (length(pi.sigmaPrior)==1) pisigma<-rep(pisigma,p*ND)
-    if (length(pi.sigmaPrior)==ND) pisigma<-rep(pisigma,p)
+    if (ND > 0){
+        if (!length(pi.sigmaPrior)==1 && !length(pi.sigmaPrior)==ND && !length(pi.sigmaPrior)==(p*ND))
+            stop("pi.sigmaPrior has incorrect dimension")
+        if (length(pi.sigmaPrior)==(p*ND)) 
+            pi.sigmaPrior<-pi.sigmaPrior[oneHE+rep(seq(from=0,to=p*ND-1,by=ND),each=length(oneHE))]
+        if (length(pi.sigmaPrior)==ND) pi.sigmaPrior<-pi.sigmaPrior[oneHE]    
+        pisigma<-NULL
+        for (k in 1:length(pi.sigmaPrior)){
+            sp<-strsplit(pi.sigmaPrior[k],"Beta\\(")
+            sp<-strsplit(sp[[1]][2],"\\)")
+            sp<-strsplit(sp[[1]][1],",")
+            pisigma<-c(pisigma,as.numeric(sp[[1]]))
+        }
+        if (length(pi.sigmaPrior)==1) pisigma<-rep(pisigma,p*ND2)
+        if (length(pi.sigmaPrior)==ND2) pisigma<-rep(pisigma,p)
+	}else{pisigma<-1}
     #Prior for c.alpha
     if (!length(c.alphaPrior)==1 && !length(c.alphaPrior)==p)
         stop("c.alphaPrior has incorrect dimension")
@@ -167,6 +252,58 @@ mvrm <- function(formula,data=list(),
         sigmaParams<-rep(sigmaParams,p)
         HNsg<-rep(HNsg,p)
 	}
+	#Prior for pi.omega
+    if (!length(pi.omegaPrior)==1 && !length(pi.omegaPrior)==NC && !length(pi.omegaPrior)==(p*NC))
+        stop("pi.omegaPrior has incorrect dimension")
+    piomega<-NULL
+    for (k in 1:length(pi.omegaPrior)){
+        sp<-strsplit(pi.omegaPrior[k],"Beta\\(")
+        sp<-strsplit(sp[[1]][2],"\\)")
+        sp<-strsplit(sp[[1]][1],",")
+        piomega<-c(piomega,as.numeric(sp[[1]]))
+    }
+    if (length(pi.omegaPrior)==1) piomega<-rep(piomega,p*NC)
+    if (length(pi.omegaPrior)==NC) piomega<-rep(piomega,p)
+    #Prior for c.psi
+    if (!length(c.psiPrior)==1 && !length(c.psiPrior)==p)
+        stop("c.psiPrior has incorrect dimension")
+    specials<-c("HN","IG")
+    cpsiParams<-NULL
+    HNcp<-vector()
+    for (k in 1:length(c.psiPrior)){
+        sp<-strsplit(c.psiPrior[k],"\\(")
+        if (sp[[1]][1] %in% specials){
+            if (match(sp[[1]][1],specials)==1) HNcp[k]<-1
+            if (match(sp[[1]][1],specials)==2) HNcp[k]<-0
+        } else stop("unrecognised prior for c.psi")
+        sp<-strsplit(sp[[1]][2],"\\)")
+        sp<-strsplit(sp[[1]][1],",")
+        cpsiParams<-c(cpsiParams,as.numeric(sp[[1]]))
+    }
+    if (length(c.psiPrior)==1){
+        cpsiParams<-rep(cpsiParams,p)
+        HNcp<-rep(HNcp,p)
+	}	
+    #Prior for phi2_k 
+    if (!length(phiPrior)==1 && !length(phiPrior)==p)
+        stop("phiPrior has incorrect dimension")
+    specials<-c("HN","IG")
+    phiParams<-NULL
+    HNphi<-vector()
+    for (k in 1:length(phiPrior)){
+        sp<-strsplit(phiPrior[k],"\\(")
+        if (sp[[1]][1] %in% specials){
+            if (match(sp[[1]][1],specials)==1) HNphi[k]<-1
+            if (match(sp[[1]][1],specials)==2) HNphi[k]<-0
+        } else stop("unrecognised prior for phi")
+        sp<-strsplit(sp[[1]][2],"\\)")
+        sp<-strsplit(sp[[1]][1],",")
+        phiParams<-c(phiParams,as.numeric(sp[[1]]))
+    }
+    if (length(phiPrior)==1){
+        phiParams<-rep(phiParams,p)
+        HNphi<-rep(HNphi,p)
+	}
 	#Prior for muR
 	sp<-strsplit(mu.RPrior,"N\\(")
     sp<-strsplit(sp[[1]][2],"\\)")
@@ -180,7 +317,8 @@ mvrm <- function(formula,data=list(),
     #Cor model
     corModels<-c("common","groupC","groupV","uni")
     mcm<-match(corr.Model[1],corModels)
-    if (p==1) mcm=4
+    if (p==1 && fam==1) mcm=4
+    if (p==1 && fam==2) mcm=1
     if (p==2) mcm=1
     if (is.na(mcm)) stop("unrecognised correlation model")
     H <- G <- 1
@@ -195,18 +333,16 @@ mvrm <- function(formula,data=list(),
         if (is.na(G) || (!G%%1==0) || G==0) {G <- p; warning(cat("mispecified number of clusters. nClust set to ",G,"\n"))}
         H<-G*(G-1)/2+G #min(d,G*(G-1)/2+G) #min(G,abs(p-G))
 	}
+	if (fam==2) mcm <- mcm + 7
     #Prior for alpha DP
-    if (mcm > 1){
-        sp<-strsplit(DP.concPrior,"Gamma\\(")
-        sp<-strsplit(sp[[1]][2],"\\)")
-        sp<-strsplit(sp[[1]][1],",")
-        DPparams<-as.numeric(sp[[1]])
-        DPparams <- c(DPparams,0.01)
-    }
+    sp<-strsplit(DP.concPrior,"Gamma\\(")
+    sp<-strsplit(sp[[1]][2],"\\)")
+    sp<-strsplit(sp[[1]][1],",")
+    DPparams<-as.numeric(sp[[1]])
+    DPparams <- c(DPparams,0.01)
     #Seed
     if (missing(seed)) seed<-as.integer((as.double(Sys.time())*1000+Sys.getpid()) %% 2^31)
     # Storage directory & files
-    WF <- 1
     if (!missing(StorageDir)){
         StorageDir <- path.expand(StorageDir)
         ncharwd <- nchar(StorageDir)}
@@ -214,24 +350,44 @@ mvrm <- function(formula,data=list(),
     if (!missing(StorageDir)) if (!dir.exists(StorageDir)) dir.create(StorageDir, recursive = TRUE)
     if (missing(StorageDir)) stop("provide a storage directory via argument StorageDir")
     FL <- c("gamma", "cbeta", "delta", "alpha", "R", "muR", "sigma2R", "calpha", "sigma2", "beta", 
+            "ksi", "psi", "cpsi", "phi2",
             "compAlloc", "nmembers", "deviance", "DPconc",
-            "compAllocV","nmembersV",
-            "DE")
+            "compAllocV", "nmembersV",
+            "DE",
+            "nu", "fi", "omega", "ceta","comega","eta", "test", "nu.ls", "eta.ls", "nmembers.ls", "clusters",  
+            "probs", "tune")
     for (i in 1:length(FL)){
         oneFile <- paste(StorageDir, paste("BNSP",FL[i], "txt",sep="."),sep="/")
         if (file.exists(oneFile)) file.remove(oneFile)
 	}
     #Tuning Parameters
-    if (missing(tuneCa)) tuneCa<-rep(1,p)
-    if (!length(tuneCa)==p) tuneCa<-rep(mean(tuneCa),p)
+	if (missing(tuneCbeta)) tuneCbeta<-20
+    if (missing(tuneCalpha)) tuneCalpha<-rep(1,p)
+    if (!length(tuneCalpha)==p) tuneCalpha<-rep(mean(tuneCalpha),p)    
+    if (ND > 0){
+        if (missing(tuneAlpha) || !length(tuneAlpha)==ND || !length(tuneAlpha)==(ND*p)){
+		    tuneAlpha<-rep(5,ND)
+		    tuneAlpha[which(is.Dz==1)]<-1
+	    }    
+	    if (length(tuneAlpha)==(ND*p)) 
+            tuneAlpha<-tuneAlpha[oneHE+rep(seq(from=0,to=p*ND-1,by=ND),each=length(oneHE))]                
+        if (length(tuneAlpha)==ND) tuneAlpha<-tuneAlpha[oneHE]
+        if (length(tuneAlpha)==ND2) tuneAlpha<-rep(tuneAlpha,p)
+    }else{tuneAlpha<-1}
     if (missing(tuneSigma2)) tuneSigma2<-rep(0.5,p)
     if (!length(tuneSigma2)==p) tuneSigma2<-rep(mean(tuneSigma2),p)
-    if (missing(tuneCb)) tuneCb<-20
-    if (missing(tuneAlpha)) tuneAlpha<-rep(5,ND*p)
-    if (!length(tuneAlpha)==(ND*p)) tuneAlpha<-rep(mean(tuneAlpha),ND*p)
-    if (missing(tuneSigma2R)) tuneSigma2R<-0.25
+    if (missing(tuneCpsi)) tuneCpsi<-rep(1,p)
+    if (!length(tuneCpsi)==p) tuneCpsi<-rep(mean(tuneCpsi),p)
+	if (missing(tunePsi)) tunePsi<-rep(5,NC*p)
+    if (!length(tunePsi)==(NC*p)) tunePsi<-rep(mean(tunePsi),NC*p)
+    if (missing(tunePhi)) tunePhi<-rep(0.5,p)
+    if (!length(tunePhi)==p) tunePhi<-rep(mean(tunePhi),p)
     if (missing(tuneR)) tuneR<-40*(p+2)^3
     tuneR[which(tuneR<p+2)]<-p+2
+    if (missing(tuneSigma2R)) tuneSigma2R<-0.25
+    if (nHar > 0){
+        ifelse(missing(tuneHar), tuneHar<-rep(100,nHar), tuneHar<-rep(mean(tuneHar),nHar))
+	}else{tuneHar<-1}
 	if (missing(tau)) tau = 0.01
     #Block size selection
     #if (missing(blockSizeProbG)){
@@ -242,144 +398,273 @@ mvrm <- function(formula,data=list(),
 	blockSizeProbD <- rep(0,LD)
     blockSizeProbD[1:5]<-c(10,25,30,25,10)
     #}
+    #if (missing(blockSizeProbC)){
+	blockSizeProbC <- rep(0,LC)
+    blockSizeProbC[1:5]<-c(10,25,30,25,10)
+    #}
     maxBSG <- max(which(blockSizeProbG>0))
     maxBSD <- max(which(blockSizeProbD>0))
+    maxBSC <- max(which(blockSizeProbC>0))
+    maxBSGDC <- c(maxBSG,maxBSD,maxBSC)
     #Deviance
     deviance <- c(0,0)
+    #Cont
+    cont <- 0    
     #Call C
     if (mcm==4) {out<-.C("mvrmC",
-        as.integer(seed),as.character(StorageDir),as.integer(WF),
+        as.integer(seed),as.character(StorageDir),
         as.integer(sweeps),as.integer(burn),as.integer(thin),
         as.double(c(t(Y))),as.double(X),as.double(Z),as.integer(n),as.integer(LG),as.integer(LD),
         as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
-        as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),
-        as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
+        as.double(tuneCalpha),as.double(tuneSigma2),as.double(tuneCbeta),as.double(tuneAlpha),
+        as.integer(NG2),as.integer(ND2),as.integer(vecLG),as.integer(vecLD),
         as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
         as.double(cetaParams),as.integer(HNca),as.double(calphaParams),as.double(pimu),as.double(pisigma),
-        as.integer(HNsg),as.double(sigmaParams),as.double(deviance),
-        as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(0)),
-        as.double(c(0)),as.integer(LASTWB))}
+        as.integer(HNsg),as.double(sigmaParams),as.double(deviance),as.integer(isDz2),
+        as.integer(c(cont)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(LASTsigma2zk),
+        as.double(c(0)),as.double(c(0)),as.integer(LASTWB),
+        as.integer(isSin),as.double(Dynamic),as.integer(DynamicSinPar),as.double(tuneHar),as.double(piHar))}        
     if (mcm==1) {out<-.C("mult",
-        as.integer(seed),as.character(StorageDir),as.integer(WF),
+        as.integer(seed),as.character(StorageDir),
         as.integer(sweeps),as.integer(burn),as.integer(thin),
-        as.integer(n),as.integer(p),as.double(c(t(Y))),as.double(t(X)),as.double(Z),
+        as.integer(n),as.integer(c(p,mcm)),
+        as.double(c(t(Y))),as.double(t(X)),as.double(Z),
         as.integer(LG),as.integer(LD),
         as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
-        as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
+        as.integer(NG2),as.integer(ND2),as.integer(vecLG),as.integer(vecLD),
         as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
-        as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneSigma2R),as.double(tuneR),
+        as.double(tuneCalpha),as.double(tuneSigma2),as.double(tuneCbeta),as.double(tuneAlpha),
+        as.double(tuneSigma2R),as.double(tuneR),
         as.double(pimu),as.double(cetaParams),as.double(pisigma),
         as.integer(HNca),as.double(calphaParams),as.double(Rparams),
         as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),
-        as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),as.double(c(LASTR)),
+        as.integer(isDz2),
+        as.integer(c(cont)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(LASTsigma2zk),
+        as.double(c(LASTR)),
         as.double(c(LASTmuR)),as.double(c(LASTsigma2R)),as.double(c(0)),as.double(c(0)),
-        as.integer(c(LASTsw)),as.double(c(LASTDE)),as.integer(LASTWB))}
+        as.integer(c(LASTsw)),as.double(c(LASTDE)),as.integer(LASTWB),as.integer(isSin))}
     if (mcm==2) {out<-.C("multg",
-        as.integer(seed),as.character(StorageDir),as.integer(WF),
+        as.integer(seed),as.character(StorageDir),
         as.integer(sweeps),as.integer(burn),as.integer(thin),
-        as.integer(n),as.integer(p),as.double(c(t(Y))),as.double(t(X)),as.double(Z),
+        as.integer(n),as.integer(c(p,mcm)),
+        as.double(c(t(Y))),as.double(t(X)),as.double(Z),
         as.integer(LG),as.integer(LD),
         as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
-        as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
+        as.integer(NG2),as.integer(ND2),as.integer(vecLG),as.integer(vecLD),
         as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
-        as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneSigma2R),as.double(tuneR),
-        as.double(pimu),as.double(cetaParams),as.double(pisigma),
+        as.double(tuneCalpha),as.double(tuneSigma2),as.double(tuneCbeta),as.double(tuneAlpha),
+        as.double(tuneSigma2R),as.double(tuneR), as.double(pimu),as.double(cetaParams),as.double(pisigma),
         as.integer(HNca),as.double(calphaParams),as.double(Rparams),
         as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(H),
-        as.double(DPparams), as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),
-        as.double(LASTR),as.double((rnorm(n=H,mean=LASTmuR,sd=0.01))),as.double(LASTsigma2R/H),as.double(c(0)),
-        as.double(c(0)),as.integer(c(0)),as.double(c(0)),
-        as.integer(c(LASTsw)),as.double(c(LASTDE)),as.integer(LASTWB))}
+        as.double(DPparams), as.integer(isDz2),
+        as.integer(c(cont)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(LASTsigma2zk),
+        as.double(LASTR),as.double((rnorm(n=H,mean=LASTmuR,sd=0.01))),as.double(LASTsigma2R/H),
+        as.double(c(0)), as.double(c(0)),as.integer(c(0)),as.double(c(0)),
+        as.integer(c(LASTsw)),as.double(c(LASTDE)),as.integer(LASTWB),as.integer(isSin))}
     if (mcm==3) {out<-.C("multgv",
-        as.integer(seed),as.character(StorageDir),as.integer(WF),
+        as.integer(seed),as.character(StorageDir),
         as.integer(sweeps),as.integer(burn),as.integer(thin),
-        as.integer(n),as.integer(p),as.double(c(t(Y))),as.double(t(X)),as.double(Z),
+        as.integer(n),as.integer(c(p,mcm)),
+        as.double(c(t(Y))),as.double(t(X)),as.double(Z),
         as.integer(LG),as.integer(LD),
         as.double(blockSizeProbG),as.integer(maxBSG),as.double(blockSizeProbD),as.integer(maxBSD),
-        as.integer(NG),as.integer(ND),as.integer(vecLG),as.integer(vecLD),
+        as.integer(NG2),as.integer(ND2),as.integer(vecLG),as.integer(vecLD),
         as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(MVLD),
-        as.double(tuneCa),as.double(tuneSigma2),as.double(tuneCb),as.double(tuneAlpha),as.double(tuneSigma2R),as.double(tuneR),
-        as.double(pimu),as.double(cetaParams),as.double(pisigma),
+        as.double(tuneCalpha),as.double(tuneSigma2),as.double(tuneCbeta),as.double(tuneAlpha),
+        as.double(tuneSigma2R),as.double(tuneR), as.double(pimu),as.double(cetaParams),as.double(pisigma),
         as.integer(HNca),as.double(calphaParams),as.double(Rparams),
         as.integer(HNsg),as.double(sigmaParams),as.double(tau),as.integer(FT),as.double(deviance),as.integer(G),
-        as.double(DPparams),as.integer(c(0)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(c(0)),
-        as.double(LASTR),as.double((rnorm(n=H,mean=LASTmuR,sd=0.01))),as.double(LASTsigma2R/H),as.double(c(0)),
+        as.double(DPparams), as.integer(isDz2), 
+        as.integer(c(cont)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(LASTsigma2zk),
+        as.double(LASTR),as.double((rnorm(n=H,mean=LASTmuR,sd=0.01))),as.double(LASTsigma2R/H),
+        as.double(c(0)),
         as.double(c(0)),as.integer(c(0)),as.double(c(0)),
-        as.integer(c(LASTsw)),as.double(c(LASTDE)),as.integer(LASTWB))}
+        as.integer(c(LASTsw)),as.double(c(LASTDE)),as.integer(LASTWB),as.integer(isSin))}
+     if (mcm==8) {out<-.C("multT",
+        as.integer(seed),as.character(StorageDir),
+        as.integer(c(sweeps,burn,thin,n,p,mcm,MVLD,compDeviance)),
+        as.double(c(t(Y))),as.double(t(X)),as.double(Z),as.double(W),
+        as.integer(c(LG,LD,LC)),
+        as.double(blockSizeProbG),as.double(blockSizeProbD),as.double(blockSizeProbC),
+        as.integer(maxBSGDC),as.integer(c(NG2,ND2,NC)),as.integer(vecLG),as.integer(vecLD),as.integer(vecLC), 
+        as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(cusumVecLC),   
+        as.double(tuneCalpha),as.double(tuneSigma2),as.double(tuneCbeta),as.double(tuneAlpha),
+        as.double(tuneSigma2R),as.double(tuneR),as.double(tunePsi),as.double(tunePhi),as.double(tuneCpsi),        
+        as.double(pimu),as.double(cetaParams),as.double(pisigma),
+        as.integer(HNca),as.double(calphaParams),as.integer(HNcp),as.double(cpsiParams),
+        as.integer(HNphi),as.double(phiParams),as.double(Rparams),
+        as.integer(HNsg),as.double(sigmaParams),as.double(piomega),
+        as.double(tau),as.integer(FT),as.double(deviance),as.double(Res),
+        as.integer(isDz2),        
+        as.integer(c(cont)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),
+        as.double(c(LASTsigma2zk)),as.double(c(LASTR)),as.double(c(LASTDE)), 
+        as.double(c(LASTmuR)),as.double(c(LASTsigma2R)),
+        as.integer(c(LASTsw)),as.integer(LASTWB),
+        as.double(c(0)),as.double(c(0)),
+        as.integer(c(0)),as.double(c(0,0,0)),as.integer(isSin))}    
+    if (mcm==9) {out<-.C("multgT",
+        as.integer(seed),as.character(StorageDir),
+        as.integer(c(sweeps,burn,thin,n,p,mcm,MVLD,compDeviance)),
+        as.double(c(t(Y))),as.double(t(X)),as.double(Z),as.double(W),
+        as.integer(c(LG,LD,LC)),
+        as.double(blockSizeProbG),as.double(blockSizeProbD),as.double(blockSizeProbC),
+        as.integer(maxBSGDC),as.integer(c(NG,ND2,NC)),as.integer(vecLG),as.integer(vecLD),as.integer(vecLC),                
+        as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(cusumVecLC),
+        as.double(tuneCalpha),as.double(tuneSigma2),as.double(tuneCbeta),as.double(tuneAlpha),
+        as.double(tuneSigma2R),as.double(tuneR),as.double(tunePsi),as.double(tunePhi), as.double(tuneCpsi),        
+        as.double(pimu),as.double(cetaParams),as.double(pisigma),
+        as.integer(HNca),as.double(calphaParams),as.integer(HNcp),as.double(cpsiParams),
+        as.integer(HNphi),as.double(phiParams),as.double(Rparams),
+        as.integer(HNsg),as.double(sigmaParams),as.double(piomega),        
+        as.double(tau),as.integer(FT),as.double(deviance),as.double(Res),                
+        as.integer(H),as.double(DPparams),        
+        as.integer(isDz2),
+        as.integer(c(cont)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),        
+        as.double(c(LASTsigma2zk)),as.double(c(LASTR)),as.double(c(LASTDE)),                        
+        as.double(rnorm(n=H,mean=LASTmuR,sd=0.01),LASTsigma2R/H),        
+        as.integer(c(LASTsw)),as.integer(LASTWB),                
+        as.double(c(0)),as.double(c(0)),
+        as.integer(c(0)),as.double(c(0)),
+        as.integer(c(0)),as.double(c(0,0,0)),as.integer(isSin))}    
+    if (mcm==10) {out<-.C("multgvT",
+        as.integer(seed),as.character(StorageDir),
+        as.integer(c(sweeps,burn,thin,n,p,mcm,MVLD,compDeviance)),
+        as.double(c(t(Y))),as.double(t(X)),as.double(Z),as.double(W),
+        as.integer(c(LG,LD,LC)),        
+        as.double(blockSizeProbG),as.double(blockSizeProbD),as.double(blockSizeProbC),
+        as.integer(maxBSGDC),as.integer(c(NG,ND2,NC)),as.integer(vecLG),as.integer(vecLD),as.integer(vecLC),          
+        as.integer(cusumVecLG),as.integer(cusumVecLD),as.integer(cusumVecLC),
+        as.double(tuneCalpha),as.double(tuneSigma2),as.double(tuneCbeta),as.double(tuneAlpha),
+        as.double(tuneSigma2R),as.double(tuneR),as.double(tunePsi),as.double(tunePhi), as.double(tuneCpsi),        
+        as.double(pimu),as.double(cetaParams),as.double(pisigma),as.integer(HNca),as.double(calphaParams),        
+        as.integer(HNcp),as.double(cpsiParams),as.integer(HNphi),as.double(phiParams),        
+        as.double(Rparams),as.integer(HNsg),as.double(sigmaParams),as.double(piomega),        
+        as.double(tau),as.integer(FT),as.double(deviance),as.double(Res),        
+        as.integer(G), as.double(DPparams),        
+        as.integer(isDz2),        
+        as.integer(c(cont)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),
+        as.double(c(LASTsigma2zk)),as.double(c(LASTR)),as.double(c(LASTDE)),        
+        as.double(rnorm(n=H,mean=LASTmuR,sd=0.01),LASTsigma2R/H),
+        as.integer(c(LASTsw)),as.integer(LASTWB),
+        as.double(c(0)),as.double(c(0)),        
+        as.integer(c(0)),as.double(c(0)),
+        as.integer(c(0)),as.double(c(0,0,0)),as.integer(isSin))}    
     #Output
     if (mcm<4){
-        loc1<-25
-        loc2<-41 
+        loc1<-24
+        loc2<-40 
         tuneSigma2Ra<-out[[loc1+4]][1]
-        tuneRa<-out[[loc1+5]][1]    
+        tuneRa<-out[[loc1+5]][1] 
+        tunePsia<-tunePsi
+        tunePhia<-tunePhi
+        tuneCpsia<-tuneCpsi 
+        DevCalcs<-2  
     }
-    if (mcm==4) {
-		loc1<-17 
-		loc2<-35
+    if (mcm==4){
+		loc1<-16 
+		loc2<-34
 		tuneSigma2Ra<-tuneSigma2R 
 		tuneRa<-tuneR
-    }        
+		tunePsia<-tunePsi
+        tunePhia<-tunePhi
+        tuneCpsia<-tuneCpsi
+		DevCalcs<-2
+    }  
+    if (mcm>7){
+		loc1<-20
+		loc2<-44
+		tuneSigma2Ra<-out[[loc1+4]][1]
+        tuneRa<-out[[loc1+5]][1]
+        tunePsia<-out[[loc1+6]][1:(p*NC)]
+        tunePhia<-out[[loc1+7]][1:p]
+        tuneCpsia<-out[[loc1+8]][1:p]
+		DevCalcs<-1
+	}      
     fit <- list(call=call,call2=call2,formula=formula,seed=seed,p=p,d=p*(p-1)/2,
                 data=data,Y=Y,
-                X=X,Xknots=Xknots,LG=LG,NG=NG,
-                Z=Z,Zknots=Zknots,LD=LD,ND=ND,
+                X=X,Xknots=Xknots,LG=LG,NG=NG,NG2=NG2,
+                Z=Z,Zknots=Zknots,LD=LD,ND=ND,ND2=ND2,
+                W=W,Wknots=Wknots,LC=LC,NC=NC,
                 storeMeanVectorX=storeMeanVectorX,
                 storeMeanVectorZ=storeMeanVectorZ,
+                storeMeanVectorW=storeMeanVectorW,
                 storeIndicatorX=storeIndicatorX,
                 storeIndicatorZ=storeIndicatorZ,
+                storeIndicatorW=storeIndicatorW,
                 assignX=assignX,
                 assignZ=assignZ,
+                assignW=assignW,
                 labelsX=labelsX,
                 labelsZ=labelsZ,
+                labelsW=labelsW,
                 countX=countX,
                 countZ=countZ,
+                countW=countW,
                 varsY=varsY,
                 varsX=varsX,
                 varsZ=varsZ,
+                varsW=varsW,
                 is.Dx=is.Dx,
                 is.Dz=is.Dz,
+                is.Dw=is.Dw,
                 which.SpecX=which.SpecX,
                 which.SpecZ=which.SpecZ,
+                which.SpecW=which.SpecW,
                 formula.termsX=formula.termsX,
                 formula.termsZ=formula.termsZ,
+                formula.termsW=formula.termsW,
                 nSamples=nSamples,
                 totalSweeps=sweeps,
                 mcpar=c(as.integer(burn+1),as.integer(seq(from=burn+1,by=thin,length.out=nSamples)[nSamples]),as.integer(thin)),
                 mcm=mcm,H=H,G=G,
-                tuneCa=c(tuneCa,out[[loc1+0]][1:p]),            
+                tuneCalpha=c(tuneCalpha,out[[loc1+0]][1:p]),            
                 tuneSigma2=c(tuneSigma2,out[[loc1+1]][1:p]),
-                tuneCb=c(tuneCb,out[[loc1+2]][1]),
-                tuneAlpha=c(tuneAlpha,out[[loc1+3]][1:(p*ND)]),
+                tuneCbeta=c(tuneCbeta,out[[loc1+2]][1]),
+                tuneAlpha=c(tuneAlpha,out[[loc1+3]][1:(p*ND2)]),
                 tuneSigma2R=c(tuneSigma2R,tuneSigma2Ra),
                 tuneR=c(tuneR,tuneRa),
-                deviance=c(out[[loc2]][1:2]),
+                tunePsi=c(tunePsi,tunePsia),                
+                tunePhi=c(tunePhi,tunePhia),
+                tuneCpsi=c(tuneCpsi,tuneCpsia),
+                tuneHar=c(tuneHar,out[[47]][1:nHar]),
+                deviance=c(out[[loc2]][1:DevCalcs]),
                 nullDeviance=nullDeviance,                            
                 DIR=StorageDir,
                 out=out,
-                LUT=1, SUT=1, LGc=0, LDc=0, NGc=0, NDc=0, NK=0)               
+                LUT=1, SUT=1, LGc=0, LDc=0, NGc=0, NDc=0, NK=0, FT=FT,
+                qCont=0,
+                HNca=HNca,HNsg=HNsg,HNcp=HNcp,HNphi=HNphi,nHar=nHar,varSin=varSin)
     class(fit) <- 'mvrm'
     return(fit)
 }
 
-continue <- function(object,sweeps,discard=FALSE,...){
+continue <- function(object,sweeps,burn=0,thin,discard=FALSE,...){
+	if (object$qCont==1) stop("current object has been continued; there is a more recent one")
+	eval.parent(substitute(object$qCont<-1))
+	cont<-1
 	#Sweeps
 	if (missing(sweeps)) stop("provide sweeps argument")
     sweeps <- as.integer(sweeps)
-    nSamples <-0
-    if (sweeps > 0){
-        nSamples <- length(seq(1,sweeps,by=object$mcpar[3]))
-        LASTsw<-seq(0,by=object$mcpar[3],length.out=nSamples)[nSamples]
+    burn <- as.integer(burn)
+    if (missing(thin) || !discard) thin <- object$mcpar[3]
+    if (thin <= 0) thin <- 1 
+    thin <- as.integer(thin)    
+    nSamples <- 0
+    LASTsw<-0
+    if (sweeps > 0 && (sweeps-burn) > 0){
+		nSamples <- length(seq(1,(sweeps-burn),by=thin))
+		LASTsw<-seq(burn,by=thin,length.out=nSamples)[nSamples]
 	}
-    if (nSamples<=0) stop("problem with sweeps argument")
-    LASTWB <- floor(totalSweeps/50)+1
-    totalSweeps<-object$totalSweeps + sweeps
+    if (nSamples<=0) stop("problem with sweeps & burn arguments")
+    LASTWB <- floor(object$totalSweeps/50)+1
     #Files
-    FL <- c("gamma", "cbeta", "delta", "alpha", "R", "muR", "sigma2R", "calpha", "sigma2", "beta", #10 
+    FL <- c("gamma", "cbeta", "delta", "alpha", "R", "muR", "sigma2R", "calpha", "sigma2", "beta", #10  
             "compAlloc", "nmembers", "deviance", "DPconc", #4
             "compAllocV","nmembersV", 
-            "DE", 
-            "psi", "ksi", "cpsi", "nu", "fi", "omega", "ceta", "comega", "eta",            
-            "test")     
+            "DE", #mcm 1,2,3,4
+            "psi", "ksi", "cpsi", "nu", "fi", "omega", "ceta", "comega", "eta","tune","probs", #mcm 5,6,7            
+            "phi2", #mcm 8,9,10     
+            "test")            
     gamma <- paste(object$DIR, paste("BNSP",FL[1], "txt",sep="."),sep="/")
     gamma <- scan(gamma,what=numeric(),n=object$p*object$LG,quiet=TRUE,skip=object$nSamples-1)
     cbeta <- paste(object$DIR, paste("BNSP",FL[2], "txt",sep="."),sep="/")
@@ -406,30 +691,31 @@ continue <- function(object,sweeps,discard=FALSE,...){
     if (file.exists(compAllocV)) compAllocV <- scan(compAllocV,what=numeric(),n=object$p,quiet=TRUE,skip=object$nSamples-1)
     DE <- paste(object$DIR, paste("BNSP",FL[17], "txt",sep="."),sep="/")
     if (file.exists(DE)) DE <- scan(DE,what=numeric(),n=2*object$p^2*object$LUT,quiet=TRUE,skip=0)
-    ksi <- paste(object$DIR, paste("BNSP",FL[19], "txt",sep="."),sep="/")
-    if (file.exists(psi)) ksi <- scan(ksi,what=numeric(),n=object$p*object$p*object$LK,quiet=TRUE,skip=object$nSamples-1)    
     psi <- paste(object$DIR, paste("BNSP",FL[18], "txt",sep="."),sep="/")
     if (file.exists(psi)) psi <- scan(psi,what=numeric(),n=object$p*object$p*object$LK,quiet=TRUE,skip=object$nSamples-1)                       
+    ksi <- paste(object$DIR, paste("BNSP",FL[19], "txt",sep="."),sep="/")
+    if (file.exists(ksi)) ksi <- scan(ksi,what=numeric(),n=object$p*object$p*object$LK,quiet=TRUE,skip=object$nSamples-1)    
     cpsi <- paste(object$DIR, paste("BNSP",FL[20], "txt",sep="."),sep="/")
-    if (file.exists(psi)) cpsi <- scan(cpsi,what=numeric(),n=object$p^2,quiet=TRUE,skip=object$nSamples-1)    
+    if (file.exists(cpsi)) cpsi <- scan(cpsi,what=numeric(),n=object$p^2,quiet=TRUE,skip=object$nSamples-1)        
     gammaCor <- paste(object$DIR, paste("BNSP",FL[21], "txt",sep="."),sep="/")
     gammaCor <- if (file.exists(gammaCor)) scan(gammaCor,what=numeric(),n=object$LGc*object$H,quiet=TRUE,skip=object$nSamples-1)  
     deltaCor <- paste(object$DIR, paste("BNSP",FL[22], "txt",sep="."),sep="/")
     deltaCor <- if (file.exists(deltaCor)) scan(deltaCor,what=numeric(),n=object$LDc,quiet=TRUE,skip=object$nSamples-1)  
-    comega <- paste(object$DIR, paste("BNSP",FL[25], "txt",sep="."),sep="/")
-    comega <- if (file.exists(comega)) scan(comega,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)
     omega <- paste(object$DIR, paste("BNSP",FL[23], "txt",sep="."),sep="/")
     omega <- if (file.exists(omega)) scan(omega,what=numeric(),n=object$LDc,quiet=TRUE,skip=object$nSamples-1)
     ceta <- paste(object$DIR, paste("BNSP",FL[24], "txt",sep="."),sep="/")
     ceta <- if (file.exists(ceta)) scan(ceta,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)    
-    LASTAll<-c(gamma,delta,alpha,sigma2,ksi,psi,R,DE,cbeta,calpha,cpsi,gammaCor)
+    comega <- paste(object$DIR, paste("BNSP",FL[25], "txt",sep="."),sep="/")
+    comega <- if (file.exists(comega)) scan(comega,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)
+    LASTAll<-c(R,DE,gamma,delta,alpha,sigma2,ksi,psi,cbeta,calpha,cpsi,gammaCor)
     if (object$mcm==6) LASTAll<-c(LASTAll,compAlloc,DPconc)
     if (object$mcm==7) LASTAll<-c(LASTAll,compAllocV,DPconc)
-    LASTAll<-c(LASTAll,deltaCor)
-    LASTAll<-c(LASTAll,comega)
-    LASTAll<-c(LASTAll,sigma2R)
-    LASTAll<-c(LASTAll,omega)
-    LASTAll<-c(LASTAll,ceta)
+    LASTAll<-c(LASTAll,deltaCor,comega,sigma2R,omega,ceta)
+    #LASTAll<-c(LASTAll,deltaCor)
+    #LASTAll<-c(LASTAll,comega)
+    #LASTAll<-c(LASTAll,sigma2R)
+    #LASTAll<-c(LASTAll,omega)
+    #LASTAll<-c(LASTAll,ceta)
     #Discard
     if (discard==TRUE){
         for (i in 1:length(FL)){
@@ -437,204 +723,290 @@ continue <- function(object,sweeps,discard=FALSE,...){
             if (file.exists(oneFile)) file.remove(oneFile)
 	    }
 	}
-    #Deviance & nSamples
+    #Deviance 
     deviance<-c(0,0)
-    if (discard==FALSE) deviance<-as.double(object$deviance)
-    if (discard==TRUE) {object$nSamples<-0; object$mcpar[1]<-1} 
+    if (discard==FALSE) deviance<-as.double(object$deviance)    
     #Tuning
-    tuneCa<-object$tuneCa[(object$p+1):(2*object$p)]
+    tuneCalpha<-object$tuneCalpha[(object$p+1):(2*object$p)]
     tuneSigma2<-object$tuneSigma2[(object$p+1):(2*object$p)]    
-    tuneCb<-object$tuneCb[2]
-    tuneAlpha<-object$tuneAlpha[(object$p*object$ND+1):(2*object$p*object$ND)]
+    tuneCbeta<-object$tuneCbeta[2]
+    tuneAlpha<-object$tuneAlpha[(object$p*object$ND2+1):(2*object$p*object$ND2)]
     tuneSigma2R<-object$tuneSigma2R[2]
-    tuneR<-object$tuneR[2]
-    tuneCpsi<-object$tuneCpsi[(object$p*object$p+1):(2*object$p*object$p)]
-    tuneCbCor<-object$tuneCbCor[2]
-	tuneOmega<-object$tuneOmega[(object$NDc+1):(object$NDc*2)]	            
-    tuneComega<-object$tuneComega[2]
+    tuneR<-object$tuneR[2]    
+    tunePsi<-NULL
+    if (object$NC > 0){
+        tunePsi<-object$tunePsi[(object$p*object$NC+1):(2*object$p*object$NC)]            
+    }   
+    tunePhi<-object$tunePhi[(object$p+1):(2*object$p)]     
+    tuneCpsi<-object$tuneCpsi[(object$p+1):(2*object$p)]
 	#Call C
 	if (object$mcm==4) out<-.C("mvrmC",
-        as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
-        as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),            
-        as.double(object$out[[7]]),as.double(object$out[[8]]),as.double(object$out[[9]]),as.integer(object$out[[10]]),
-        as.integer(object$out[[11]]),as.integer(object$out[[12]]),as.double(object$out[[13]]),
-        as.integer(object$out[[14]]),as.double(object$out[[15]]),as.integer(object$out[[16]]),
-        as.double(object$out[[17]]),as.double(object$out[[18]]),as.double(object$out[[19]]),as.double(object$out[[20]]),
+        as.integer(object$out[[1]]),as.character(object$out[[2]]),
+        as.integer(sweeps),as.integer(burn),as.integer(thin),            
+        as.double(object$out[[6]]),as.double(object$out[[7]]),as.double(object$out[[8]]),
+        as.integer(object$out[[9]]),as.integer(object$out[[10]]),as.integer(object$out[[11]]),
+        as.double(object$out[[12]]),as.integer(object$out[[13]]),as.double(object$out[[14]]),
+        as.integer(object$out[[15]]),as.double(object$out[[16]]),as.double(object$out[[17]]),
+        as.double(object$out[[18]]),as.double(object$out[[19]]),as.integer(object$out[[20]]),
         as.integer(object$out[[21]]),as.integer(object$out[[22]]),as.integer(object$out[[23]]),
         as.integer(object$out[[24]]),as.integer(object$out[[25]]),as.integer(object$out[[26]]),
-        as.integer(object$out[[27]]),as.double(object$out[[28]]),as.integer(object$out[[29]]),
-        as.double(object$out[[30]]),as.double(object$out[[31]]),as.double(object$out[[32]]),
-        as.integer(object$out[[33]]),as.double(object$out[[34]]),as.double(object$out[[35]]),                               
-        as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(cbeta),
-        as.double(calpha),as.integer(LASTWB))
+        as.double(object$out[[27]]),as.integer(object$out[[28]]),as.double(object$out[[29]]),
+        as.double(object$out[[30]]),as.double(object$out[[31]]),as.integer(object$out[[32]]),
+        as.double(object$out[[33]]),as.double(deviance),as.integer(object$out[[35]]),
+        as.integer(cont),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),
+        as.double(cbeta),as.double(calpha),as.integer(LASTWB),
+        as.integer(object$out[[44]]),as.double(object$out[[45]]),as.integer(object$out[[46]]),
+        as.double(object$out[[47]]),as.double(object$out[[48]]))
     if (object$mcm==1) out<-.C("mult",
-        as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
-        as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),
-        as.integer(object$out[[7]]),as.integer(object$out[[8]]),as.double(object$out[[9]]),as.double(object$out[[10]]),as.double(object$out[[11]]),
-        as.integer(object$out[[12]]),as.integer(object$out[[13]]),
-        as.double(object$out[[14]]),as.integer(object$out[[15]]),as.double(object$out[[16]]),as.integer(object$out[[17]]),
-        as.integer(object$out[[18]]),as.integer(object$out[[19]]),as.integer(object$out[[20]]),as.integer(object$out[[21]]),
-        as.integer(object$out[[22]]),as.integer(object$out[[23]]),as.integer(object$out[[24]]),            
-        as.double(object$out[[25]]),as.double(object$out[[26]]),as.double(object$out[[27]]),as.double(object$out[[28]]),
-        as.double(object$out[[29]]),as.double(object$out[[30]]),
-        as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
-        as.integer(object$out[[34]]),as.double(object$out[[35]]),as.double(object$out[[36]]),
-        as.integer(object$out[[37]]),as.double(object$out[[38]]),as.double(object$out[[39]]),as.integer(object$out[[40]]),as.double(deviance),
-        as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(R),
+        as.integer(object$out[[1]]),as.character(object$out[[2]]),
+        as.integer(sweeps),as.integer(burn),as.integer(thin),
+        as.integer(object$out[[6]]),as.integer(object$out[[7]]),as.double(object$out[[8]]),
+        as.double(object$out[[9]]),as.double(object$out[[10]]),
+        as.integer(object$out[[11]]),as.integer(object$out[[12]]),
+        as.double(object$out[[13]]),as.integer(object$out[[14]]),as.double(object$out[[15]]),
+        as.integer(object$out[[16]]),
+        as.integer(object$out[[17]]),as.integer(object$out[[18]]),as.integer(object$out[[19]]),
+        as.integer(object$out[[20]]),
+        as.integer(object$out[[21]]),as.integer(object$out[[22]]),as.integer(object$out[[23]]),            
+        as.double(object$out[[24]]),as.double(object$out[[25]]),as.double(object$out[[26]]),
+        as.double(object$out[[27]]),
+        as.double(object$out[[28]]),as.double(object$out[[29]]),
+        as.double(object$out[[30]]),as.double(object$out[[31]]),as.double(object$out[[32]]),
+        as.integer(object$out[[33]]),as.double(object$out[[34]]),as.double(object$out[[35]]),
+        as.integer(object$out[[36]]),as.double(object$out[[37]]),as.double(object$out[[38]]),
+        as.integer(object$out[[39]]),as.double(deviance),as.integer(object$out[[41]]),
+        as.integer(cont),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),
+        as.double(R),
         as.double(muR),as.double(sigma2R),as.double(cbeta),as.double(calpha),
-        as.integer(c(LASTsw)),as.double(c(DE)),as.integer(LASTWB))
+        as.integer(c(LASTsw)),as.double(c(DE)),as.integer(LASTWB),as.integer(object$out[[55]]))
     if (object$mcm==2) out<-.C("multg",
-        as.integer(object$out[[1]]),as.character(object$out[[2]]),as.integer(object$out[[3]]),
-        as.integer(sweeps),as.integer(0),as.integer(object$out[[6]]),
-        as.integer(object$out[[7]]),as.integer(object$out[[8]]),as.double(object$out[[9]]),as.double(object$out[[10]]),as.double(object$out[[11]]),
-        as.integer(object$out[[12]]),as.integer(object$out[[13]]),
-        as.double(object$out[[14]]),as.integer(object$out[[15]]),as.double(object$out[[16]]),as.integer(object$out[[17]]),
-        as.integer(object$out[[18]]),as.integer(object$out[[19]]),as.integer(object$out[[20]]),as.integer(object$out[[21]]),
-        as.integer(object$out[[22]]),as.integer(object$out[[23]]),as.integer(object$out[[24]]),
-        as.double(object$out[[25]]),as.double(object$out[[26]]),as.double(object$out[[27]]),as.double(object$out[[28]]),
-        as.double(object$out[[29]]),as.double(object$out[[30]]),            
-        as.double(object$out[[31]]),as.double(object$out[[32]]),as.double(object$out[[33]]),
-        as.integer(object$out[[34]]),as.double(object$out[[35]]),as.double(object$out[[36]]),
-        as.integer(object$out[[37]]),as.double(object$out[[38]]),as.double(object$out[[39]]),as.integer(object$out[[40]]),as.double(deviance),as.integer(object$out[[42]]),as.double(object$out[[43]]),
-        as.integer(c(1)),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),as.double(R),
+        as.integer(object$out[[1]]),as.character(object$out[[2]]),
+        as.integer(sweeps),as.integer(burn),as.integer(thin),
+        as.integer(object$out[[6]]),as.integer(object$out[[7]]),as.double(object$out[[8]]),
+        as.double(object$out[[9]]),as.double(object$out[[10]]),
+        as.integer(object$out[[11]]),as.integer(object$out[[12]]),
+        as.double(object$out[[13]]),as.integer(object$out[[14]]),as.double(object$out[[15]]),
+        as.integer(object$out[[16]]),
+        as.integer(object$out[[17]]),as.integer(object$out[[18]]),as.integer(object$out[[19]]),
+        as.integer(object$out[[20]]),
+        as.integer(object$out[[21]]),as.integer(object$out[[22]]),as.integer(object$out[[23]]),
+        as.double(object$out[[24]]),as.double(object$out[[25]]),as.double(object$out[[26]]),
+        as.double(object$out[[27]]),
+        as.double(object$out[[28]]),as.double(object$out[[29]]),            
+        as.double(object$out[[30]]),as.double(object$out[[31]]),as.double(object$out[[32]]),
+        as.integer(object$out[[33]]),as.double(object$out[[34]]),as.double(object$out[[35]]),
+        as.integer(object$out[[36]]),as.double(object$out[[37]]),as.double(object$out[[38]]),
+        as.integer(object$out[[39]]),as.double(deviance),as.integer(object$out[[41]]),
+        as.double(object$out[[42]]),as.integer(object$out[[43]]),
+        as.integer(cont),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),
+        as.double(R),
         as.double(muR),as.double(sigma2R),as.double(cbeta),as.double(calpha),
-        as.integer(compAlloc),as.double(DPconc),as.integer(c(LASTsw)),as.double(c(DE)),as.integer(LASTWB))
+        as.integer(compAlloc),as.double(DPconc),as.integer(c(LASTsw)),as.double(c(DE)),
+        as.integer(LASTWB),as.integer(object$out[[59]]))
     if (object$mcm==3) out<-.C("multgv",
-        as.integer(object$out[[1]]), as.character(object$out[[2]]), as.integer(object$out[[3]]), as.integer(sweeps),
-        as.integer(0), as.integer(object$out[[6]]), as.integer(object$out[[7]]), as.integer(object$out[[8]]), 
-        as.double(object$out[[9]]), as.double(object$out[[10]]), as.double(as.matrix(object$out[[11]])),
-        as.integer(object$out[[12]]), as.integer(object$out[[13]]), as.double(object$out[[14]]), as.integer(object$out[[15]]),
-        as.double(object$out[[16]]), as.integer(object$out[[17]]), as.integer(object$out[[18]]), as.integer(object$out[[19]]),
-        as.integer(object$out[[20]]), as.integer(object$out[[21]]), as.integer(object$out[[22]]), as.integer(object$out[[23]]),
-        as.integer(object$out[[24]]), as.double(object$out[[25]]), as.double(object$out[[26]]), as.double(object$out[[27]]),
-        as.double(object$out[[28]]), as.double(object$out[[29]]), as.double(object$out[[30]]), as.double(object$out[[31]]),
-        as.double(object$out[[32]]), as.double(object$out[[33]]), as.integer(object$out[[34]]), as.double(object$out[[35]]),
-        as.double(object$out[[36]]), as.integer(object$out[[37]]), as.double(object$out[[38]]), as.double(object$out[[39]]),
-        as.integer(object$out[[40]]), as.double(deviance), as.integer(object$out[[42]]), as.double(object$out[[43]]),
-        as.integer(c(1)), as.integer(gamma), as.integer(delta), as.double(alpha), as.double(sigma2), as.double(R),
-        as.double(muR), as.double(sigma2R), as.double(cbeta), as.double(calpha), as.integer(compAlloc), as.double(DPconc), 
-        as.integer(c(LASTsw)), as.double(c(DE)), as.integer(LASTWB))
+        as.integer(object$out[[1]]), as.character(object$out[[2]]), as.integer(sweeps),
+        as.integer(burn), as.integer(thin), as.integer(object$out[[6]]), as.integer(object$out[[7]]), 
+        as.double(object$out[[8]]), as.double(object$out[[9]]), as.double(as.matrix(object$out[[10]])),
+        as.integer(object$out[[11]]), as.integer(object$out[[12]]), as.double(object$out[[13]]), 
+        as.integer(object$out[[14]]),
+        as.double(object$out[[15]]), as.integer(object$out[[16]]), as.integer(object$out[[17]]), 
+        as.integer(object$out[[18]]),
+        as.integer(object$out[[19]]), as.integer(object$out[[20]]), as.integer(object$out[[21]]), 
+        as.integer(object$out[[22]]),
+        as.integer(object$out[[23]]), as.double(object$out[[24]]), as.double(object$out[[25]]), 
+        as.double(object$out[[26]]),
+        as.double(object$out[[27]]), as.double(object$out[[28]]), as.double(object$out[[29]]), 
+        as.double(object$out[[30]]),
+        as.double(object$out[[31]]), as.double(object$out[[32]]), as.integer(object$out[[33]]), 
+        as.double(object$out[[34]]),
+        as.double(object$out[[35]]), as.integer(object$out[[36]]), as.double(object$out[[37]]), 
+        as.double(object$out[[38]]),
+        as.integer(object$out[[39]]), as.double(deviance), as.integer(object$out[[41]]), 
+        as.double(object$out[[42]]),as.integer(object$out[[43]]),
+        as.integer(cont), as.integer(gamma), as.integer(delta), as.double(alpha), as.double(sigma2), 
+        as.double(R),
+        as.double(muR), as.double(sigma2R), as.double(cbeta), as.double(calpha), as.integer(compAllocV), 
+        as.double(DPconc), 
+        as.integer(c(LASTsw)), as.double(c(DE)), as.integer(LASTWB),as.integer(object$out[[59]]))
     if (object$mcm==5)
         out<-.C("longmult",
-        as.integer(object$out[[1]]), as.character(object$out[[2]]), as.integer(object$out[[3]]),
-        as.integer(c(sweeps,0,object$out[[4]][3:7])), as.integer(object$out[[5]]), as.integer(object$out[[6]]), 
-        as.double(object$out[[7]]), as.integer(object$out[[8]]), as.integer(object$out[[9]]), as.integer(object$out[[10]]),
-        as.integer(object$out[[11]]), as.double(object$out[[12]]), as.double(object$out[[13]]), as.double(object$out[[14]]), 
-        as.double(object$out[[15]]), as.double(object$out[[16]]),as.double(object$out[[17]]), as.integer(object$out[[18]]), 
-        as.integer(object$out[[19]]), as.integer(object$out[[20]]), as.integer(object$out[[21]]), as.integer(object$out[[22]]), 
-        as.integer(object$out[[23]]), as.integer(object$out[[24]]), as.integer(object$out[[25]]), as.integer(object$out[[26]]), 
-        as.integer(object$out[[27]]), as.integer(object$out[[28]]), as.integer(object$out[[29]]), as.double(object$out[[30]]), 
-        as.integer(object$out[[31]]), as.double(object$out[[32]]), as.double(object$out[[33]]), as.double(object$out[[34]]), 
-        as.double(object$out[[35]]), as.double(object$out[[36]]), as.double(object$out[[37]]), as.double(object$out[[38]]), 
-        as.double(object$out[[39]]), as.double(object$out[[40]]), as.double(object$out[[41]]), as.double(object$out[[42]]), 
-        as.double(object$out[[43]]), as.double(object$out[[44]]), as.integer(object$out[[45]]), as.double(object$out[[46]]),            
-        as.integer(object$out[[47]]), as.double(object$out[[48]]), as.double(object$out[[49]]), as.integer(object$out[[50]]), 
-        as.double(object$out[[51]]), as.double(object$out[[52]]), as.integer(object$out[[53]]), as.double(object$out[[54]]), 
-        as.double(object$out[[55]]), as.double(object$out[[56]]), as.integer(object$out[[57]]), as.double(object$out[[58]]),
-        as.double(object$out[[59]]), as.integer(object$out[[60]]), as.double(deviance), as.integer(c(1,LASTsw,LASTWB)), 
-        as.double(LASTAll))
+        as.integer(object$out[[1]]), as.character(object$out[[2]]), 
+        as.integer(c(sweeps,burn,thin,object$out[[3]][4:8])), as.integer(object$out[[4]]), as.integer(object$out[[5]]), 
+        as.integer(object$out[[6]]), as.integer(object$out[[7]]), as.integer(object$out[[8]]), as.integer(object$out[[9]]),
+        as.integer(object$out[[10]]), as.double(object$out[[11]]), as.double(object$out[[12]]), as.double(object$out[[13]]), 
+        as.double(object$out[[14]]), as.double(object$out[[15]]),as.double(object$out[[16]]), as.integer(object$out[[17]]), 
+        as.integer(object$out[[18]]), as.integer(object$out[[19]]), as.integer(object$out[[20]]), as.integer(object$out[[21]]), 
+        as.integer(object$out[[22]]), as.integer(object$out[[23]]), as.integer(object$out[[24]]), as.integer(object$out[[25]]), 
+        as.integer(object$out[[26]]), as.integer(object$out[[27]]), as.integer(object$out[[28]]), as.double(object$out[[29]]), 
+        as.integer(object$out[[30]]), as.double(object$out[[31]]), as.double(object$out[[32]]), as.double(object$out[[33]]), 
+        as.double(object$out[[34]]), as.double(object$out[[35]]), as.double(object$out[[36]]), as.double(object$out[[37]]), 
+        as.double(object$out[[38]]), as.double(object$out[[39]]), as.double(object$out[[40]]), as.double(object$out[[41]]), 
+        as.double(object$out[[42]]), as.double(object$out[[43]]), as.integer(object$out[[44]]), as.double(object$out[[45]]),            
+        as.integer(object$out[[46]]), as.double(object$out[[47]]), as.double(object$out[[48]]), as.integer(object$out[[49]]), 
+        as.double(object$out[[50]]), as.double(object$out[[51]]), as.integer(object$out[[52]]), as.double(object$out[[53]]), 
+        as.double(object$out[[54]]), as.integer(object$out[[55]]), as.double(object$out[[56]]),
+        as.double(object$out[[57]]), as.integer(object$out[[58]]), as.double(deviance), as.integer(object$out[[60]]),
+        as.integer(c(cont,LASTsw,LASTWB)), as.double(LASTAll))
     if (object$mcm==6)
         out<-.C("longmultg",
-        as.integer(object$out[[1]]), as.character(object$out[[2]]), as.integer(object$out[[3]]),
-        as.integer(c(sweeps,0,object$out[[4]][3:7])), as.integer(object$out[[5]]), as.integer(object$out[[6]]), 
-        as.double(object$out[[7]]), as.integer(object$out[[8]]), as.integer(object$out[[9]]), as.integer(object$out[[10]]),
-        as.integer(object$out[[11]]), as.double(object$out[[12]]), as.double(object$out[[13]]), as.double(object$out[[14]]), 
-        as.double(object$out[[15]]), as.double(object$out[[16]]),as.double(as.matrix(17)), as.integer(object$out[[18]]), 
-        as.integer(object$out[[19]]), as.integer(object$out[[20]]), as.integer(object$out[[21]]), as.integer(object$out[[22]]), 
-        as.integer(object$out[[23]]), as.integer(object$out[[24]]), as.integer(object$out[[25]]), as.integer(object$out[[26]]), 
-        as.integer(object$out[[27]]), as.integer(object$out[[28]]), as.integer(object$out[[29]]), as.double(object$out[[30]]), 
-        as.integer(object$out[[31]]), as.double(object$out[[32]]), as.double(object$out[[33]]), as.double(object$out[[34]]), 
-        as.double(object$out[[35]]), as.double(object$out[[36]]), as.double(object$out[[37]]), as.double(object$out[[38]]), 
-        as.double(object$out[[39]]), as.double(object$out[[40]]), as.double(object$out[[41]]), as.double(object$out[[42]]), 
-        as.double(object$out[[43]]), as.double(object$out[[44]]), as.integer(object$out[[45]]), as.double(object$out[[46]]),
-        as.integer(object$out[[47]]), as.double(object$out[[48]]), as.double(object$out[[49]]), as.integer(object$out[[50]]), 
-        as.double(object$out[[51]]), as.double(object$out[[52]]), as.integer(object$out[[53]]), as.double(object$out[[54]]),
-        as.double(object$out[[55]]), as.double(object$out[[56]]), as.integer(object$out[[57]]), as.double(object$out[[58]]),
-        as.double(object$out[[59]]), as.integer(object$out[[60]]), as.double(deviance), as.integer(c(1,LASTsw,LASTWB)),
-        as.double(LASTAll), as.integer(object$out[[64]]), as.double(object$out[[65]]))  
+        as.integer(object$out[[1]]), as.character(object$out[[2]]), 
+        as.integer(c(sweeps,burn,thin,object$out[[3]][4:8])), as.integer(object$out[[4]]), as.integer(object$out[[5]]), 
+        as.integer(object$out[[6]]), as.integer(object$out[[7]]), as.integer(object$out[[8]]), as.integer(object$out[[9]]),
+        as.integer(object$out[[10]]), as.double(object$out[[11]]), as.double(object$out[[12]]), as.double(object$out[[13]]), 
+        as.double(object$out[[14]]), as.double(object$out[[15]]),as.double(as.matrix(16)), as.integer(object$out[[17]]), 
+        as.integer(object$out[[18]]), as.integer(object$out[[19]]), as.integer(object$out[[20]]), as.integer(object$out[[21]]), 
+        as.integer(object$out[[22]]), as.integer(object$out[[23]]), as.integer(object$out[[24]]), as.integer(object$out[[25]]), 
+        as.integer(object$out[[26]]), as.integer(object$out[[27]]), as.integer(object$out[[28]]), as.double(object$out[[29]]), 
+        as.integer(object$out[[30]]), as.double(object$out[[31]]), as.double(object$out[[32]]), as.double(object$out[[33]]), 
+        as.double(object$out[[34]]), as.double(object$out[[35]]), as.double(object$out[[36]]), as.double(object$out[[37]]), 
+        as.double(object$out[[38]]), as.double(object$out[[39]]), as.double(object$out[[40]]), as.double(object$out[[41]]), 
+        as.double(object$out[[42]]), as.double(object$out[[43]]), as.integer(object$out[[44]]), as.double(object$out[[45]]),
+        as.integer(object$out[[46]]), as.double(object$out[[47]]), as.double(object$out[[48]]), as.integer(object$out[[49]]), 
+        as.double(object$out[[50]]), as.double(object$out[[51]]), as.integer(object$out[[52]]), as.double(object$out[[53]]),
+        as.double(object$out[[54]]), as.integer(object$out[[55]]), as.double(object$out[[56]]),
+        as.double(object$out[[57]]), as.integer(object$out[[58]]), as.double(deviance),as.integer(object$out[[60]]), 
+        as.integer(c(cont,LASTsw,LASTWB)),
+        as.double(LASTAll), as.integer(object$out[[63]]), as.double(object$out[[64]]))
     if (object$mcm==7)
         out<-.C("longmultgv",
-        as.integer(object$out[[1]]), as.character(object$out[[2]]), as.integer(object$out[[3]]),
-        as.integer(c(sweeps,0,object$out[[4]][3:7])), as.integer(object$out[[5]]), as.integer(object$out[[6]]), 
-        as.double(object$out[[7]]), as.integer(object$out[[8]]), as.integer(object$out[[9]]), as.integer(object$out[[10]]),
-        as.integer(object$out[[11]]), as.double(object$out[[12]]), as.double(object$out[[13]]), as.double(object$out[[14]]), 
-        as.double(object$out[[15]]), as.double(object$out[[16]]),as.double(as.matrix(17)), as.integer(object$out[[18]]), 
-        as.integer(object$out[[19]]), as.integer(object$out[[20]]), as.integer(object$out[[21]]), as.integer(object$out[[22]]), 
-        as.integer(object$out[[23]]), as.integer(object$out[[24]]), as.integer(object$out[[25]]), as.integer(object$out[[26]]), 
-        as.integer(object$out[[27]]), as.integer(object$out[[28]]), as.integer(object$out[[29]]), as.double(object$out[[30]]), 
-        as.integer(object$out[[31]]), as.double(object$out[[32]]), as.double(object$out[[33]]), as.double(object$out[[34]]), 
-        as.double(object$out[[35]]), as.double(object$out[[36]]), as.double(object$out[[37]]), as.double(object$out[[38]]), 
-        as.double(object$out[[39]]), as.double(object$out[[40]]), as.double(object$out[[41]]), as.double(object$out[[42]]), 
-        as.double(object$out[[43]]), as.double(object$out[[44]]), as.integer(object$out[[45]]), as.double(object$out[[46]]),
-        as.integer(object$out[[47]]), as.double(object$out[[48]]), as.double(object$out[[49]]), as.integer(object$out[[50]]), 
-        as.double(object$out[[51]]), as.double(object$out[[52]]), as.integer(object$out[[53]]), as.double(object$out[[54]]),
-        as.double(object$out[[55]]), as.double(object$out[[56]]), as.integer(object$out[[57]]), as.double(object$out[[58]]),
-        as.double(object$out[[59]]), as.integer(object$out[[60]]), as.double(deviance), as.integer(c(1,LASTsw,LASTWB)),
-        as.double(LASTAll), as.integer(object$out[[64]]), as.double(object$out[[65]]))
+        as.integer(object$out[[1]]), as.character(object$out[[2]]), 
+        as.integer(c(sweeps,burn,thin,object$out[[3]][4:8])), as.integer(object$out[[4]]), as.integer(object$out[[5]]), 
+        as.integer(object$out[[6]]), as.integer(object$out[[7]]), as.integer(object$out[[8]]), as.integer(object$out[[9]]),
+        as.integer(object$out[[10]]), as.double(object$out[[11]]), as.double(object$out[[12]]), as.double(object$out[[13]]), 
+        as.double(object$out[[14]]), as.double(object$out[[15]]),as.double(as.matrix(16)), as.integer(object$out[[17]]), 
+        as.integer(object$out[[18]]), as.integer(object$out[[19]]), as.integer(object$out[[20]]), as.integer(object$out[[21]]), 
+        as.integer(object$out[[22]]), as.integer(object$out[[23]]), as.integer(object$out[[24]]), as.integer(object$out[[25]]), 
+        as.integer(object$out[[26]]), as.integer(object$out[[27]]), as.integer(object$out[[28]]), as.double(object$out[[29]]), 
+        as.integer(object$out[[30]]), as.double(object$out[[31]]), as.double(object$out[[32]]), as.double(object$out[[33]]), 
+        as.double(object$out[[34]]), as.double(object$out[[35]]), as.double(object$out[[36]]), as.double(object$out[[37]]), 
+        as.double(object$out[[38]]), as.double(object$out[[39]]), as.double(object$out[[40]]), as.double(object$out[[41]]), 
+        as.double(object$out[[42]]), as.double(object$out[[43]]), as.integer(object$out[[44]]), as.double(object$out[[45]]),
+        as.integer(object$out[[46]]), as.double(object$out[[47]]), as.double(object$out[[48]]), as.integer(object$out[[49]]), 
+        as.double(object$out[[50]]), as.double(object$out[[51]]), as.integer(object$out[[52]]), as.double(object$out[[53]]),
+        as.double(object$out[[54]]), as.integer(object$out[[55]]), as.double(object$out[[56]]),
+        as.double(object$out[[57]]), as.integer(object$out[[58]]), as.double(deviance),as.integer(object$out[[60]]), 
+        as.integer(c(cont,LASTsw,LASTWB)),
+        as.double(LASTAll), as.integer(object$out[[63]]), as.double(object$out[[64]]))
     #Output
     if (object$mcm<4){
         loc1<-25
         loc2<-41 
         tuneSigma2Ra<-out[[loc1+4]][1]
-        tuneRa<-out[[loc1+5]][1]    
+        tuneRa<-out[[loc1+5]][1] 
+        tunePsia<-tunePsi
+        tunePhia<-tunePhi
+        tuneCpsia<-tuneCpsi   
     }
     if (object$mcm==4){
-		loc1<-17 
-		loc2<-35
+		loc1<-16 
+		loc2<-34
 		tuneSigma2Ra<-tuneSigma2R 
 		tuneRa<-tuneR
+		tunePsia<-tunePsi
+        tunePhia<-tunePhi
+        tuneCpsia<-tuneCpsi
+		DevCalcs<-2
     }
-    if (object$mcm>4){
-	    loc1<-32
-	    loc2<-61
+    if (object$mcm %in% c(5,6,7)){
+	    loc1<-31
+	    loc2<-60
 	    tuneSigma2Ra<-out[[loc1+4]][1]
-        tuneRa<-out[[loc1+5]][1:object$LUT] 
+        tuneR<-object$tuneR[(1+object$LUT):(2*object$LUT)]    
+        tuneRa<-out[[loc1+5]][1:object$LUT]
+        tuneCpsi<-object$tuneCpsi[(object$p*object$p+1):(2*object$p*object$p)]
+        tuneCpsia<-out[[loc1+6]][1:object$p*object$p]
+        DevCalcs<-2
 	}
-    fit <- list(call=object$call,call2=object$call2,formula=object$formula,seed=object$seed,p=object$p,d=object$d,
+	#nSamples & mcpar
+    totalSweeps <- object$totalSweeps + sweeps
+	if (discard==TRUE) object$nSamples <- 0
+	nSamples <- nSamples + object$nSamples	
+	totalBurn <- object$mcpar[1] + burn 
+	if (discard==TRUE) totalBurn <- object$totalSweeps + burn 
+	#Call
+    call <- object$call
+    call2 <- object$call2
+    sweeps.pos <- which.max(pmatch(names(call), "sweeps"))
+    call[[sweeps.pos]] <- as.integer(totalSweeps)
+    burn.pos <- which.max(pmatch(names(call), "burn"))
+    call[[burn.pos]] <- totalBurn
+    thin.pos <- which.max(pmatch(names(call), "thin"))
+    call[[thin.pos]] <- thin
+    sweeps.pos <- which.max(pmatch(names(call2), "sweeps"))
+    call2[[sweeps.pos]] <- totalSweeps
+    burn.pos <- which.max(pmatch(names(call2), "burn"))
+    call2[[burn.pos]] <- totalBurn
+    thin.pos <- which.max(pmatch(names(call2), "thin"))
+    call2[[thin.pos]] <- thin
+    #fit
+    fit <- list(call=call,call2=call2,formula=object$formula,seed=object$seed,p=object$p,d=object$d,
                 data=object$data,Y=object$Y,
-                X=object$X,Xknots=object$Xknots,LG=object$LG,NG=object$NG,
-                Z=object$Z,Zknots=object$Zknots,LD=object$LD,ND=object$ND,
+                X=object$X,Xknots=object$Xknots,LG=object$LG,NG=object$NG,NG2=object$NG2,
+                Z=object$Z,Zknots=object$Zknots,LD=object$LD,ND=object$ND,ND2=object$ND2,
+                W=object$W,Wknots=object$Wknots,LC=object$LC,NC=object$NC,
                 storeMeanVectorX=object$storeMeanVectorX,
                 storeMeanVectorZ=object$storeMeanVectorZ,
-                storeIndicatorX=object$storeIndicatorX,
+                storeMeanVectorW=object$storeMeanVectorW,
+                storeIndicatorX=object$storeIndicatorX,                
                 storeIndicatorZ=object$storeIndicatorZ,
+                storeIndicatorW=object$storeIndicatorW,
                 assignX=object$assignX,
                 assignZ=object$assignZ,
+                assignW=object$assignW,
                 labelsX=object$labelsX,
                 labelsZ=object$labelsZ,
+                labelsW=object$labelsW,
                 countX=object$countX,
                 countZ=object$countZ,
+                countW=object$countW,
                 varsY=object$varsY,
                 varsX=object$varsX,
                 varsZ=object$varsZ,
+                varsW=object$varsW,
                 is.Dx=object$is.Dx,
                 is.Dz=object$is.Dz,
+                is.Dw=object$is.Dw,
                 which.SpecX=object$which.SpecX,
                 which.SpecZ=object$which.SpecZ,
+                which.SpecW=object$which.SpecW,
                 formula.termsX=object$formula.termsX,
                 formula.termsZ=object$formula.termsZ,
-                nSamples=nSamples+object$nSamples,
+                formula.termsW=object$formula.termsW,
+                nSamples=nSamples,
                 totalSweeps=totalSweeps,
-                mcpar=c(as.integer(object$mcpar[1]),as.integer(seq(from=object$mcpar[1],by=object$mcpar[3],length.out=(nSamples+object$nSamples))[nSamples+object$nSamples]),as.integer(object$mcpar[3])),
+                mcpar=c(totalBurn,as.integer(seq(from=totalBurn,by=thin,length.out=nSamples)[nSamples]),thin),
                 mcm=object$mcm,H=object$H,G=object$G,
-                tuneCa=c(tuneCa,out[[loc1+0]][1:object$p]),    
+                tuneCalpha=c(tuneCalpha,out[[loc1+0]][1:object$p]),    
                 tuneSigma2=c(tuneSigma2,out[[loc1+1]][1:object$p]),
-                tuneCb=c(tuneCb,out[[loc1+2]][1]),
-                tuneAlpha=c(tuneAlpha,out[[loc1+3]][1:(object$p*object$ND)]),
+                tuneCbeta=c(tuneCbeta,out[[loc1+2]][1]),
+                tuneAlpha=c(tuneAlpha,out[[loc1+3]][1:(object$p*object$ND2)]),
                 tuneSigma2R=c(tuneSigma2R,tuneSigma2Ra),
                 tuneR=c(tuneR,tuneRa),
-                deviance=c(out[[loc2]][1:2]),
+                tunePsi=c(tunePsi,tunePsia),
+                tunePhi=c(tunePhi,tunePhia),
+                tuneCpsi=c(tuneCpsi,tuneCpsia),
+                deviance=c(out[[loc2]][1:DevCalcs]),
                 nullDeviance=object$nullDeviance,                            
-                DIR=object$StorageDir,
+                DIR=object$DIR,
                 out=out,
                 LUT=object$LUT,
+                SUT=object$SUT, 
                 LGc=object$LGc,
-                LDc=object$LDc)
-    if (object$mcm > 4){
+                LDc=object$LDc,                
+                NGc=object$NGc, 
+                NDc=object$NDc, 
+                NK=object$NK,
+                FT=object$FT,
+                qCont=0,
+                HNca=object$HNca,HNsg=object$HNsg,HNcp=object$HNcp,HNphi=object$HNphi)
+    if (object$mcm %in% c(5,6,7)){
+        tuneCbCor<-object$tuneCbCor[2]
+	    tuneOmega<-object$tuneOmega[(object$NDc+1):(object$NDc*2)]	            
+        tuneComega<-object$tuneComega[2]
 		fit2 <- list(
-		        C=object$C,Cknots=object$Cknots,LK=object$LK,NK=object$NK,
-                Xc=object$Xc,Xcknots=object$Xcknots,LGc=object$LGc,NGc=object$NGc,
-                Zc=object$Zc,Zcknots=object$Zcknots,LDc=object$LDc,NDc=object$NDc,                
+		        C=object$C,Cknots=object$Cknots,LK=object$LK,
+                Xc=object$Xc,Xcknots=object$Xcknots,
+                Zc=object$Zc,Zcknots=object$Zcknots,                
                 storeMeanVectorC=object$storeMeanVectorC,
                 storeMeanVectorXc=object$storeMeanVectorXc,
                 storeMeanVectorZc=object$storeMeanVectorZc,                               
@@ -662,10 +1034,11 @@ continue <- function(object,sweeps,discard=FALSE,...){
                 formula.termsC=object$formula.termsC,
                 formula.termsXc=object$formula.termsXc,
                 formula.termsZc=object$formula.termsZc, 
-                tuneCpsi=c(tuneCpsi,out[[38]][1:(object$p*object$p)]),                
-	            tuneCbCor=c(tuneCbCor,out[[39]][1]),	            
-	            tuneOmega=c(tuneOmega,out[[40]][1:object$NDc]),	            
-                tuneComega=c(tuneComega,out[[41]][1]))
+	            tuneCbCor=c(tuneCbCor,out[[loc1+7]][1]),	            
+	            tuneOmega=c(tuneOmega,out[[loc1+8]][1:object$NDc]),	            
+                tuneComega=c(tuneComega,out[[loc1+9]][1]),
+                HNcpsi=object$HNcpsi,HNscor=object$HNscor,HNco=object$HNco,
+                lag=object$lag,varTime=object$varTime,niVec=object$niVec,intime=object$intime)
         fit<-c(fit,fit2)        
 	}
     class(fit) <- 'mvrm'
@@ -673,15 +1046,17 @@ continue <- function(object,sweeps,discard=FALSE,...){
 }
 
 mvrm2mcmc <- function(mvrmObj,labels){
-    labels1 <- c("alpha","calpha","cbeta","delta","beta","gamma","sigma2")
-    labels2 <- c("muR","sigma2R","R")
-    labels3 <- c("compAlloc","nmembers","DPconc")
-    labels4 <- c("compAllocV","nmembersV","deviance")
-    labels5 <- c("psi","ksi","cpsi","nu","fi","omega","comega","eta","ceta")
-    labels6 <- c("probs","tune")
-    all.labels<-c(labels1,labels2,labels3,labels4,labels5)
+    labels1 <- c("alpha","calpha","cbeta","delta","beta","gamma","sigma2") #7
+    labels2 <- c("muR","sigma2R","R") #3
+    labels3 <- c("compAlloc","nmembers","DPconc") #3
+    labels4 <- c("compAllocV","nmembersV","deviance")#3
+    labels5 <- c("psi","ksi","cpsi","nu","fi","omega","comega","eta","ceta")#9
+    labels6 <- c("probs","tune")#2
+    labels7 <- c("phi2")#1
+    labels8 <- c("Hbeta")#1
+    all.labels<-c(labels1,labels2,labels3,labels4,labels5,labels6,labels7,labels8)
     if (missing(labels)) labels <- all.labels
-    mtch<-match(labels,c(all.labels,labels6))
+    mtch<-match(labels,all.labels)
 	p<-mvrmObj$p
 	R<-NULL
     if (any(mtch==1) && mvrmObj$LD > 0){
@@ -737,7 +1112,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,dimnames=list(c(),names1)))
 	}
 	if (any(mtch==8) && p > 1 && mvrmObj$LUT==1){
-		names <- paste("muR of cluster",seq(1,mvrmObj$H),sep=" ")
+		names <- paste("muR_clust",seq(1,mvrmObj$H),sep="_")
 		if (mvrmObj$H==1) names <- "muR"
 	    file <- paste(mvrmObj$DIR,"BNSP.muR.txt",sep="")
         if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),nrow=mvrmObj$nSamples,
@@ -770,7 +1145,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
     if (any(mtch==14)){
         file <- paste(mvrmObj$DIR,"BNSP.compAllocV.txt",sep="")
         if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,dimnames=list(c(),paste("clustering of ",mvrmObj$varsY))))
-	}
+	}	
     if (any(mtch==15)){
         file <- paste(mvrmObj$DIR,"BNSP.nmembersV.txt",sep="")
         if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$G,dimnames=list(c(),paste("var cluster ",seq(1,mvrmObj$G)))))
@@ -779,7 +1154,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
        file <- paste(mvrmObj$DIR,"BNSP.deviance.txt",sep="")
        if (file.exists(file)) R<-cbind(R,matrix(unlist(read.table(file)),ncol=2,dimnames=list(c(),c("marginal deviance","full deviance"))))
     }
-    if (any(mtch==17)){
+    if (any(mtch==17) && mvrmObj$mcm < 8){
         file <- paste(mvrmObj$DIR,"BNSP.psi.txt",sep="")
         if (file.exists(file)){ 
             if (p > 1){ 
@@ -790,8 +1165,16 @@ mvrm2mcmc <- function(mvrmObj,labels){
             if (p == 1) names1<-paste("psi",colnames(mvrmObj$C),sep=".")
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*p*mvrmObj$LK,dimnames=list(c(),names1)))
 		}
+    }    
+    if (any(mtch==17) && mvrmObj$LC > 0 && mvrmObj$mcm > 7){
+        file <- paste(mvrmObj$DIR,"BNSP.psi.txt",sep="")
+        if (file.exists(file)){ 
+           if (p > 1) names1<-paste("psi",rep(colnames(mvrmObj$W)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LC),sep=".")
+           if (p == 1) names1<-paste("psi",colnames(mvrmObj$W)[-1],sep=".")
+           R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LC*p,dimnames=list(c(),names1)))
+	   }
     }
-    if (any(mtch==18)){
+    if (any(mtch==18) && mvrmObj$mcm < 8){
         file <- paste(mvrmObj$DIR,"BNSP.ksi.txt",sep="")
         if (file.exists(file)){ 
             if (p > 1){ 
@@ -803,7 +1186,15 @@ mvrm2mcmc <- function(mvrmObj,labels){
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*p*mvrmObj$LK,dimnames=list(c(),names1)))
 		}
     }
-    if (any(mtch==19)){
+    if (any(mtch==18) && mvrmObj$LC > 0 && mvrmObj$mcm > 7){
+        file <- paste(mvrmObj$DIR,"BNSP.ksi.txt",sep="")
+        if (file.exists(file)){ 
+            if (p > 1) names1<-paste("ksi",rep(colnames(mvrmObj$W)[-1],p),rep(mvrmObj$varsY,each=mvrmObj$LC),sep=".")
+            if (p == 1) names1<-paste("ksi",colnames(mvrmObj$W)[-1],sep=".")
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$LC*p,dimnames=list(c(),names1)))
+	    }
+    }
+    if (any(mtch==19) && mvrmObj$mcm < 8){
         file <- paste(mvrmObj$DIR,"BNSP.cpsi.txt",sep="")
         if (file.exists(file)){ 
             if (p > 1){ 
@@ -813,6 +1204,14 @@ mvrm2mcmc <- function(mvrmObj,labels){
 			}
             if (p == 1) names1<-paste("cpsi")
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=p*p,dimnames=list(c(),names1)))
+		}
+    }
+    if (any(mtch==19) && mvrmObj$mcm > 7){
+        file <- paste(mvrmObj$DIR,"BNSP.cpsi.txt",sep="")
+        if (file.exists(file)){ 
+            if (p > 1) names1<-paste(rep("c_psi",p),mvrmObj$varsY,sep=".")
+            if (p == 1) names1<-"c_psi"
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,dimnames=list(c(),names1)))
 		}
     }    
     if (any(mtch==20) && mvrmObj$LGc > 0){
@@ -896,6 +1295,28 @@ mvrm2mcmc <- function(mvrmObj,labels){
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=length(tune.names),dimnames=list(c(),tune.names)))
 		}
     }
+    if (any(mtch==28)){
+        file <- paste(mvrmObj$DIR,"BNSP.phi2.txt",sep="")
+        if (file.exists(file)){ 
+            if (p > 1) names1<-paste(rep("phi2",p),mvrmObj$varsY,sep=".")
+            if (p == 1) names1<-"phi2"
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,dimnames=list(c(),names1)))
+		}
+	}
+	if (any(mtch==29)){
+        file <- paste(mvrmObj$DIR,"BNSP.Hbeta.txt",sep="")
+        if (file.exists(file)){ 
+            
+            names1 <- NULL
+            for (k in 1:mvrmObj$nHar)
+                names1<-c(names1,paste(paste("sin(",2*k,sep=""),"pi", mvrmObj$varSin, "/ p)",sep=" "),paste(paste("cos(",2*k,sep=""),"pi", mvrmObj$varSin, "/ p)",sep=" "))
+            
+            if (p > 1) names1<-paste(rep(names1,p),rep(mvrmObj$varsY,2*mvrmObj$nHar),sep=".")
+            
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=2*mvrmObj$nHar*p,dimnames=list(c(),names1)))
+		}
+	}
+	
 	if (!is.null(R) && !any(mtch==27)){
 	    attr(R, "mcpar") <- mvrmObj$mcpar
         attr(R, "class") <- "mcmc"
@@ -925,7 +1346,7 @@ plotCorr <- function(x, term="R", centre=mean, quantiles=c(0.1, 0.9), ...){
         if (file.exists(compAllocFile)) compAlloc<-mvrm2mcmc(mvrmObj,"compAlloc")
         R <- sapply(1:mvrmObj$d,
                     function(i) muR[cbind(1:mvrmObj$nSamples,compAlloc[,i]+1)])
-        if (x$out[[40]]==1) R <- tanh(R)
+        if (x$FT==1) R <- tanh(R)
 	}
     ec <- diag(rep(1,x$p))
     ec[lower.tri(ec)] <- apply(R,2,centre)
@@ -958,7 +1379,7 @@ histCorr <- function(x, term="R", plotOptions=list(), ...){
         if (file.exists(compAllocFile)) compAlloc<-mvrm2mcmc(mvrmObj,"compAlloc")
         R <- sapply(1:mvrmObj$d,
                     function(i) muR[cbind(1:mvrmObj$nSamples,compAlloc[,i]+1)])
-        if (x$out[[40]]==1) R <- tanh(R)
+        if (x$FT==1) R <- tanh(R)
 	}
     r<-rep(rep(seq(1,mvrmObj$p-1),times=seq(mvrmObj$p-1,1)),each=mvrmObj$nSample)
     c<-rep(unlist(mapply(seq,seq(2,mvrmObj$p),mvrmObj$p)),each=mvrmObj$nSample)
@@ -967,11 +1388,11 @@ histCorr <- function(x, term="R", plotOptions=list(), ...){
     return(pp)
 }
 
-predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction"),level=0.95,nSamples=100, ...){
+predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction"),level=0.95,
+                         nSamples=100, ind.preds=FALSE,...){
     if (missing(newdata) || is.null(newdata)) newdata<-object$data
     if (length(newdata)==0) stop("no data found")
-    #if (length(response) > object$p) stop(paste("`response' is a vector of up to", object$p,"integers"))
-    newdata <- as.data.frame(newdata)
+    newdata <- as.data.frame(newdata)    
     terms.reform<-NULL
     k<-0
     for (i in 1:length(object$formula.termsX)){
@@ -984,16 +1405,20 @@ predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction
 			}
 	    }
         terms.reform<-c(terms.reform,term)
-    }
+    }    
     formula2<-reformulate(terms.reform)
-    if (length(object$data)>0){
-        nd<-object$data[0,match(colnames(newdata),colnames(object$data)),drop=FALSE]
-        for (j in 1:dim(nd)[2])
-            nd[,j]<-drop(nd[,j])
-        nd[1:NROW(newdata),] <- newdata
-    }else{nd<-newdata}
+    
+    #no.match<-all(is.na(match(colnames(newdata),colnames(object$data))))
+    #if (length(object$data)>0 && !no.match){
+    #    nd<-object$data[0,match(colnames(newdata),colnames(object$data)),drop=FALSE]
+    #    for (j in 1:dim(nd)[2])
+    #        nd[,j]<-drop(nd[,j])
+    #    nd[1:NROW(newdata),] <- newdata
+    #}else{nd<-newdata}
+    
+    nd<-newdata
     npred<-NROW(newdata)
-    X<-DM(formula=formula2,data=nd,n=npred,knots=object$Xknots,predInd=TRUE,meanVector=object$storeMeanVectorX,indicator=object$storeIndicatorX,mvrmObj=object)$X
+    X<-DM(formula=formula2,data=nd,n=npred,knots=object$Xknots,predInd=TRUE,meanVector=object$storeMeanVectorX,indicator=object$storeIndicatorX,mvrmObj=object,centre=TRUE)$X
 	fitM<-matrix(0,nrow=object$nSamples,ncol=npred*object$p)
     etaFN <- file.path(paste(object$DIR,"BNSP.beta.txt",sep=""))
     eFile<-file(etaFN,open="r")
@@ -1002,7 +1427,7 @@ predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction
         for (k in 1:object$p)
             fitM[i,(1+(k-1)*npred):(k*npred)]<-c(as.matrix(X)%*%matrix(c(eta[(1+(k-1)*(object$LG+1)):(k*(object$LG+1))])))
 	}
-	close(eFile)
+	close(eFile)	
 	predictions<-fit<-apply(fitM,2,mean)
 	interval <- match.arg(interval)
 	if (interval=="credible"){
@@ -1027,7 +1452,7 @@ predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction
             }
 	    }
         if (is.null(terms.reform)) {formula2<-~1}else{formula2<-reformulate(terms.reform)}
-        Z<-DM(formula=formula2,data=nd,n=npred,knots=object$Zknots,predInd=TRUE,meanVector=object$storeMeanVectorZ,indicator=object$storeIndicatorZ,mvrmObj=object)$X
+        Z<-DM(formula=formula2,data=nd,n=npred,knots=object$Zknots,predInd=TRUE,meanVector=object$storeMeanVectorZ,indicator=object$storeIndicatorZ,mvrmObj=object,centre=TRUE)$X
         Z<-Z[,-1]
         fitV<-matrix(0,nrow=object$nSamples,ncol=npred*object$p)
 		alphaFN <- file.path(paste(object$DIR,"BNSP.alpha.txt",sep=""))
@@ -1046,7 +1471,9 @@ predict.mvrm <- function(object,newdata,interval=c("none","credible","prediction
 		predictions<-cbind(fit,fit-qnorm(1-(1-level)/2)*fitSD,fit+qnorm(1-(1-level)/2)*fitSD,fitSD)
 		colnames(predictions) <- c("fit", "lwr", "upr", "fit.sd")
 	}
-	return(data.frame(predictions))
+	returns <- data.frame(predictions)
+    if (ind.preds) returns <- list(returns,fitM) 		
+	return(returns)
 }
 
 print.mvrm <- function(x,  digits = 5, ...) {
@@ -1122,7 +1549,7 @@ summary.mvrm <- function(object, nModels = 5, digits = 5, printTuning = FALSE, .
     if (printTuning){
 		cat("\nTuning parameters: start and end values\n\n")
 	    dm<-c("start","end")
-	    names(object$tuneCb)<-dm
+	    names(object$tuneCbeta)<-dm
 	    sigma2<-c(t(matrix(object$tuneSigma2,ncol=2)))
 	    names(sigma2)<-rep(dm,object$p)	    
 	    names(object$tuneSigma2R)<-dm	    
@@ -1133,7 +1560,7 @@ summary.mvrm <- function(object, nModels = 5, digits = 5, printTuning = FALSE, .
 	    #for (k in 1:object$p) names(sigma2[[k]])<-dm	    	    	    
 	    #c.alpha<-lapply(rearrange,function(x){object$tuneCa[x]})
 	    #for (k in 1:object$p) names(c.alpha[[k]])<-dm
-	    c.alpha<-c(t(matrix(object$tuneCa,ncol=2)))
+	    c.alpha<-c(t(matrix(object$tuneCalpha,ncol=2)))
 	    names(c.alpha)<-rep(dm,object$p)	    
 	    if (object$ND > 0){
 	        tot<-object$p*object$ND
@@ -1143,7 +1570,7 @@ summary.mvrm <- function(object, nModels = 5, digits = 5, printTuning = FALSE, .
 	        tuneAlpha<-c(t(matrix(object$tuneAlpha,ncol=2)))
 	        names(tuneAlpha)<-rep(dm,tot)
 	    }
-	    pT1<-list(c.beta=object$tuneCb,sigma2=sigma2)
+	    pT1<-list(c.beta=object$tuneCbeta,sigma2=sigma2)
 	    if (object$ND > 0) {pT2<-list(Alpha=tuneAlpha, c.alpha = c.alpha); pT1<-c(pT1,pT2)}
 	    if (object$p > 1) {pT2<-list(sigma2R = object$tuneSigma2R, R =  R); pT1<-c(pT1,pT2)}
 	    print(pT1)
@@ -1152,8 +1579,8 @@ summary.mvrm <- function(object, nModels = 5, digits = 5, printTuning = FALSE, .
 
 clustering <- function(object, ...){
     R <- list()
-    if (object$mcm==1 || object$mcm==5) stop("common correlations model has no clustering")
-    if (object$mcm %in% c(2,3,6,7)){
+    if (object$mcm==1 || object$mcm==5 || object$mcm==8) stop("common correlations model has no clustering")
+    if (object$mcm %in% c(2,3,6,7,9,10)){
         simMatC<-matrix(0,object$d,object$d)
         compAllocFP <- file.path(paste(object$DIR,"BNSP.compAlloc.txt",sep=""))
         compAlloc<-file(compAllocFP,open="r")
@@ -1171,7 +1598,7 @@ clustering <- function(object, ...){
 	    rownames(simMatC) <- cor.names
 	    R[[1]]<-simMatC/object$nSamples
     }
-    if (object$mcm %in%c(3,7)){
+    if (object$mcm %in%c(3,7,10)){
         simMatV<-matrix(0,object$p,object$p)
         compAllocVFP <- file.path(paste(object$DIR,"BNSP.compAllocV.txt",sep=""))
         compAllocV<-file(compAllocVFP,open="r")

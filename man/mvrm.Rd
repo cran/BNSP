@@ -15,8 +15,9 @@ pi.muPrior = "Beta(1, 1)", c.alphaPrior = "IG(1.1, 1.1)", sigmaPrior = "HN(2)",
 pi.sigmaPrior = "Beta(1, 1)", c.psiPrior = "HN(1)", phiPrior = "HN(2)", 
 pi.omegaPrior = "Beta(1, 1)", mu.RPrior = "N(0, 1)", sigma.RPrior = "HN(1)", 
 corr.Model = c("common", nClust = 1), DP.concPrior = "Gamma(5, 2)", 
-tuneCbeta, tuneCalpha, tuneAlpha, tuneSigma2, tuneCpsi, tunePsi, 
-tunePhi, tuneR, tuneSigma2R, tuneHar, tau, FT = 1, compDeviance = FALSE, ...) }
+breaksPrior = "SBeta(1, 2)", tuneCbeta, tuneCalpha, tuneAlpha, tuneSigma2, 
+tuneCpsi, tunePsi, tunePhi, tuneR, tuneSigma2R, tuneHar, tuneBreaks, tau, 
+FT = 1, compDeviance = FALSE, ...) }
 
 \arguments{
 
@@ -94,6 +95,10 @@ For the "groupC" model, it is taken to be \eqn{d = p(p-1)/2}, the number of free
 
 \item{DP.concPrior}{The Gamma prior for the Dirichlet process concentration parameter.}
 
+\item{breaksPrior}{The prior for the shifts associated with the growth break points. The shift is taken to have 
+a scaled Beta prior with support the (0, p) interval, where p is the period of the sin curve. The default SBeta(1, 2)
+is a scaled Beta(1, 2) distribution supported in the (0, p) interval. The shifts are in increasing order.}
+
 \item{tuneCbeta}{Starting value of the tuning parameter for sampling \eqn{c_{\beta}}.
 Defaults at 20.}
 
@@ -123,6 +128,9 @@ Defaults at 1.}
 
 \item{tuneHar}{Starting value of the tuning parameter for sampling the regression coefficients of
 the harmonics. Defaults at 100.}
+
+\item{tuneBreaks}{Starting value of the tuning parameter for sampling the shift parameters associated with 
+growth breaks. Defaults at 0.01 times the period of the sin wave.}
 
 \item{tau}{The \eqn{tau} of the shadow prior. Defaults at 0.01.}
 
@@ -265,27 +273,28 @@ Chan, D., Kohn, R., Nott, D., & Kirby, C. (2006). Locally adaptive semiparametri
 require(np)
 require(ggplot2)
 data(cps71)
-model <- logwage ~ sm(age,k=30,bs="rd") | sm(age,k=30,bs="rd")
-DIR<-getwd()
-\dontrun{m1 <- mvrm(formula=model,data=cps71,sweeps=10000,burn=5000,thin=2, seed=1,StorageDir=DIR)
+model <- logwage ~ sm(age, k = 30, bs = "rd") | sm(age, k = 30, bs = "rd")
+DIR <- getwd()
+\dontrun{m1 <- mvrm(formula = model, data = cps71, sweeps = 10000, burn = 5000,
+                                      thin = 2, seed = 1, StorageDir = DIR)
 #Print information and summarize the model
 print(m1)
 summary(m1)
 #Summarize and plot one parameter of interest
-alpha<-mvrm2mcmc(m1,"alpha")
+alpha <- mvrm2mcmc(m1, "alpha")
 summary(alpha)
 plot(alpha)
 #Obtain a plot of a term in the mean model
-wagePlotOptions<-list(geom_point(data=cps71,aes(x=age,y=logwage)))
-plot(x=m1,model="mean",term="sm(age)",plotOptions=wagePlotOptions)
+wagePlotOptions <- list(geom_point(data = cps71, aes(x = age, y = logwage)))
+plot(x = m1, model = "mean", term = "sm(age)", plotOptions = wagePlotOptions)
 plot(m1)
 #Obtain predictions for new values of the predictor "age"
-predict(m1,data.frame(age=c(21,65)),interval="credible")
+predict(m1, data.frame(age = c(21, 65)), interval = "credible")
 
 # Fit a bivariate mean/variance model on the marks dataset from package ggm
 # two responses: marks mechanics and vectors, and one covariate: marks on algebra 
-model2 <- mechanics | vectors ~ sm(algebra,k=5) | sm(algebra,k=3)
-m2 <- mvrm(formula=model2, data=marks, sweeps = 100000, burn = 50000, 
+model2 <- mechanics | vectors ~ sm(algebra, k = 5) | sm(algebra, k = 3)
+m2 <- mvrm(formula = model2, data = marks, sweeps = 100000, burn = 50000, 
                        thin = 2, seed = 1, StorageDir = DIR)
 plot(m2)
 }

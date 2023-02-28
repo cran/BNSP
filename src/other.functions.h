@@ -2010,3 +2010,34 @@ void print_vector(gsl_vector *V)
         Rprintf("%g\t", V->data[i * V->stride]);
     Rprintf("\n");
 }
+
+
+void updateSinX(int n, double *SinXvar, int startSin, int harmonics, double period, int nBreaks, 
+                double *breaks, double *locationShifts, double *X)
+{
+    int i, j, k;        
+    double newSinXvar; 
+    for (i = 0; i < n; i++){ 				
+		newSinXvar = SinXvar[i];	
+		if (newSinXvar > breaks[0]){		    
+		    for (j = 0; j < nBreaks-1 && newSinXvar == SinXvar[i]; j++) 
+    		    if (SinXvar[i] < breaks[j+1] && SinXvar[i] > breaks[j]) newSinXvar += locationShifts[j];
+	        if (SinXvar[i] > breaks[nBreaks-1]) newSinXvar += locationShifts[nBreaks-1];		    	        
+            for (k = 0; k < harmonics; k++){ 
+                X[startSin * n + k * n * 2 + i] = sin(2 * (k+1) * M_PI * newSinXvar / period);            
+                X[startSin * n + k * n * 2 + n + i] = cos(2 * (k+1) * M_PI * newSinXvar / period);
+	        }     
+	    }   
+	}                        
+}
+
+
+
+
+
+
+
+
+
+
+

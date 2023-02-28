@@ -496,7 +496,7 @@ plot.mvrm <- function(x, model, term, response, response2,
     if (missing(term)){
 		if (MEAN) {termM<-1:x$NG; countM<-x$countX; int.labelM <- 1:x$NG}
 		if (STDEV) {termSD<-1:x$ND; countSD<-x$countZ; int.labelSD <- 1:x$ND}
-		if (DEP) {termD<-1:(x$NK-1); countD<-x$countC[termD]; int.labelD <- x$labelsC[termD]}
+		if (DEP) {termD<-1:(x$NK-1); countD<-x$countC[termD]; int.labelD <- termD}
 		if (SCALE) {termSC<-1:x$NC; countSC<-x$countW; int.labelSC <- 1:x$NC}
 	}else{
 		if (MEAN){
@@ -694,7 +694,7 @@ plot.mvrm <- function(x, model, term, response, response2,
 			        }
                     if (combine && (!sum(is.DArg)==1)) stop("can only combine a continuous with a discrete term")                                 
                     if (countC==1) contour <- 1
-                    plotOptions2 <- list(ggtitle(paste("autoreg", x$varsY[r1], x$varsY[r2])), plotOptions)            
+                    plotOptions2 <- list(ggtitle(paste("autoreg", x$varsY[r1], x$varsY[r2])), plotOptions)                                
                     my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=1, STDEV=0, CORM=0, CORS=0, DEP=1, SCALE=0, 
                                                       response=Pair, intercept=intercept, grid=grid,
                                                       centre=centre, quantiles=quantiles, static=static, 

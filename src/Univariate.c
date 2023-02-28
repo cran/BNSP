@@ -37,7 +37,7 @@
 #include <gsl/gsl_sf_hyperg.h>
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_roots.h>
-#include <gsl/gsl_multiset.h>
+#include <gsl/gsl_multiset.h> 
 
 //#include "matalg.h"
 //#include "pdfs.h"
@@ -45,8 +45,10 @@
 //#include "other.functions.h"
 //#include "mathm.h"
 
-#include "spec.BCM.h"
 extern void rvMF(unsigned long int s, int m, double lambda, double *mode, double *out);
+extern void updateSinX(int n, double *SinXvar, int startSin, int harmonics, double period, int nBreaks, double *breaks, double *locationShifts, double *X);
+
+#include "spec.BCM.h"
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX_PATH 300
@@ -61,7 +63,8 @@ void mvrmC(int *seed1, char **WorkingDir,
            int *HNsg1, double *sigmaParams, double *dev, int *isDz,
            int *cont, int *LASTgamma, int *LASTdelta, double *LASTalpha, double *LASTsigma2zk,           
            double *LASTceta, double *LASTcalpha, int *LASTWB, 
-           int *isSin, double *Dynamic, int *DynamicSinPar, double *tuneHar, double *piHar)
+           int *isSin, double *Dynamic, int *DynamicSinPar, double *tuneHar, double *piHar, 
+           int *intB, double *doubleB, double *tuneBreaks, int *LASTgammaH, double *LASTbetaHar, double *LASTshifts)
 {
     gsl_set_error_handler_off(); 
   
@@ -76,7 +79,7 @@ void mvrmC(int *seed1, char **WorkingDir,
 
     // Open files
     FILE *out_file1, *out_file2, *out_file3, *out_file4, *out_file5, 
-         *out_file6, *out_file7, *out_file8, *out_file9, *out_file10;
+         *out_file6, *out_file7, *out_file8, *out_file9, *out_file10, *out_file11;
 
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.gamma.txt");
     out_file1 = fopen(path_name, "a");
@@ -98,6 +101,8 @@ void mvrmC(int *seed1, char **WorkingDir,
     out_file9 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.Hgamma.txt");
     out_file10 = fopen(path_name, "a");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.breaks.txt");
+    out_file11 = fopen(path_name, "a");
     
     // Sweeps, burn-in period, thin
     int sweeps = sweeps1[0]; 
@@ -184,7 +189,7 @@ void mvrmC(int *seed1, char **WorkingDir,
     double sqResP[n];
     double Acp, unifRV, QFC, QFP, detR,
            logMVNormC, logMVNormP, SPC, SPP, sigma2P, dev0, dev1;
-    double cetahat, Sprime, SDprime, elPrime, elDPrime, Q2, cetaP, calphaP;
+    double cetahat, Sprime, SDprime, elPrime, elDPrime, Q2, cetaP, calphaP, temp;
     
     //For selecting block size gamma_B or delta_B
     int block, blockSize;
@@ -345,8 +350,6 @@ void mvrmC(int *seed1, char **WorkingDir,
         QFC += pow(alpha[k],2);   
         
     // - pre 5 - if amplitude > 1, from dynamic to X
-    //Rprintf("hi1 \n");   
-    
     int amplitude = DynamicSinPar[0];
     int startSin = DynamicSinPar[1];
     int nHar = DynamicSinPar[2];
@@ -356,13 +359,28 @@ void mvrmC(int *seed1, char **WorkingDir,
     int gammaHarP[nHart2];
     double betaHar[nHart2];
     double betaHarP[nHart2];    
-    
-    for (k = 0; k < nHart2 && amplitude > 1; k++){
-		gammaHar[k]=1;
-		betaHar[k]=1/sqrt(2);
-	}
-    
-    if (amplitude > 1){
+	double mode[2]; 
+	mode[0] = 1/sqrt(2); mode[1] = 1/sqrt(2);
+	double vMFsample[2]; 
+	double XP[n*(LG+1)];
+	for (j = 0; j < n*(LG+1); j++)
+	    XP[j] = X[j];
+	double acceptHar[nHar];  
+	for (j = 0; j < nHar; j++)
+	    acceptHar[j] = 0.0;  
+    double HarLL = 1;
+    double HarUL = 1000;
+    if (amplitude > 1){		
+		if (cont[0]==0)
+		    for (k = 0; k < nHart2; k++){
+		        gammaHar[k]=1;
+		        betaHar[k]=1/sqrt(2);
+	        }
+	    else 
+	        for (k = 0; k < nHart2; k++){
+		        gammaHar[k]=LASTgammaH[k];
+		        betaHar[k]=LASTbetaHar[k];
+	        }
         for (j = 0; j < (amplitude+1); j++)
             for (i = 0; i < n; i++){
                 X[startSin*n+j*n+i] = 0;
@@ -370,18 +388,6 @@ void mvrmC(int *seed1, char **WorkingDir,
                     if (gammaHar[k]==1) X[startSin*n+j*n+i] += betaHar[k] * Dynamic[k*(amplitude+1)*n+j*n+i];
 		    }
 	} 
-	   
-	double mode[2]; 
-	mode[0] = 1/sqrt(2); mode[1] = 1/sqrt(2);
-	double vMFsample[2]; 
-	
-	double XP[n*(LG+1)];
-	for (j = 0; j < n*(LG+1); j++)
-	    XP[j] = X[j];
-	
-	double acceptHar[nHar];    
-    double HarLL = 1;
-    double HarUL = 1000;
 	
     // - 5 - c_eta
     if (cont[0]==0){
@@ -409,7 +415,35 @@ void mvrmC(int *seed1, char **WorkingDir,
     if (HNca==0 && alphaalpha > 1.0) calpha = betaalpha/(alphaalpha-1);
     if (HNca==1) calpha = sqrt(2*phi2calpha/M_PI);
     if (cont[0]==1) calpha = LASTcalpha[0];
-      
+    
+    // - 7 - Breaks
+    int nBreaks = intB[0];
+	double period = doubleB[0];
+	double breaks[nBreaks+1]; // +1 to fix dimensionality issue when nBreaks=0
+	double sinXvar[n];
+	double shifts[nBreaks+1];
+	double shiftsP[nBreaks+1];
+	double acceptBreaks[nBreaks];
+	double bLL = 0.00001;
+    double bUL = period;    
+	for (k = 0; k < nBreaks; k++)
+	    breaks[k] = doubleB[k+1]; 
+	for (k = 0; k < n; k++)
+	    sinXvar[k] = doubleB[k+1+nBreaks];
+	double breaksPrior[2] = {doubleB[n+1+nBreaks],doubleB[n+2+nBreaks]};
+	for (j = 0; j < nBreaks; j++)
+	    acceptBreaks[j] = 0.0;		
+	if (cont[0]==0)
+	    for (k = 0; k < nBreaks; k++){
+	        shifts[k] = k * period / nBreaks;
+	        shiftsP[k] = shifts[k];
+	    }	    	    	    
+	else
+	    for (k = 0; k < nBreaks; k++){
+	        shifts[k] = LASTshifts[k];
+	        shiftsP[k] = shifts[k];
+	    }	    	
+
     //#############################################SAMPLER
     for (sw = 0; sw < sweeps; sw++){
         if (sw==0) Rprintf("%i %s \n",sw+1, "posterior sample...");
@@ -490,8 +524,8 @@ void mvrmC(int *seed1, char **WorkingDir,
 	            if (tuneHar[j] < HarLL) tuneHar[j] = HarLL;
 	            if (tuneHar[j] > HarUL) tuneHar[j] = HarUL;
             }            
-
-            gammaHarP[2*j] = gsl_ran_bernoulli(r,piHar[2*j]/(piHar[2*j]+piHar[2*j+1]));
+            //Rprintf("%s %i %f %i %f \n","piHar: ",0,piHar[0],1,piHar[1]);
+            gammaHarP[2*j] = gsl_ran_bernoulli(r,piHar[0]/(piHar[0]+piHar[1]));
             gammaHarP[2*j+1] = gammaHarP[2*j];
         
 		    if (gammaHarP[2*j]==1){
@@ -528,7 +562,85 @@ void mvrmC(int *seed1, char **WorkingDir,
                         X[startSin*n+k*n+i] = XP[startSin*n+k*n+i];
             } 
 	    }
-        
+	    
+	    // - 1c - Update breaks
+	    
+	    for (k = 0; k < nBreaks; k++){
+
+			if ((sw % batchL)==0 && WB > 0){ 
+	            if (acceptBreaks[k] > 0.25 && tuneBreaks[k] < bUL) tuneBreaks[k] += MIN(0.01,1/sqrt(WB)) * tuneBreaks[k]; 
+	            if (acceptBreaks[k] <= 0.25 && tuneBreaks[k] > bLL) tuneBreaks[k] -= MIN(0.01,1/sqrt(WB)) * tuneBreaks[k];
+	            acceptBreaks[k] = 0.0;   
+	            if (tuneBreaks[k] < bLL) tuneBreaks[k] = bLL;
+	            if (tuneBreaks[k] > bUL) tuneBreaks[k] = bUL;
+            } 
+
+            //tot = 0;
+            //for (j = 0; j < k; j++)
+            //    tot += shifts[j];     
+                
+            shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));
+                        
+            if (k == 0) 
+                temp = 0;
+            else temp = shiftsP[k-1];
+            
+            //Rprintf("%s %i %i | %f %f %f %f \n", "tot", 
+            //sw, k, temp, shifts[k], shiftsP[k], tuneBreaks[k]);             
+                        
+            while (shiftsP[k] <= temp || shiftsP[k] >= (temp+period))
+                shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));
+                
+            //shiftsPcum[k] = shiftsP[k] + tot;
+            //
+            //Rprintf("%s %i %i %f %f %f | %f %f %f %f \n", "end tot new", 
+            //sw, k, temp, shifts[k], shiftsP[k], 
+            //breaksPrior[0], breaksPrior[1], 
+            //pow((shiftsP[k] - temp) / (shifts[k] - temp), breaksPrior[0] - 1),
+            //pow((period + temp - shiftsP[k]) / (period + temp - shifts[k]), breaksPrior[1] - 1));             
+            //shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));//gsl_ran_flat(r,-tuneBreaks[k],tuneBreaks[k]);          			
+	        //while (shiftsP[k] <=0 || shiftsP[k] >= period)
+	        //    shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));//gsl_ran_flat(r,-tuneBreaks[k],tuneBreaks[k]);	                	        	        
+
+	        updateSinX(n,sinXvar,startSin,nHar,period,nBreaks,breaks,shiftsP,XP);	     	        
+
+	        //for (i = 0; i < n && i <0; i++) 
+            //    Rprintf("%s %i %i %i %i | %f %f %f %f %f | %f %f %f | %f %f %f \n",
+            //             "hi:",sw,NG,LG,k,
+            //             shiftsP[0], shiftsP[1], breaks[0], breaks[1], sinXvar[i],
+            //             X[i],X[i+n],X[i+2*n],
+            //             XP[i],XP[i+n],XP[i+2*n]);                     
+	         
+	         
+	        SPP = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,XP,LPV,&Q2); 
+	        	        
+	        Acp = exp((-SPP+SPC)/(2*sigma2)) * 
+	              pow((shiftsP[k] - temp) / (shifts[k] - temp), breaksPrior[0] - 1) *
+	              pow((period + temp - shiftsP[k]) / (period + temp - shifts[k]), breaksPrior[1] - 1);
+            
+            unifRV = gsl_ran_flat(r,0.0,1.0);           
+                 
+            //if (sw < 0) 
+            //        Rprintf("%i %i | %f %f %f %f %f | %f %f %f %f \n",
+            //        sw,k,                    
+            //        shifts[0], shifts[1], 
+            //        shifts[2], shifts[3],shifts[4],
+            //        shiftsP[k],Acp,unifRV,SPC-SPP);
+                            
+	        if (Acp > unifRV){	      	   	    
+                acceptBreaks[k] += 1/((double)batchL);                
+                shifts[k] = shiftsP[k];                
+                for (j = 0; j < n*(LG+1); j++)
+	                X[j] = XP[j];
+	            SPC = SPP; 
+    		}
+    		else{
+				shiftsP[k] = shifts[k];	
+				for (j = 0; j < n*(LG+1); j++)
+	                XP[j] = X[j];			
+			}
+		}
+	    
 	    // - 2 - Update delta and alpha
         //Rprintf("%i %s \n",sw,"delta & alpha");
         subMeanEta = gsl_vector_subvector(meanEta,0,Ngamma+1);
@@ -793,14 +905,18 @@ void mvrmC(int *seed1, char **WorkingDir,
 	    }
         //
         if (((sw - burn) >= 0) && (((sw - burn ) % thin) == 0)){
+            
             // - 6 - eta              
+            
             subMeanEta = gsl_vector_subvector(meanEta,0,Ngamma+1);//not needed
             subVarEta = gsl_matrix_submatrix(varEta,0,0,Ngamma+1,Ngamma+1);//when all code is running
             postMeanVarEta(n,1,tol,gamma,Ngamma,LG,sigma2,ceta,LPV,X,yTilde,&subMeanEta.vector,&subVarEta.matrix,sw);
             vecEta = gsl_vector_view_array(eta,Ngamma+1); 
             s = gsl_ran_flat(r,1.0,100000);
             sampleMN(s,Ngamma+1,&vecEta.vector,&subMeanEta.vector,&subVarEta.matrix,tol);
+            
             // - 7 - -2*LogLikelihood
+            
             SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);            
             detR = 0.0;
             for (i = 0; i < n; i++)
@@ -837,12 +953,19 @@ void mvrmC(int *seed1, char **WorkingDir,
                 if (gamma[k]==1) fprintf(out_file7, "%f ", eta[move++]); else fprintf(out_file7, "%f ", 0.0);                
             fprintf (out_file7, "\n");
             fprintf(out_file8, "%f %f \n", dev0, dev1);
-            for (k = 0; k < nHart2; k++)
+            
+            for (k = 0; k < nHart2 && amplitude > 1; k++)
                 fprintf(out_file9, "%f ", betaHar[k]);
             fprintf(out_file9, "\n");
-            for (k = 0; k < nHart2; k++)
+            
+            for (k = 0; k < nHart2 && amplitude > 1; k++)
                 fprintf(out_file10, "%i ", gammaHar[k]);
             fprintf(out_file10, "\n");
+            
+            for (k = 0; k < nBreaks; k++)
+	            fprintf(out_file11, "%f ", shifts[k]);
+	        fprintf(out_file11, "\n");
+
         }
         // If sw needs to be printed
         if ((sw==(sweeps-1)) && (!((sweeps % 1000)==0))) Rprintf("%i %s \n",sweeps, "posterior samples...");
@@ -857,7 +980,8 @@ void mvrmC(int *seed1, char **WorkingDir,
     //Close files
     fclose(out_file1); fclose(out_file2); fclose(out_file3);
     fclose(out_file4); fclose(out_file5); fclose(out_file6);
-    fclose(out_file7); fclose(out_file8); fclose(out_file9); fclose(out_file10);
+    fclose(out_file7); fclose(out_file8); fclose(out_file9); 
+    fclose(out_file10); fclose(out_file11);
 
     //Free up gsl matrices
     gsl_matrix_free(varEta); gsl_vector_free(meanEta); gsl_matrix_free(D); gsl_vector_free(alphaHat); 

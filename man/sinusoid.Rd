@@ -6,7 +6,7 @@
 \description{Function used to define sinusoidal curves in the mean formula of function \code{mvrm}. 
 The function is used internally to construct design matrices.}
 
-\usage{sinusoid(..., harmonics = 1, amplitude = 1, period = 1, knots = NULL)}
+\usage{sinusoid(..., harmonics = 1, amplitude = 1, period = 1, knots = NULL, breaks = NULL)}
 
 \arguments{
 \item{...}{a single covariate that the sinusoid term is a function of.} 
@@ -15,6 +15,7 @@ The function is used internally to construct design matrices.}
 it denotes the number of knots to be utilized in the representation of the time-varying amplitude.}
 \item{period}{the period of the sinusoidal wave.}
 \item{knots}{the knots to be utilized in the representation of the time-varying amplitude. Relevant only when \code{amplitude} is greater than 1.}
+\item{breaks}{the growth break points.}
 }
 
 \details{Use this function within calls to function \code{mvrm} to specify sinusoidal waves in the mean function
@@ -50,10 +51,10 @@ require(ggplot2)
 require(gridExtra)
 require(Formula)
 # Simulate the data 
-mu <- function(u){cos(0.5*u)*sin(2 * pi * u + 1)}
+mu <- function(u) {cos(0.5 * u) * sin(2 * pi * u + 1)}
 set.seed(1)
 n <- 100
-u <- sort(runif(n,min=0,max=2*pi))
+u <- sort(runif(n, min = 0, max = 2*pi))
 y <- rnorm(n, mu(u), 0.1)
 data <- data.frame(y, u)
 # Define the model and call function \code{mvrm} that perfomes posterior sampling for the given 
@@ -67,7 +68,7 @@ x1 <- seq(min(u), max(u), length.out = 100)
 plotOptionsM <- list(geom_line(aes_string(x = x1, y = mu(x1)), col = 2, alpha = 0.5, lty = 2),
                      geom_point(data = data, aes(x = u, y = y)))
 plot(x = m1, term = 1, plotOptions = plotOptionsM, intercept = TRUE, 
-     quantiles = c(0.005, 0.995), grid = 100, combine = 100)
+     quantiles = c(0.005, 0.995), grid = 100, combine = 1)
 }
 }
 

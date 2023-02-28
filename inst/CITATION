@@ -1,31 +1,41 @@
-citHeader("To cite BNSP in publications, please use the 2018 paper for univariate, the 2020 paper for multivariate regression, or the 2020 paper on arxiv for covariance matrix modelling.")
+citHeader("To cite BNSP in publications, please use the 2018 paper for univariate regression, the 2020 paper for multivariate regression, or the 2022 paper for covariance matrix modelling.")
   
-citEntry(entry="Article",
+bibentry(
+    bibtype="Article",
     title = "{BNSP}: an {R} Package for Fitting {B}ayesian Semiparametric Regression Models and Variable Selection",
-    author = personList(as.person("Georgios Papageorgiou")),
+    author = "G. Papageorgiou",
     journal = "The R Journal",         
     year = "2018", 
     volume = "10",
     number = "2",
-    pages = "526--548",
-    doi = "10.32614/RJ-2018-069",
-    url = "https://doi.org/10.32614/RJ-2018-069",
-    textVersion = paste("Papageorgiou, G. (2018).",
-                        "BNSP: an R package for fitting Bayesian semiparametric regression models and variable selection.",
-                        "The R Journal, 10(2), 526--548")
+    pages = "526-548",
+    textVersion = "Papageorgiou, G. (2018). BNSP: an R package for fitting Bayesian semiparametric regression models 
+                             and variable selection. The R Journal, 10(2), 526-548."
 )
 
-citEntry(entry="Article",
+bibentry(
+    bibtype="Article",
     title = "Bayesian Semiparametric Analysis of Multivariate Continuous Responses, With Variable Selection",
-    author = personList(as.person("Georgios Papageorgiou"), as.person("Benjamin C. Marshall")),
+    author = "G. Papageorgiou and B. C. Marshall",
     journal = "Journal of Computational and Graphical Statistics",         
-    year = {2020}, 
-    volume = {29},
-    number = {4},
-    pages = {896-909},
-    doi = "10.1080/10618600.2020.1739534",
-    url = "https://doi.org/10.1080/10618600.2020.1739534",
-    textVersion = paste("Georgios Papageorgiou and Benjamin C. Marshall (2020).",
-                        "Bayesian Semiparametric Analysis of Multivariate Continuous Responses, With Variable Selection.",
-                         "Journal of Computational and Graphical Statistics, 29(4), 896-909")
+    year = "2020", 
+    volume = "29",
+    number = "4",
+    pages = "896-909",
+    textVersion = "Papageorgiou, G. and Marshall, B.C. (2020). Bayesian Semiparametric Analysis of Multivariate 
+                             Continuous Responses, With Variable Selection. Journal of Computational and Graphical 
+                             Statistics, 29(4), 896-909."
+)
+
+bibentry(
+    bibtype="Article",
+    title = "Bayesian semi-parametric modeling of covariance matrices for multivariate longitudinal data",
+    author = "G. Papageorgiou",
+    journal = "Statistics in Medicine",         
+    year = "2022", 
+    volume = "41",
+    number = "14",
+    pages = "2665-2687",
+    textVersion = "Papageorgiou, G. (2022). Bayesian semi-parametric modeling of covariance matrices for 
+                             multivariate longitudinal data. Statistics in Medicine, 41(14), 2665-2687."
 )

@@ -14,6 +14,7 @@ mvrm <- function(formula,distribution="normal",
                  sigma.RPrior="HN(1)",
                  corr.Model=c("common",nClust=1),
                  DP.concPrior="Gamma(5, 2)",
+                 breaksPrior="SBeta(1, 2)",
                  tuneCbeta,
                  tuneCalpha,
                  tuneAlpha,               
@@ -24,6 +25,7 @@ mvrm <- function(formula,distribution="normal",
                  tuneR,
                  tuneSigma2R,                 
                  tuneHar,
+                 tuneBreaks,
                  tau,FT=1,
                  compDeviance=FALSE,...){
     #Samples etc
@@ -99,8 +101,14 @@ mvrm <- function(formula,distribution="normal",
     nHar <- DynamicSinPar[3]
     Dynamic <- XYK$Dynamic
     isSin <- XYK$isSin
-    varSin <- varsX[[min(which(isSin==1))]]
+    varSin <- NULL
+    if (sum(isSin)) varSin <- varsX[[min(which(isSin==1))]]
     if (amplitude==1) isSin <- isSin[repsX]
+    breaks<-XYK$breaks
+    nBreaks<-length(breaks)
+    period<-XYK$period
+    sinXvar <- with(data,get(varSin))
+    if (nBreaks > 0) if (min(breaks) < min(sinXvar) || max(breaks) > max(sinXvar)) stop("breaks outside the range of data")
     #Z
     ZK<-DM(formula=formula.v,data=data,n=n,centre=centre)
     Z<-as.matrix(ZK$X)
@@ -183,13 +191,13 @@ mvrm <- function(formula,distribution="normal",
     }
     if (length(pi.muPrior)==1) pimu<-rep(pimu,p*NG2)
     if (length(pi.muPrior)==NG2) pimu<-rep(pimu,p)
-    piHar<-1 #pi of the harminocs for forming the dynamic matrix
+    piHar<-1 #pi of the harmonics for forming the dynamic matrix
     if (sum(isSin) && amplitude > 1){ 
         loc <- 1+2*(which(isSin==1)-1)
         loc <-c(loc,loc+1)
-        expand.loc <- rep(loc,p) + rep(seq(from=0,length.out=p,by=2*NG),each=2)
         piHar <- pimu[loc]  
-	}    
+	}  
+	#print(piHar)  
     #Prior for c.beta
     sp<-strsplit(c.betaPrior,"IG\\(")
     sp<-strsplit(sp[[1]][2],"\\)")
@@ -340,6 +348,13 @@ mvrm <- function(formula,distribution="normal",
     sp<-strsplit(sp[[1]][1],",")
     DPparams<-as.numeric(sp[[1]])
     DPparams <- c(DPparams,0.01)
+    #Prior for breaks
+    sp<-strsplit(breaksPrior,"SBeta\\(")
+    sp<-strsplit(sp[[1]][2],"\\)")
+    sp<-strsplit(sp[[1]][1],",")
+    breaksPparams<-as.numeric(sp[[1]])
+    #print(breaksPparams)
+    if (sum(breaksPparams <= 0)) stop("SBeta prior should have positive parameters")
     #Seed
     if (missing(seed)) seed<-as.integer((as.double(Sys.time())*1000+Sys.getpid()) %% 2^31)
     # Storage directory & files
@@ -350,12 +365,13 @@ mvrm <- function(formula,distribution="normal",
     if (!missing(StorageDir)) if (!dir.exists(StorageDir)) dir.create(StorageDir, recursive = TRUE)
     if (missing(StorageDir)) stop("provide a storage directory via argument StorageDir")
     FL <- c("gamma", "cbeta", "delta", "alpha", "R", "muR", "sigma2R", "calpha", "sigma2", "beta", 
+            "Hbeta", "Hgamma",   
             "ksi", "psi", "cpsi", "phi2",
             "compAlloc", "nmembers", "deviance", "DPconc",
             "compAllocV", "nmembersV",
             "DE",
             "nu", "fi", "omega", "ceta","comega","eta", "test", "nu.ls", "eta.ls", "nmembers.ls", "clusters",  
-            "probs", "tune")
+            "probs", "tune","breaks")
     for (i in 1:length(FL)){
         oneFile <- paste(StorageDir, paste("BNSP",FL[i], "txt",sep="."),sep="/")
         if (file.exists(oneFile)) file.remove(oneFile)
@@ -387,7 +403,9 @@ mvrm <- function(formula,distribution="normal",
     if (missing(tuneSigma2R)) tuneSigma2R<-0.25
     if (nHar > 0){
         ifelse(missing(tuneHar), tuneHar<-rep(100,nHar), tuneHar<-rep(mean(tuneHar),nHar))
-	}else{tuneHar<-1}
+	}else{tuneHar<-1}	
+	if (missing(tuneBreaks)) tuneBreaks<-rep(0.01*period,nBreaks)	
+	if (!missing(tuneBreaks) && !length(tuneBreaks)==nBreaks) tuneBreaks<-rep(mean(tuneBreaks),nBreaks)
 	if (missing(tau)) tau = 0.01
     #Block size selection
     #if (missing(blockSizeProbG)){
@@ -423,7 +441,9 @@ mvrm <- function(formula,distribution="normal",
         as.integer(HNsg),as.double(sigmaParams),as.double(deviance),as.integer(isDz2),
         as.integer(c(cont)),as.integer(c(0)),as.integer(c(0)),as.double(c(0)),as.double(LASTsigma2zk),
         as.double(c(0)),as.double(c(0)),as.integer(LASTWB),
-        as.integer(isSin),as.double(Dynamic),as.integer(DynamicSinPar),as.double(tuneHar),as.double(piHar))}        
+        as.integer(isSin),as.double(Dynamic),as.integer(DynamicSinPar),as.double(tuneHar),
+        as.double(piHar),as.integer(nBreaks),as.double(c(period,sort(breaks),sinXvar,breaksPparams)),
+        as.double(tuneBreaks),as.integer(c(0)),as.double(c(0)),as.double(c(0)))}        
     if (mcm==1) {out<-.C("mult",
         as.integer(seed),as.character(StorageDir),
         as.integer(sweeps),as.integer(burn),as.integer(thin),
@@ -627,13 +647,14 @@ mvrm <- function(formula,distribution="normal",
                 tunePhi=c(tunePhi,tunePhia),
                 tuneCpsi=c(tuneCpsi,tuneCpsia),
                 tuneHar=c(tuneHar,out[[47]][1:nHar]),
+                tuneBreaks=c(tuneBreaks,out[[48]][1:nBreaks]),
                 deviance=c(out[[loc2]][1:DevCalcs]),
                 nullDeviance=nullDeviance,                            
                 DIR=StorageDir,
                 out=out,
                 LUT=1, SUT=1, LGc=0, LDc=0, NGc=0, NDc=0, NK=0, FT=FT,
                 qCont=0,
-                HNca=HNca,HNsg=HNsg,HNcp=HNcp,HNphi=HNphi,nHar=nHar,varSin=varSin)
+                HNca=HNca,HNsg=HNsg,HNcp=HNcp,HNphi=HNphi,nHar=nHar,varSin=varSin,nBreaks=nBreaks)
     class(fit) <- 'mvrm'
     return(fit)
 }
@@ -664,7 +685,7 @@ continue <- function(object,sweeps,burn=0,thin,discard=FALSE,...){
             "DE", #mcm 1,2,3,4
             "psi", "ksi", "cpsi", "nu", "fi", "omega", "ceta", "comega", "eta","tune","probs", #mcm 5,6,7            
             "phi2", #mcm 8,9,10     
-            "test")            
+            "test", "Hgamma", "Hbeta", "breaks")                        
     gamma <- paste(object$DIR, paste("BNSP",FL[1], "txt",sep="."),sep="/")
     gamma <- scan(gamma,what=numeric(),n=object$p*object$LG,quiet=TRUE,skip=object$nSamples-1)
     cbeta <- paste(object$DIR, paste("BNSP",FL[2], "txt",sep="."),sep="/")
@@ -707,6 +728,12 @@ continue <- function(object,sweeps,burn=0,thin,discard=FALSE,...){
     ceta <- if (file.exists(ceta)) scan(ceta,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)    
     comega <- paste(object$DIR, paste("BNSP",FL[25], "txt",sep="."),sep="/")
     comega <- if (file.exists(comega)) scan(comega,what=numeric(),n=1,quiet=TRUE,skip=object$nSamples-1)
+    gammaHar <- paste(object$DIR, paste("BNSP",FL[31], "txt",sep="."),sep="/")
+    gammaHar <- if (file.exists(gammaHar)) scan(gammaHar,what=numeric(),n=object$nHar*2,quiet=TRUE,skip=object$nSamples-1)
+    betaHar <- paste(object$DIR, paste("BNSP",FL[32], "txt",sep="."),sep="/")
+    betaHar <- if (file.exists(betaHar)) scan(betaHar,what=numeric(),n=object$nHar*2,quiet=TRUE,skip=object$nSamples-1)
+    shifts <- paste(object$DIR, paste("BNSP",FL[33], "txt",sep="."),sep="/")
+    shifts <- if (file.exists(shifts)) scan(shifts,what=numeric(),n=object$nBreaks,quiet=TRUE,skip=object$nSamples-1)
     LASTAll<-c(R,DE,gamma,delta,alpha,sigma2,ksi,psi,cbeta,calpha,cpsi,gammaCor)
     if (object$mcm==6) LASTAll<-c(LASTAll,compAlloc,DPconc)
     if (object$mcm==7) LASTAll<-c(LASTAll,compAllocV,DPconc)
@@ -756,7 +783,9 @@ continue <- function(object,sweeps,burn=0,thin,discard=FALSE,...){
         as.integer(cont),as.integer(gamma),as.integer(delta),as.double(alpha),as.double(sigma2),
         as.double(cbeta),as.double(calpha),as.integer(LASTWB),
         as.integer(object$out[[44]]),as.double(object$out[[45]]),as.integer(object$out[[46]]),
-        as.double(object$out[[47]]),as.double(object$out[[48]]))
+        as.double(object$out[[47]]),as.double(object$out[[48]]),as.integer(object$out[[49]]),
+        as.double(object$out[[50]]),as.double(object$out[[51]]),as.integer(gammaHar), 
+        as.double(betaHar), as.double(shifts))
     if (object$mcm==1) out<-.C("mult",
         as.integer(object$out[[1]]),as.character(object$out[[2]]),
         as.integer(sweeps),as.integer(burn),as.integer(thin),
@@ -1053,7 +1082,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
     labels5 <- c("psi","ksi","cpsi","nu","fi","omega","comega","eta","ceta")#9
     labels6 <- c("probs","tune")#2
     labels7 <- c("phi2")#1
-    labels8 <- c("Hbeta")#1
+    labels8 <- c("Hbeta", "Hgamma", "breaks")#3
     all.labels<-c(labels1,labels2,labels3,labels4,labels5,labels6,labels7,labels8)
     if (missing(labels)) labels <- all.labels
     mtch<-match(labels,all.labels)
@@ -1305,17 +1334,36 @@ mvrm2mcmc <- function(mvrmObj,labels){
 	}
 	if (any(mtch==29)){
         file <- paste(mvrmObj$DIR,"BNSP.Hbeta.txt",sep="")
-        if (file.exists(file)){ 
-            
+        if (file.exists(file)){             
             names1 <- NULL
             for (k in 1:mvrmObj$nHar)
-                names1<-c(names1,paste(paste("sin(",2*k,sep=""),"pi", mvrmObj$varSin, "/ p)",sep=" "),paste(paste("cos(",2*k,sep=""),"pi", mvrmObj$varSin, "/ p)",sep=" "))
-            
-            if (p > 1) names1<-paste(rep(names1,p),rep(mvrmObj$varsY,2*mvrmObj$nHar),sep=".")
-            
+                names1<-c(names1,
+                          paste("beta",paste(paste("sin(",2*k,sep=""),"pi", mvrmObj$varSin, "/ p)",sep=" "),sep="."),
+                          paste("beta",paste(paste("cos(",2*k,sep=""),"pi", mvrmObj$varSin, "/ p)",sep=" "),sep="."))  
+            if (p > 1) names1<-paste(rep(names1,p),rep(mvrmObj$varsY,2*mvrmObj$nHar),sep=".")            
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=2*mvrmObj$nHar*p,dimnames=list(c(),names1)))
 		}
-	}
+	}	
+	if (any(mtch==30)){
+        file <- paste(mvrmObj$DIR,"BNSP.Hgamma.txt",sep="")
+        if (file.exists(file)){             
+            names1 <- NULL
+            for (k in 1:mvrmObj$nHar)
+                names1<-c(names1,
+                          paste("gamma",paste(paste("sin(",2*k,sep=""),"pi", mvrmObj$varSin, "/ p)",sep=" "),sep="."),
+                          paste("gamma",paste(paste("cos(",2*k,sep=""),"pi", mvrmObj$varSin, "/ p)",sep=" "),sep="."))            
+            if (p > 1) names1<-paste(rep(names1,p),rep(mvrmObj$varsY,2*mvrmObj$nHar),sep=".")            
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=2*mvrmObj$nHar*p,dimnames=list(c(),names1)))
+		}
+	}	
+	
+	if (any(mtch==31)){
+        file <- paste(mvrmObj$DIR,"BNSP.breaks.txt",sep="")
+        if (file.exists(file)){ 
+            names1<-paste("break",seq(1:mvrmObj$nBreaks),sep=".")            
+            R<-cbind(R,matrix(unlist(read.table(file)),ncol=mvrmObj$nBreaks,dimnames=list(c(),names1)))
+		}       
+	}	
 	
 	if (!is.null(R) && !any(mtch==27)){
 	    attr(R, "mcpar") <- mvrmObj$mcpar

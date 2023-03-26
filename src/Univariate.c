@@ -189,7 +189,7 @@ void mvrmC(int *seed1, char **WorkingDir,
     double sqResP[n];
     double Acp, unifRV, QFC, QFP, detR,
            logMVNormC, logMVNormP, SPC, SPP, sigma2P, dev0, dev1;
-    double cetahat, Sprime, SDprime, elPrime, elDPrime, Q2, cetaP, calphaP, temp;
+    double cetahat, Sprime, SDprime, elPrime, elDPrime, Q2, cetaP, calphaP, temp1, temp2;
     
     //For selecting block size gamma_B or delta_B
     int block, blockSize;
@@ -443,7 +443,9 @@ void mvrmC(int *seed1, char **WorkingDir,
 	        shifts[k] = LASTshifts[k];
 	        shiftsP[k] = shifts[k];
 	    }	    	
-
+     
+    //Rprintf("%i %i %i %i %i %f %f %f %f %f \n", nHar, nHart2, amplitude, seed, nBreaks, breaks[0] ,
+    //                                            breaks[1], breaks[2], breaks[3], breaks[4]); 
     //#############################################SAMPLER
     for (sw = 0; sw < sweeps; sw++){
         if (sw==0) Rprintf("%i %s \n",sw+1, "posterior sample...");
@@ -513,7 +515,7 @@ void mvrmC(int *seed1, char **WorkingDir,
         //Rprintf("%s %i %i %f %f \n","after gamma: ",sw,2*Ngamma,2*SPC,2*Q2);
         
         // - 1b - Update harmonics
-        
+        //Rprintf("%i %s \n",sw,"harmonics");
         //SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
         
 	    for (j = 0; j < nHar && amplitude > 1; j++){		
@@ -564,8 +566,15 @@ void mvrmC(int *seed1, char **WorkingDir,
 	    }
 	    
 	    // - 1c - Update breaks
+	    //Rprintf("%i %s \n",sw,"breaks");
 	    
 	    for (k = 0; k < nBreaks; k++){
+			
+			//Rprintf("%s %i %i | %f %f %f %f %f \n", "all current shifts", 
+            //sw, k, shifts[0], shifts[1], shifts[2], shifts[3], shifts[4]);             
+            
+            //Rprintf("%s %i %i | %f %f %f %f %f \n", "all proposed shifts", 
+            //sw, k, shiftsP[0], shiftsP[1], shiftsP[2], shiftsP[3], shiftsP[4]);
 
 			if ((sw % batchL)==0 && WB > 0){ 
 	            if (acceptBreaks[k] > 0.25 && tuneBreaks[k] < bUL) tuneBreaks[k] += MIN(0.01,1/sqrt(WB)) * tuneBreaks[k]; 
@@ -575,29 +584,27 @@ void mvrmC(int *seed1, char **WorkingDir,
 	            if (tuneBreaks[k] > bUL) tuneBreaks[k] = bUL;
             } 
 
-            //tot = 0;
-            //for (j = 0; j < k; j++)
-            //    tot += shifts[j];     
-                
             shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));
                         
             if (k == 0) 
-                temp = 0;
-            else temp = shiftsP[k-1];
+                temp1 = 0;
+            else temp1 = shiftsP[k-1];
             
-            //Rprintf("%s %i %i | %f %f %f %f \n", "tot", 
-            //sw, k, temp, shifts[k], shiftsP[k], tuneBreaks[k]);             
+            if (k == nBreaks - 1) 
+                temp2 = temp1 + period;
+            else temp2 = MIN(temp1 + period, shiftsP[k + 1]);
+            
+            //Rprintf("%s %i %i | %f %f %f %f \n", "TEMP CURRENT POPOSED TUNE", 
+            //sw, k, temp1, shifts[k], shiftsP[k], tuneBreaks[k]);             
                         
-            while (shiftsP[k] <= temp || shiftsP[k] >= (temp+period))
+            while (shiftsP[k] <= temp1 || shiftsP[k] >= temp2)
                 shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));
                 
-            //shiftsPcum[k] = shiftsP[k] + tot;
-            //
             //Rprintf("%s %i %i %f %f %f | %f %f %f %f \n", "end tot new", 
-            //sw, k, temp, shifts[k], shiftsP[k], 
+            //sw, k, temp1, shifts[k], shiftsP[k], 
             //breaksPrior[0], breaksPrior[1], 
-            //pow((shiftsP[k] - temp) / (shifts[k] - temp), breaksPrior[0] - 1),
-            //pow((period + temp - shiftsP[k]) / (period + temp - shifts[k]), breaksPrior[1] - 1));             
+            //pow((shiftsP[k] - temp1) / (shifts[k] - temp1), breaksPrior[0] - 1),
+            //pow((period + temp1 - shiftsP[k]) / (period + temp1 - shifts[k]), breaksPrior[1] - 1));             
             //shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));//gsl_ran_flat(r,-tuneBreaks[k],tuneBreaks[k]);          			
 	        //while (shiftsP[k] <=0 || shiftsP[k] >= period)
 	        //    shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));//gsl_ran_flat(r,-tuneBreaks[k],tuneBreaks[k]);	                	        	        
@@ -615,17 +622,13 @@ void mvrmC(int *seed1, char **WorkingDir,
 	        SPP = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,XP,LPV,&Q2); 
 	        	        
 	        Acp = exp((-SPP+SPC)/(2*sigma2)) * 
-	              pow((shiftsP[k] - temp) / (shifts[k] - temp), breaksPrior[0] - 1) *
-	              pow((period + temp - shiftsP[k]) / (period + temp - shifts[k]), breaksPrior[1] - 1);
+	              pow((shiftsP[k] - temp1) / (shifts[k] - temp1), breaksPrior[0] - 1) *
+	              pow((period + temp1 - shiftsP[k]) / (period + temp1 - shifts[k]), breaksPrior[1] - 1);
             
             unifRV = gsl_ran_flat(r,0.0,1.0);           
                  
-            //if (sw < 0) 
-            //        Rprintf("%i %i | %f %f %f %f %f | %f %f %f %f \n",
-            //        sw,k,                    
-            //        shifts[0], shifts[1], 
-            //        shifts[2], shifts[3],shifts[4],
-            //        shiftsP[k],Acp,unifRV,SPC-SPP);
+            //Rprintf("%s %i %i | %f %f %f %f %f %f %f \n","just before acp:",
+            //        sw,k,shifts[k],shiftsP[k],Acp,unifRV,SPC-SPP,breaksPrior[0],breaksPrior[1]);
                             
 	        if (Acp > unifRV){	      	   	    
                 acceptBreaks[k] += 1/((double)batchL);                

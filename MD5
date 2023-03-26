@@ -1,7 +1,7 @@
-5a743d4a82cc5b1f686344ed02a22ee3 *DESCRIPTION
+7e9846a5bb90a21574710c8313e8aca3 *DESCRIPTION
 43628a12c37b50c26aaedf8e589b109f *NAMESPACE
 8663aa59997231504533de9bb4c947df *R/bnpLongMulti.R
-15043f191ee98240385f19657416c40c *R/bnpMulti.R
+d4f84ed865af0ae1b01a2e42b85166f6 *R/bnpMulti.R
 32808b732cedbbf8ca67300b98683518 *R/dpmj.R
 c161a6f8545de1e295b1ea93003222c1 *R/matalg.R
 d3a293f67b4a36861a91e994e5a32a51 *R/mvrm.R
@@ -11,7 +11,7 @@ af2adc61a8c86ba2c52bd9c54c17693c *data/ami.rda
 51963ed1482880dc991a7a47487539b6 *data/simD.rda
 a7c922a128c4d1a3dc332aa2859865a4 *data/simD2.rda
 e0128e711994054372e29424af0c157e *inst/CITATION
-b3b088a73eac4b9cf129bdd1dea262de *man/BNSP-package.Rd
+e44644b7c6a195b0f4cfde375cd4d5e4 *man/BNSP-package.Rd
 ed7788cf2d43e1f8caf51f510f3db92d *man/ami.rd
 c892c8399769c1f51b1807e345689456 *man/chol.Rd
 66ddb0a7ea1cb6101ebc0a11bc9ff347 *man/clustering.Rd
@@ -46,7 +46,7 @@ a5c6851fd1561fe3c024471f221f5698 *src/MultGV.c
 a918047014879beb34bda74d93ab7ead *src/MultT.c
 d2e0e837335b46df108557a7d98e1636 *src/OneResLtnt.c
 397154b2c9e3fb0ae3a31d9c66c994fd *src/SpecOneRL.h
-218ba2444198dcd2c16774e62e9627e5 *src/Univariate.c
+0107daf288a57e723a5122cc1a8e2e11 *src/Univariate.c
 f09db788bddf645be839a3808647bf8b *src/bnsp.h
 910914859107dd44f7ed9926745a9591 *src/matalg.h
 81f6be370703065346e32ba97ec4ed24 *src/mathm.h

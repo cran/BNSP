@@ -101,13 +101,14 @@ mvrm <- function(formula,distribution="normal",
     nHar <- DynamicSinPar[3]
     Dynamic <- XYK$Dynamic
     isSin <- XYK$isSin
-    varSin <- NULL
+    varSin <- sinXvar <- NULL
     if (sum(isSin)) varSin <- varsX[[min(which(isSin==1))]]
+    #print(c("varSin",varSin,is.null(varSin),sum(isSin)))
     if (amplitude==1) isSin <- isSin[repsX]
     breaks<-XYK$breaks
     nBreaks<-length(breaks)
     period<-XYK$period
-    sinXvar <- with(data,get(varSin))
+    if (!is.null(varSin)) sinXvar <- with(data,get(varSin))
     if (nBreaks > 0) if (min(breaks) < min(sinXvar) || max(breaks) > max(sinXvar)) stop("breaks outside the range of data")
     #Z
     ZK<-DM(formula=formula.v,data=data,n=n,centre=centre)
@@ -654,7 +655,7 @@ mvrm <- function(formula,distribution="normal",
                 out=out,
                 LUT=1, SUT=1, LGc=0, LDc=0, NGc=0, NDc=0, NK=0, FT=FT,
                 qCont=0,
-                HNca=HNca,HNsg=HNsg,HNcp=HNcp,HNphi=HNphi,nHar=nHar,varSin=varSin,nBreaks=nBreaks)
+                HNca=HNca,HNsg=HNsg,HNcp=HNcp,HNphi=HNphi,nHar=nHar,varSin=varSin,nBreaks=nBreaks,amplitude=amplitude)
     class(fit) <- 'mvrm'
     return(fit)
 }
@@ -1332,7 +1333,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=p,dimnames=list(c(),names1)))
 		}
 	}
-	if (any(mtch==29)){
+	if (any(mtch==29) && mvrmObj$nHar > 1 && mvrmObj$amplitude > 1){
         file <- paste(mvrmObj$DIR,"BNSP.Hbeta.txt",sep="")
         if (file.exists(file)){             
             names1 <- NULL
@@ -1344,7 +1345,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
             R<-cbind(R,matrix(unlist(read.table(file)),ncol=2*mvrmObj$nHar*p,dimnames=list(c(),names1)))
 		}
 	}	
-	if (any(mtch==30)){
+	if (any(mtch==30) && mvrmObj$nHar > 1 && mvrmObj$amplitude > 1){
         file <- paste(mvrmObj$DIR,"BNSP.Hgamma.txt",sep="")
         if (file.exists(file)){             
             names1 <- NULL
@@ -1357,7 +1358,7 @@ mvrm2mcmc <- function(mvrmObj,labels){
 		}
 	}	
 	
-	if (any(mtch==31)){
+	if (any(mtch==31) && mvrmObj$nBreaks > 0){
         file <- paste(mvrmObj$DIR,"BNSP.breaks.txt",sep="")
         if (file.exists(file)){ 
             names1<-paste("break",seq(1:mvrmObj$nBreaks),sep=".")            

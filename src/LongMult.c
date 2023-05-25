@@ -1583,9 +1583,11 @@ void   longmult(int *seed1, char **WorkingDir,
         s = gsl_ran_flat(r,1.0,100000); 
         sampleMN(s,LUT*d,&vecTheta.vector,mutheta,A,tol);
         
-        for (t = 0; t < LUT; t++)
-            for (i = 0; i < d; i++)
+        for (t = 0; t < LUT; t++){
+            for (i = 0; i < d; i++){
                 thetaTilde[i+t*d] = exp(-LPVcor[t]/2)*theta[i+t*d];
+			}
+		}
         
         // - 11 - Update Cor gamma 
         //Rprintf("%i %s \n",sw,"cor gamma");

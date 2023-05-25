@@ -39,14 +39,20 @@
 #include <gsl/gsl_roots.h>
 #include <gsl/gsl_multiset.h> 
 
-//#include "matalg.h"
-//#include "pdfs.h"
-//#include "sampling.h" 
-//#include "other.functions.h"
-//#include "mathm.h"
+/*
+#include "matalg.h"
+#include "pdfs.h"
+#include "sampling.h" 
+#include "other.functions.h"
+#include "mathm.h"
+*/
 
 extern void rvMF(unsigned long int s, int m, double lambda, double *mode, double *out);
-extern void updateSinX(int n, double *SinXvar, int startSin, int harmonics, double period, int nBreaks, double *breaks, double *locationShifts, double *X);
+extern void updateSinXAmp(int n, int j, double *sinWphs, double *sinWphsP, double *betaHar, double *betaHarP, double *sinXvarMoved, double period, int amplitude, int startSin, double *X, double *Dynamic);
+extern void updateSinXBr(int n, double *SinXvar, int startSin, int harmonics, double period, int nBreaks, double *breaks, double *locationShifts, double *X);
+extern void updateSinXPer(int n, double *SinXvar, int startSin, int harmonics, int amplitude, double period, double *X, double *sinWphsP, int *gammaHar, double * betaHar, double *Dynamic);
+extern void moveSinXvar(int n, double *sinXvar, double *sinXvarMoved, int nBreaks, double *breaks, double *shifts);
+extern void proposeShifts(unsigned long int s, int k, double period, int nBreaks, double *shifts, double *shiftsP, double *tuneBreaks);
 
 #include "spec.BCM.h"
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -64,7 +70,8 @@ void mvrmC(int *seed1, char **WorkingDir,
            int *cont, int *LASTgamma, int *LASTdelta, double *LASTalpha, double *LASTsigma2zk,           
            double *LASTceta, double *LASTcalpha, int *LASTWB, 
            int *isSin, double *Dynamic, int *DynamicSinPar, double *tuneHar, double *piHar, 
-           int *intB, double *doubleB, double *tuneBreaks, int *LASTgammaH, double *LASTbetaHar, double *LASTshifts)
+           int *intB, double *doubleB, double *tuneBreaks, int *LASTgammaH, double *LASTbetaHar, 
+           double *LASTshifts, double *tunePeriod, int *periodUnknown, double *periodRange)
 {
     gsl_set_error_handler_off(); 
   
@@ -79,7 +86,8 @@ void mvrmC(int *seed1, char **WorkingDir,
 
     // Open files
     FILE *out_file1, *out_file2, *out_file3, *out_file4, *out_file5, 
-         *out_file6, *out_file7, *out_file8, *out_file9, *out_file10, *out_file11;
+         *out_file6, *out_file7, *out_file8, *out_file9, *out_file10, 
+         *out_file11, *out_file12;
 
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.gamma.txt");
     out_file1 = fopen(path_name, "a");
@@ -103,6 +111,8 @@ void mvrmC(int *seed1, char **WorkingDir,
     out_file10 = fopen(path_name, "a");
     snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.breaks.txt");
     out_file11 = fopen(path_name, "a");
+    snprintf(path_name, MAX_PATH, "%s%s", *WorkingDir, "BNSP.period.txt");
+    out_file12 = fopen(path_name, "a");
     
     // Sweeps, burn-in period, thin
     int sweeps = sweeps1[0]; 
@@ -189,7 +199,7 @@ void mvrmC(int *seed1, char **WorkingDir,
     double sqResP[n];
     double Acp, unifRV, QFC, QFP, detR,
            logMVNormC, logMVNormP, SPC, SPP, sigma2P, dev0, dev1;
-    double cetahat, Sprime, SDprime, elPrime, elDPrime, Q2, cetaP, calphaP, temp1, temp2;
+    double cetahat, Sprime, SDprime, elPrime, elDPrime, Q2, cetaP, calphaP, temp1, periodP;
     
     //For selecting block size gamma_B or delta_B
     int block, blockSize;
@@ -233,8 +243,8 @@ void mvrmC(int *seed1, char **WorkingDir,
     for (j = 0; j < ND; j++)
         vecDeltaP[j] = malloc(sizeof(int) * vecLD[j]);    
     int NPJ; //nonzero in jth proposed
-    int vecGammaSin[2];//for sinusoidals
-    int vecGammaSinP[2];//for sinusoidals fix to pointers
+    int vecGammaSin;//for sinusoidals
+    int vecGammaSinP;
 
     // Declare and allocate gsl vectors and matrices
     gsl_matrix *D = gsl_matrix_alloc(MVLD[0],MVLD[0]);
@@ -267,7 +277,11 @@ void mvrmC(int *seed1, char **WorkingDir,
     
     double acceptCa = 0.0;
     double FCALL = 0.01;
-    double FCAUL = 200;   
+    double FCAUL = 200;  
+    
+    double acceptPeriod = 0.0;
+    double perLL = 0.00001;
+    double perUL = 1; 
 
     // Sampler initialization
     
@@ -349,6 +363,24 @@ void mvrmC(int *seed1, char **WorkingDir,
     for (k = 0; k < LD; k++)
         QFC += pow(alpha[k],2);   
         
+    // Used to be part of step 7 below    
+    int nBreaks = intB[0];
+	double period = doubleB[0];
+	double breaks[nBreaks+1]; // +1 to fix dimensionality issue when nBreaks=0
+	double sinXvar[n];
+	double sinXvarMoved[n];
+	double shifts[nBreaks+1];
+	double shiftsP[nBreaks+1];
+	double acceptBreaks[nBreaks];
+	double bLL = 0.00001;
+    double bUL = period;    
+	for (k = 0; k < nBreaks; k++)
+	    breaks[k] = doubleB[k+1]; 
+	for (k = 0; k < n; k++){
+	    sinXvar[k] = doubleB[k+1+nBreaks];
+	    sinXvarMoved[k] = sinXvar[k]; 
+	}
+        
     // - pre 5 - if amplitude > 1, from dynamic to X
     int amplitude = DynamicSinPar[0];
     int startSin = DynamicSinPar[1];
@@ -369,7 +401,9 @@ void mvrmC(int *seed1, char **WorkingDir,
 	for (j = 0; j < nHar; j++)
 	    acceptHar[j] = 0.0;  
     double HarLL = 1;
-    double HarUL = 1000;
+    double HarUL = 1000;     
+    double sinWphs[n]; 
+    double sinWphsP[n]; 
     if (amplitude > 1){		
 		if (cont[0]==0)
 		    for (k = 0; k < nHart2; k++){
@@ -381,12 +415,23 @@ void mvrmC(int *seed1, char **WorkingDir,
 		        gammaHar[k]=LASTgammaH[k];
 		        betaHar[k]=LASTbetaHar[k];
 	        }
-        for (j = 0; j < (amplitude+1); j++)
-            for (i = 0; i < n; i++){
-                X[startSin*n+j*n+i] = 0;
-                for (k = 0; k < nHart2; k++)
-                    if (gammaHar[k]==1) X[startSin*n+j*n+i] += betaHar[k] * Dynamic[k*(amplitude+1)*n+j*n+i];
-		    }
+        //for (j = 0; j < (amplitude+1) && 1 < 0; j++)
+        //    for (i = 0; i < n; i++){
+        //        X[startSin*n+j*n+i] = 0;
+        //        for (k = 0; k < nHart2; k++)
+        //            if (gammaHar[k]==1) X[startSin*n+j*n+i] += betaHar[k] * Dynamic[k*(amplitude+1)*n+j*n+i];                                    
+		//   }		
+		for (i = 0; i < n; i++){
+            sinWphs[i] = 0;
+            for (k = 0; k < nHar; k++){
+                if (gammaHar[2*k]==1) 
+                    sinWphs[i] += betaHar[2*k] * sin(2 * (k+1) * M_PI * sinXvarMoved[i] / period) +
+                                betaHar[2*k+1] * cos(2 * (k+1) * M_PI * sinXvarMoved[i] / period);                                            		        
+			}
+			sinWphsP[i] = sinWphs[i];
+			for (j = 0; j < (amplitude+1); j++)
+			    X[startSin*n+j*n+i] = sinWphs[i] * Dynamic[j*n+i];     
+		}
 	} 
 	
     // - 5 - c_eta
@@ -416,20 +461,7 @@ void mvrmC(int *seed1, char **WorkingDir,
     if (HNca==1) calpha = sqrt(2*phi2calpha/M_PI);
     if (cont[0]==1) calpha = LASTcalpha[0];
     
-    // - 7 - Breaks
-    int nBreaks = intB[0];
-	double period = doubleB[0];
-	double breaks[nBreaks+1]; // +1 to fix dimensionality issue when nBreaks=0
-	double sinXvar[n];
-	double shifts[nBreaks+1];
-	double shiftsP[nBreaks+1];
-	double acceptBreaks[nBreaks];
-	double bLL = 0.00001;
-    double bUL = period;    
-	for (k = 0; k < nBreaks; k++)
-	    breaks[k] = doubleB[k+1]; 
-	for (k = 0; k < n; k++)
-	    sinXvar[k] = doubleB[k+1+nBreaks];
+    // - 7 - Breaks    
 	double breaksPrior[2] = {doubleB[n+1+nBreaks],doubleB[n+2+nBreaks]};
 	for (j = 0; j < nBreaks; j++)
 	    acceptBreaks[j] = 0.0;		
@@ -443,9 +475,15 @@ void mvrmC(int *seed1, char **WorkingDir,
 	        shifts[k] = LASTshifts[k];
 	        shiftsP[k] = shifts[k];
 	    }	    	
-     
-    //Rprintf("%i %i %i %i %i %f %f %f %f %f \n", nHar, nHart2, amplitude, seed, nBreaks, breaks[0] ,
-    //                                            breaks[1], breaks[2], breaks[3], breaks[4]); 
+    
+    for (i = 0; i < n; i++){ 				
+		if (sinXvar[i] > breaks[0]){		    
+		    for (j = 0; j < nBreaks-1 && sinXvarMoved[i] == sinXvar[i]; j++) 
+    		    if (sinXvar[i] < breaks[j+1] && sinXvar[i] > breaks[j]) sinXvarMoved[i] = sinXvar[i] + shifts[j];
+	        if (sinXvar[i] > breaks[nBreaks-1]) sinXvarMoved[i] = sinXvar[i] + shifts[nBreaks-1];		    	        
+	    }     
+	}   	
+    
     //#############################################SAMPLER
     for (sw = 0; sw < sweeps; sw++){
         if (sw==0) Rprintf("%i %s \n",sw+1, "posterior sample...");
@@ -455,7 +493,7 @@ void mvrmC(int *seed1, char **WorkingDir,
 	    WB += LASTWB[0];
        	 
        	SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2); 
-       	//Rprintf("%s %i %i %f %f %f \n","before gamma: ",sw,2*Ngamma,2*SPC,2*Q2,ceta);
+       	//Rprintf("%s %i %i %i %i %i %i \n","sw: ",sw,NG,nHar,amplitude,nBreaks,periodUnknown[0]);
        	    
         // - 1 - Update gamma 
         //Rprintf("%i %s \n",sw,"gamma");
@@ -478,10 +516,10 @@ void mvrmC(int *seed1, char **WorkingDir,
 	            if (amplitude > 1 || !isSin[j])
 	                proposeBlockInd(s,vecGamma[j],vecLG[j],block,blockSize,indexG[j],cmu[j],dmu[j],vecGammaP[j]); 
 	            else{
-	                vecGammaSin[0]=vecGamma[j][0];
-	                proposeBlockInd(s,vecGammaSin,1,block,blockSize,indexG[j],cmu[j],dmu[j],vecGammaSinP); 	                
-	                vecGammaP[j][0]=vecGammaSinP[0];
-	                vecGammaP[j][1]=vecGammaSinP[0];
+	                vecGammaSin=vecGamma[j][0];
+	                proposeBlockInd(s,&vecGammaSin,1,block,blockSize,indexG[j],cmu[j],dmu[j],&vecGammaSinP); 	                
+	                vecGammaP[j][0]=vecGammaSinP;
+	                vecGammaP[j][1]=vecGammaSinP;
 				}
 	            NPJ = 0;
 	            for (k = 0; k < vecLG[j]; k++){
@@ -514,7 +552,7 @@ void mvrmC(int *seed1, char **WorkingDir,
 	    }    
         //Rprintf("%s %i %i %f %f \n","after gamma: ",sw,2*Ngamma,2*SPC,2*Q2);
         
-        // - 1b - Update harmonics
+        // - 1b - Update harmonics for amplitudes > 1
         //Rprintf("%i %s \n",sw,"harmonics");
         //SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2);
         
@@ -542,37 +580,53 @@ void mvrmC(int *seed1, char **WorkingDir,
 			    betaHarP[2*j+1] = 0;
 		    }
 		
-            for (k = 0; k < (amplitude+1); k++)
-                for (i = 0; i < n; i++)
-                    XP[startSin*n+k*n+i] = X[startSin*n+k*n+i] +
-                    (betaHarP[2*j]- betaHar[2*j]) * Dynamic[(2*j)*(amplitude+1)*n+k*n+i] +
-                    (betaHarP[2*j+1]- betaHar[2*j+1]) * Dynamic[(2*j+1)*(amplitude+1)*n+k*n+i];
+            //for (k = 0; k < (amplitude+1) && 1 < 0; k++)
+            //    for (i = 0; i < n; i++)
+            //        XP[startSin*n+k*n+i] = X[startSin*n+k*n+i] +
+            //        (betaHarP[2*j]- betaHar[2*j]) * Dynamic[(2*j)*(amplitude+1)*n+k*n+i] +
+            //        (betaHarP[2*j+1]- betaHar[2*j+1]) * Dynamic[(2*j+1)*(amplitude+1)*n+k*n+i];
+            
+            updateSinXAmp(n, j, sinWphs, sinWphsP, betaHar, betaHarP, sinXvarMoved, period, 
+                          amplitude, startSin, XP, Dynamic);
+                   
+            //for (i = 0; i < n; i++){
+            //    sinWphsP[i] = sinWphs[i] +
+            //                  (betaHarP[2*j] - betaHar[2*j]) * sin(2 * (j+1) * M_PI * sinXvarMoved[i] / period) +
+            //                  (betaHarP[2*j+1]- betaHar[2*j+1]) * cos(2 * (j+1) * M_PI * sinXvarMoved[i] / period);                                            
+		    //    for (k = 0; k < (amplitude+1); k++)
+			//       XP[startSin*n+k*n+i] = sinWphsP[i] * Dynamic[k*n+i];     
+			//}
 		    
             SPP = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,XP,LPV,&Q2); 
             Acp = exp((-SPP+SPC)/(2*sigma2));
             unifRV = gsl_ran_flat(r,0.0,1.0);            
 
             if (Acp > unifRV){
-		        if (betaHarP[2*j+1] > 0) acceptHar[j] += 1/((double)batchL);
+		        if (betaHarP[2*j+1] != 0) acceptHar[j] += 1/((double)batchL);
                 gammaHar[2*j] = gammaHarP[2*j];
                 gammaHar[2*j+1] = gammaHarP[2*j+1];
                 betaHar[2*j] = betaHarP[2*j];
                 betaHar[2*j+1] = betaHarP[2*j+1];
                 SPC = SPP;
-                for (k = 0; k < (amplitude+1); k++)
-                    for (i = 0; i < n; i++)
-                        X[startSin*n+k*n+i] = XP[startSin*n+k*n+i];
+                //for (k = 0; k < (amplitude+1); k++)
+                //    for (i = 0; i < n; i++)
+                //        X[startSin*n+k*n+i] = XP[startSin*n+k*n+i];
+                //for (i = 0; i < n; i++)
+                //    sinWphs[i] = sinWphsP[i];
+   	            memcpy(sinWphs, sinWphsP, sizeof(double) * n);   	
+                memcpy(X + startSin * n, XP + startSin * n, sizeof(double) * (amplitude + 1) * n);   	
+
             } 
 	    }
 	    
 	    // - 1c - Update breaks
 	    //Rprintf("%i %s \n",sw,"breaks");
-	    
+
+			//Rprintf("%s %i %i | %f %f \n", "all current shifts", 
+            //sw, k, shifts[0], shifts[1]);             
+            	    
 	    for (k = 0; k < nBreaks; k++){
 			
-			//Rprintf("%s %i %i | %f %f %f %f %f \n", "all current shifts", 
-            //sw, k, shifts[0], shifts[1], shifts[2], shifts[3], shifts[4]);             
-            
             //Rprintf("%s %i %i | %f %f %f %f %f \n", "all proposed shifts", 
             //sw, k, shiftsP[0], shiftsP[1], shiftsP[2], shiftsP[3], shiftsP[4]);
 
@@ -583,23 +637,20 @@ void mvrmC(int *seed1, char **WorkingDir,
 	            if (tuneBreaks[k] < bLL) tuneBreaks[k] = bLL;
 	            if (tuneBreaks[k] > bUL) tuneBreaks[k] = bUL;
             } 
-
-            shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));
-                        
-            if (k == 0) 
+ 
+            if (k == 0)  
                 temp1 = 0;
             else temp1 = shiftsP[k-1];
+            //if (k == nBreaks - 1) 
+            //    temp2 = temp1 + period;
+            //else temp2 = MIN(temp1 + period, shiftsP[k + 1]);
+            //shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));
+            //while (shiftsP[k] <= temp1 || shiftsP[k] >= temp2)
+            //    shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));
             
-            if (k == nBreaks - 1) 
-                temp2 = temp1 + period;
-            else temp2 = MIN(temp1 + period, shiftsP[k + 1]);
-            
-            //Rprintf("%s %i %i | %f %f %f %f \n", "TEMP CURRENT POPOSED TUNE", 
-            //sw, k, temp1, shifts[k], shiftsP[k], tuneBreaks[k]);             
-                        
-            while (shiftsP[k] <= temp1 || shiftsP[k] >= temp2)
-                shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));
-                
+            s = gsl_ran_flat(r,1.0,100000);             
+            proposeShifts(s, k, period, nBreaks, shifts, shiftsP, tuneBreaks);
+             
             //Rprintf("%s %i %i %f %f %f | %f %f %f %f \n", "end tot new", 
             //sw, k, temp1, shifts[k], shiftsP[k], 
             //breaksPrior[0], breaksPrior[1], 
@@ -609,39 +660,164 @@ void mvrmC(int *seed1, char **WorkingDir,
 	        //while (shiftsP[k] <=0 || shiftsP[k] >= period)
 	        //    shiftsP[k] = shifts[k] + gsl_ran_gaussian(r,sqrt(tuneBreaks[k]));//gsl_ran_flat(r,-tuneBreaks[k],tuneBreaks[k]);	                	        	        
 
-	        updateSinX(n,sinXvar,startSin,nHar,period,nBreaks,breaks,shiftsP,XP);	     	        
-
-	        //for (i = 0; i < n && i <0; i++) 
-            //    Rprintf("%s %i %i %i %i | %f %f %f %f %f | %f %f %f | %f %f %f \n",
-            //             "hi:",sw,NG,LG,k,
-            //             shiftsP[0], shiftsP[1], breaks[0], breaks[1], sinXvar[i],
-            //             X[i],X[i+n],X[i+2*n],
-            //             XP[i],XP[i+n],XP[i+2*n]);                     
-	         
-	         
+	        updateSinXBr(n,sinXvar,startSin,nHar,period,nBreaks,breaks,shiftsP,XP);	     	        
 	        SPP = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,XP,LPV,&Q2); 
-	        	        
+			
 	        Acp = exp((-SPP+SPC)/(2*sigma2)) * 
 	              pow((shiftsP[k] - temp1) / (shifts[k] - temp1), breaksPrior[0] - 1) *
 	              pow((period + temp1 - shiftsP[k]) / (period + temp1 - shifts[k]), breaksPrior[1] - 1);
             
-            unifRV = gsl_ran_flat(r,0.0,1.0);           
-                 
-            //Rprintf("%s %i %i | %f %f %f %f %f %f %f \n","just before acp:",
-            //        sw,k,shifts[k],shiftsP[k],Acp,unifRV,SPC-SPP,breaksPrior[0],breaksPrior[1]);
-                            
+            unifRV = gsl_ran_flat(r,0.0,1.0);  
+            
+            //for (i = (n-1); i < n; i++) 				
+            //    for (j = 0; j < nHar; j++) 
+            //        Rprintf("%s %i %i %i | %f %f %f %f | %f %f %f %f | %f %f %f %f %f %f | %f %f %f %f \n", "breaks: ", 
+            //        sw, i, j, 
+            //        SPP, SPC, unifRV, Acp, 
+            //        shifts[0],shifts[1],
+            //        shiftsP[0],shiftsP[1],
+            //        sinXvar[i], 
+            //        sin(2 * (j+1) * M_PI * sinXvar[i] / period),
+            //        cos(2 * (j+1) * M_PI * sinXvar[i] / period),
+            //        sinXvarMoved[i],                     
+            //        sin(2 * (j+1) * M_PI * sinXvarMoved[i] / period),                    
+            //        cos(2 * (j+1) * M_PI * sinXvarMoved[i] / period),
+            //        X[startSin * n + j * n * 2 + i], 
+            //        X[startSin * n + j * n * 2 + n + i], 
+            //        XP[startSin * n + j * n * 2 + i],
+            //        XP[startSin * n + j * n * 2 + n + i]);
+            
 	        if (Acp > unifRV){	      	   	    
                 acceptBreaks[k] += 1/((double)batchL);                
-                shifts[k] = shiftsP[k];                
-                for (j = 0; j < n*(LG+1); j++)
-	                X[j] = XP[j];
+                shifts[k] = shiftsP[k];                	            
 	            SPC = SPP; 
+	            //for (i = 0; i < n; i++){ 				
+                //    for (j = 0; j < nHar; j++){ 
+                //        X[startSin * n + j * n * 2 + i] = XP[startSin * n + j * n * 2 + i]; 
+                //        X[startSin * n + j * n * 2 + n + i] = XP[startSin * n + j * n * 2 + n + i];
+	            //    }     
+	            //} 
+	            memcpy(X + startSin * n, XP + startSin * n, sizeof(double) * nHar * n * 2);   	
+	            moveSinXvar(n, sinXvar, sinXvarMoved, nBreaks, breaks, shifts);
+	            //for (i = 0; i < n; i++){  
+				//	sinXvarMoved[i] = sinXvar[i];
+		        //  if (sinXvar[i] > breaks[0]){		    
+		        //      for (j = 0; j < nBreaks-1 && sinXvarMoved[i] == sinXvar[i]; j++) 
+    		    //          if (sinXvar[i] < breaks[j+1] && sinXvar[i] > breaks[j]) sinXvarMoved[i] += shifts[j];
+	            //      if (sinXvar[i] > breaks[nBreaks-1]) sinXvarMoved[i] += shifts[nBreaks-1];		    	        
+	            //  }     
+	            //}   	                            
     		}
     		else{
 				shiftsP[k] = shifts[k];	
-				for (j = 0; j < n*(LG+1); j++)
-	                XP[j] = X[j];			
 			}
+			
+            //for (i = (n-1); i < n; i++) 				
+            //    for (j = 0; j < nHar; j++) 
+            //        Rprintf("%s %i %i %i | | %f %f %f %f | %f %f %f %f %f %f | %f %f %f %f \n", "breaks: ", 
+            //        sw, i, j, 
+            //        shifts[0],shifts[1],
+            //        shiftsP[0],shiftsP[1],
+            //        sinXvar[i], 
+            //        sin(2 * (j+1) * M_PI * sinXvar[i] / period),
+            //        cos(2 * (j+1) * M_PI * sinXvar[i] / period),
+            //        sinXvarMoved[i],                     
+            //        sin(2 * (j+1) * M_PI * sinXvarMoved[i] / period),                    
+            //        cos(2 * (j+1) * M_PI * sinXvarMoved[i] / period),
+            //        X[startSin * n + j * n * 2 + i], 
+            //        X[startSin * n + j * n * 2 + n + i], 
+            //        XP[startSin * n + j * n * 2 + i],
+            //        XP[startSin * n + j * n * 2 + n + i]);
+		}
+		
+		// - 1d - Update period
+	    //Rprintf("%i %s %f\n",sw,"period",periodUnknown[0]);
+	    
+        if (periodUnknown[0] == 1){
+			if ((sw % batchL)==0 && WB > 0){ 
+	            if (acceptPeriod > 0.25 && tunePeriod[0] < perUL) tunePeriod[0] += MIN(0.01,1/sqrt(WB)) * tunePeriod[0]; 
+	            if (acceptPeriod <= 0.25 && tunePeriod[0] > perLL) tunePeriod[0] -= MIN(0.01,1/sqrt(WB)) * tunePeriod[0];
+	            acceptPeriod = 0.0;   
+	            if (tunePeriod[0] < perLL) tunePeriod[0] = perLL;
+	            if (tunePeriod[0] > perUL) tunePeriod[0] = perUL;
+            } 
+
+            periodP = period + gsl_ran_gaussian(r,sqrt(tunePeriod[0]));
+            while (periodP < periodRange[0] || periodP > periodRange[1]) 
+                periodP = period + gsl_ran_gaussian(r,sqrt(tunePeriod[0]));
+                
+			//if (amplitude > 1){
+			//    for (i = 0; i < n; i++){
+            //        sinWphsP[i] = 0;
+            //        for (k = 0; k < nHar; k++)
+            //            if (gammaHar[2*k]==1) 
+            //                sinWphsP[i] += betaHar[2*k] * sin(2 * (k+1) * M_PI * sinXvarMoved[i] / periodP) +
+            //                             betaHar[2*k+1] * cos(2 * (k+1) * M_PI * sinXvarMoved[i] / periodP);
+			//        for (j = 0; j < (amplitude+1); j++)
+			//            XP[startSin*n+j*n+i] = sinWphsP[i] * Dynamic[j*n+i];     			          				    
+		    //    }
+		    //}else updateSinXPer(n,sinXvarMoved,startSin,nHar,periodP,XP);
+		    
+		    updateSinXPer(n,sinXvarMoved,startSin,nHar,amplitude,periodP,XP,sinWphsP, gammaHar, betaHar, Dynamic);
+		    
+
+	        
+	        //SPC = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,X,LPV,&Q2); 
+	        SPP = SPcalc(n,1,tol,yTilde,gamma,Ngamma,LG,ceta,XP,LPV,&Q2); 
+	        Acp = exp((-SPP+SPC)/(2*sigma2)); 
+            unifRV = gsl_ran_flat(r,0.0,1.0);           
+	        
+	        //for (i = (n-1); i < n; i++) 				
+            //    for (j = 0; j < nHar; j++) 
+            //Rprintf("%s %i %i %i %i| %f %f | %f %f %f %f | %f %f %f | %f %f %f | %f %f %f %f \n", "period: ", 
+            //        sw, i, j, nHar, period, periodP, SPP, SPC, unifRV, Acp, 
+            //        sinXvar[i],                     
+            //        sin(2 * (j+1) * M_PI * sinXvar[i] / periodP),
+            //        cos(2 * (j+1) * M_PI * sinXvar[i] / periodP),  
+            //        sinXvarMoved[i],                     
+            //        sin(2 * (j+1) * M_PI * sinXvarMoved[i] / periodP),
+            //        cos(2 * (j+1) * M_PI * sinXvarMoved[i] / periodP),
+            //        X[startSin * n + j * n * 2 + i], 
+            //        X[startSin * n + j * n * 2 + n + i],
+            //        XP[startSin * n + j * n * 2 + i],
+            //        XP[startSin * n + j * n * 2 + n + i]);
+	        
+	        if (Acp > unifRV){	      	   	    
+                acceptPeriod += 1/((double)batchL);                
+                period = periodP;                
+	            SPC = SPP; 
+	            if (amplitude > 1){
+					//for (i = 0; i < n; i++){
+                        //sinWphs[i] = sinWphsP[i];
+                        //for (j = 0; j < (amplitude+1); j++)
+			            //    X[startSin*n+j*n+i] = XP[startSin*n+j*n+i];     
+					//}
+					memcpy(sinWphs, sinWphsP, sizeof(double) * n);
+					memcpy(X + startSin * n, XP + startSin * n, sizeof(double) * (amplitude + 1) * n);
+				}else{
+					memcpy(X + startSin * n, XP + startSin * n, sizeof(double) * nHar * n * 2);
+	                //for (i = 0; i < n; i++){ 				
+                    //    for (k = 0; k < nHar; k++){ 
+                    //        X[startSin * n + k * n * 2 + i] = XP[startSin * n + k * n * 2 + i]; 
+                    //        X[startSin * n + k * n * 2 + n + i] = XP[startSin * n + k * n * 2 + n + i];
+	                //    }     
+	                //}
+			    }
+    		}
+    		//for (i = (n-1); i < n; i++) 				
+            //    for (j = 0; j < nHar; j++) 
+            // Rprintf("%s %i %i %i %i || %f %f | %f %f %f %f | %f %f %f | %f %f %f | %f %f %f %f \n", "period: ", 
+            //        sw, i, j, nHar, period, periodP, SPP, SPC, unifRV, Acp, 
+            //        sinXvar[i],                     
+            //        sin(2 * (j+1) * M_PI * sinXvar[i] / periodP),
+            //        cos(2 * (j+1) * M_PI * sinXvar[i] / periodP),  
+            //        sinXvarMoved[i],                     
+            //        sin(2 * (j+1) * M_PI * sinXvarMoved[i] / periodP),
+            //        cos(2 * (j+1) * M_PI * sinXvarMoved[i] / periodP),
+            //        X[startSin * n + j * n * 2 + i], 
+            //        X[startSin * n + j * n * 2 + n + i],
+            //        XP[startSin * n + j * n * 2 + i],
+            //        XP[startSin * n + j * n * 2 + n + i]);
 		}
 	    
 	    // - 2 - Update delta and alpha
@@ -650,7 +826,6 @@ void mvrmC(int *seed1, char **WorkingDir,
         subVarEta = gsl_matrix_submatrix(varEta,0,0,Ngamma+1,Ngamma+1);
         
         //Rprintf("%s %i %i %i %f %f %i \n","before alpha: ",1,n,LG,tol,ceta,Ngamma);	                        
-
 
         postMeanVarEta(n,1,tol,gamma,Ngamma,LG,sigma2,ceta,LPV,X,yTilde,&subMeanEta.vector,&subVarEta.matrix,sw);
         
@@ -968,6 +1143,8 @@ void mvrmC(int *seed1, char **WorkingDir,
             for (k = 0; k < nBreaks; k++)
 	            fprintf(out_file11, "%f ", shifts[k]);
 	        fprintf(out_file11, "\n");
+	        
+	        fprintf(out_file12, "%f \n", period);
 
         }
         // If sw needs to be printed
@@ -984,7 +1161,7 @@ void mvrmC(int *seed1, char **WorkingDir,
     fclose(out_file1); fclose(out_file2); fclose(out_file3);
     fclose(out_file4); fclose(out_file5); fclose(out_file6);
     fclose(out_file7); fclose(out_file8); fclose(out_file9); 
-    fclose(out_file10); fclose(out_file11);
+    fclose(out_file10); fclose(out_file11); fclose(out_file12);
 
     //Free up gsl matrices
     gsl_matrix_free(varEta); gsl_vector_free(meanEta); gsl_matrix_free(D); gsl_vector_free(alphaHat); 

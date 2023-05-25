@@ -1543,11 +1543,12 @@ logPropDRC,logPropDRP,priorLogR,detR,SPP,SPC,Acp);
                     if (p == 1) val = gsl_sf_gamma(params[2]+0.5)/pow(params[2]+params[0]*params[0]*params[1]/2,params[2]+0.5);
                     dev0 -= 2*log(val);		
    		            dev[0] += dev0;    	    
-                    if (dev0 > 80000) fprintf(out_file17,"%i %i | %f %f %f %f %f %f %f | %f %f %f \n", 
-                                                          sw,i,
-                                                          params[0],params[1],params[2],params[3],params[4],params[5],params[6],                                                                             
-                                                          val,log(val),dev0);
-                    //Rprintf("%i %i %i\n",sw,i,j);                    
+                    //if (dev0 > 80000) fprintf(out_file17,"%i %i | %f %f %f %f %f %f %f | %f %f %f \n", 
+                    //                                      sw,i,
+                    //                                      params[0],params[1],params[2],params[3],params[4],params[5],params[6],                                                                             
+                    //                                      val,log(val),dev0);
+                    //Rprintf("%i %i %i\n",sw,i,j); 
+                    fprintf(out_file6, "%f \n", dev0);                   
 				}
 			}
 		    
@@ -1603,9 +1604,7 @@ logPropDRC,logPropDRP,priorLogR,detR,SPP,SPC,Acp);
                     if ((j==0) || (j>0 && gamma[k][j-1]==1)) fprintf(out_file11, "%f ", eta[move++]);
                     else fprintf(out_file11, "%f ", 0.0);
             }
-            fprintf (out_file11, "\n");
-
-            fprintf(out_file6, "%f \n", dev0);
+            fprintf (out_file11, "\n");            
             
             for (k = 0; k < p; k++)
                 for (j = 0; j < LC; j++)

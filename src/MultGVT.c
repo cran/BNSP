@@ -1694,6 +1694,7 @@ Acp,logAcp,logPropDRP,logPropDRC,priorLogR,detR,SPP,SPC,tuneR[0]);
                     if (p == 1) val = gsl_sf_gamma(params[2]+0.5)/pow(params[2]+params[0]*params[0]*params[1]/2,params[2]+0.5);
                     dev0 -= 2*log(val);		    	    
 		            dev[0] += dev0;
+		            fprintf(out_file14, "%f \n", dev0);
 			    }
 			}	        	     
 	        
@@ -1772,9 +1773,7 @@ Acp,logAcp,logPropDRP,logPropDRC,priorLogR,detR,SPP,SPC,tuneR[0]);
             //    for (h1 = 0; h1 < H; h1++)
             //        fprintf(out_file14,"%f ",pdh[h1][i]);                                    
             //   fprintf(out_file14, "\n");
-			//}
-			
-			fprintf(out_file14, "%f \n", dev0);
+			//}					
 			
 			for (i = 0; i < p; i++)
                 fprintf(out_file15, "%i ", compAllocV[i]);

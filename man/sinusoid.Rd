@@ -6,16 +6,18 @@
 \description{Function used to define sinusoidal curves in the mean formula of function \code{mvrm}. 
 The function is used internally to construct design matrices.}
 
-\usage{sinusoid(..., harmonics = 1, amplitude = 1, period = 1, knots = NULL, breaks = NULL)}
+\usage{sinusoid(..., harmonics = 1, amplitude = 1, period = 0, periodRange = NULL, 
+breaks = NULL, knots = NULL)}
 
 \arguments{
 \item{...}{a single covariate that the sinusoid term is a function of.} 
 \item{harmonics}{an integer value that denotes the number of sins and cosines to be utilized in the representation of a sinusoidal curve.}
-\item{amplitude}{a positive integer. If set equal to one, it denotes a fixed amplitude. Otherwise, if set to an integer that is greater than one, 
-it denotes the number of knots to be utilized in the representation of the time-varying amplitude.}
-\item{period}{the period of the sinusoidal wave.}
-\item{knots}{the knots to be utilized in the representation of the time-varying amplitude. Relevant only when \code{amplitude} is greater than 1.}
+\item{amplitude}{a positive integer. If set equal to one, it denotes a fixed amplitude. Otherwise, if set to an integer that is greater than one, it denotes the number of knots to be utilized in the representation of the time-varying amplitude.}
+\item{period}{the period of the sinusoidal wave. Values less than or equal to zero signify that the period is unknown. 
+Positive values signify that the period is known and fixed.}
+\item{periodRange}{a vector of length two with the range of possible period values. It is required when the period is unknown.}
 \item{breaks}{the growth break points.}
+\item{knots}{the knots to be utilized in the representation of the time-varying amplitude. Relevant only when \code{amplitude} is greater than 1.}
 }
 
 \details{Use this function within calls to function \code{mvrm} to specify sinusoidal waves in the mean function

@@ -520,3 +520,22 @@ void rvMF(unsigned long int s, int m, double lambda, double *mode, double *out)
 	out[1] = -mode[0] * y[0] + mode[1] * y[1];
 	gsl_rng_free(r);
 }
+
+//Proposed values for shifts/breaks
+void proposeShifts(unsigned long int s, int k, double period, int nBreaks, double *shifts, 
+                   double *shiftsP, double *tuneBreaks)
+{
+    gsl_rng *r = gsl_rng_alloc(gsl_rng_mt19937);
+    gsl_rng_set(r,s);
+    double temp1, temp2; 
+    if (k == 0) 
+        temp1 = 0;
+    else temp1 = *(shiftsP + k - 1); //shiftsP[k-1];
+    if (k == nBreaks - 1) 
+        temp2 = temp1 + period;
+    else temp2 = MIN(temp1 + period, *(shiftsP + k + 1));
+    *(shiftsP + k) = *(shifts + k) + gsl_ran_gaussian(r,sqrt(*(tuneBreaks + k)));    
+    while (*(shiftsP + k) <= temp1 || *(shiftsP + k) >= temp2)
+        *(shiftsP  + k) = *(shifts + k) + gsl_ran_gaussian(r,sqrt(*(tuneBreaks + k)));
+    gsl_rng_free(r);
+}

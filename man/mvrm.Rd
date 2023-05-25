@@ -16,7 +16,7 @@ pi.sigmaPrior = "Beta(1, 1)", c.psiPrior = "HN(1)", phiPrior = "HN(2)",
 pi.omegaPrior = "Beta(1, 1)", mu.RPrior = "N(0, 1)", sigma.RPrior = "HN(1)", 
 corr.Model = c("common", nClust = 1), DP.concPrior = "Gamma(5, 2)", 
 breaksPrior = "SBeta(1, 2)", tuneCbeta, tuneCalpha, tuneAlpha, tuneSigma2, 
-tuneCpsi, tunePsi, tunePhi, tuneR, tuneSigma2R, tuneHar, tuneBreaks, tau, 
+tuneCpsi, tunePsi, tunePhi, tuneR, tuneSigma2R, tuneHar, tuneBreaks, tunePeriod, tau, 
 FT = 1, compDeviance = FALSE, ...) }
 
 \arguments{
@@ -131,6 +131,9 @@ the harmonics. Defaults at 100.}
 
 \item{tuneBreaks}{Starting value of the tuning parameter for sampling the shift parameters associated with 
 growth breaks. Defaults at 0.01 times the period of the sin wave.}
+
+\item{tunePeriod}{Starting value of the tuning parameter for sampling the period parameter of the sin curve. 
+Defaults to 0.01.}
 
 \item{tau}{The \eqn{tau} of the shadow prior. Defaults at 0.01.}
 

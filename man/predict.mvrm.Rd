@@ -9,7 +9,7 @@ Provides predictions and posterior credible/prediction intervals for given featu
 
 \usage{
 \method{predict}{mvrm}(object, newdata, interval = c("none", "credible", "prediction"), 
-                       level = 0.95, nSamples = 100, ind.preds=FALSE, ...)
+                       level = 0.95, ind.preds=FALSE, ...)
 }
 
 \arguments{
@@ -17,10 +17,8 @@ Provides predictions and posterior credible/prediction intervals for given featu
 \item{newdata}{data frame of feature vectors to obtain predictions for. If newdata is missing, the function will use
 the feature vectors in the data frame used to fit the mvrm object.}
 \item{interval}{type of interval calculation.}
-\item{level}{tolerance level.}
-\item{nSamples}{number of samples to obtain from the posterior predictive distribution (for each sweep of the MCMC). 
-Only relevant for "prediction intervals".}
-\item{ind.preds}{Binary indicator. If set to TRUE the function returnsadditionally the predictions per individual MCMC sample.}
+\item{level}{the level of the credible interval.}
+\item{ind.preds}{Binary indicator. If set to TRUE the function returns additionally the predictions per individual MCMC sample.}
 \item{...}{other arguments.}
 }
 

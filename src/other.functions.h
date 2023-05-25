@@ -2011,15 +2011,45 @@ void print_vector(gsl_vector *V)
     Rprintf("\n");
 }
 
+//update X matrix given beta harmonics (for amplitude > 1)
+void updateSinXAmp(int n, int j, double *sinWphs, double *sinWphsP, double *betaHar, double *betaHarP,
+                   double *sinXvarMoved, double period, int amplitude, int startSin, 
+                   double *X, double *Dynamic)
+{
+    int i, k;
+    for (i = 0; i < n; i++){
+        sinWphsP[i] = sinWphs[i] +
+                      (betaHarP[2*j] - betaHar[2*j]) * sin(2 * (j+1) * M_PI * sinXvarMoved[i] / period) +
+                      (betaHarP[2*j+1]- betaHar[2*j+1]) * cos(2 * (j+1) * M_PI * sinXvarMoved[i] / period);                                            
+		for (k = 0; k < (amplitude+1); k++)
+		    X[startSin*n+k*n+i] = sinWphsP[i] * Dynamic[k*n+i];     
+    }
+}
 
-void updateSinX(int n, double *SinXvar, int startSin, int harmonics, double period, int nBreaks, 
+//Move sinXvar after breaks are updates
+void moveSinXvar(int n, double *sinXvar, double *sinXvarMoved, int nBreaks, double *breaks, 
+                 double *shifts){
+    int i, j;
+    for (i = 0; i < n; i++){ 
+	    *(sinXvarMoved + i) = *(sinXvar + i);
+		if (*(sinXvar + i) > *(breaks + 0)){		    
+		    for (j = 0; j < nBreaks-1 && (*(sinXvarMoved  + i) == *(sinXvar + i)); j++) 
+    		    if (*(sinXvar + i) < *(breaks + j + 1) && *(sinXvar + i) > *(breaks + j)) 
+    		        *(sinXvarMoved + i) += *(shifts + j);
+	        if (*(sinXvar + i) > *(breaks + nBreaks - 1)) *(sinXvarMoved + i) += *(shifts + nBreaks - 1);		    	        
+	    }     
+	}   	                 
+}
+
+//update X matrix given Breaks
+void updateSinXBr(int n, double *SinXvar, int startSin, int harmonics, double period, int nBreaks, 
                 double *breaks, double *locationShifts, double *X)
 {
     int i, j, k;        
     double newSinXvar; 
     for (i = 0; i < n; i++){ 				
-		newSinXvar = SinXvar[i];	
-		if (newSinXvar > breaks[0]){		    
+		newSinXvar = SinXvar[i];			
+		if (SinXvar[i] > breaks[0]){ 
 		    for (j = 0; j < nBreaks-1 && newSinXvar == SinXvar[i]; j++) 
     		    if (SinXvar[i] < breaks[j+1] && SinXvar[i] > breaks[j]) newSinXvar += locationShifts[j];
 	        if (SinXvar[i] > breaks[nBreaks-1]) newSinXvar += locationShifts[nBreaks-1];		    	        
@@ -2027,17 +2057,44 @@ void updateSinX(int n, double *SinXvar, int startSin, int harmonics, double peri
                 X[startSin * n + k * n * 2 + i] = sin(2 * (k+1) * M_PI * newSinXvar / period);            
                 X[startSin * n + k * n * 2 + n + i] = cos(2 * (k+1) * M_PI * newSinXvar / period);
 	        }     
-	    }   
+	    }   	    
 	}                        
 }
 
+//void updateSinXPer(int n, double *SinXvar, int startSin, int harmonics, double period, double *X)
+//{
+//    int i, k;        
+//    for (i = 0; i < n; i++){ 				
+//        for (k = 0; k < harmonics; k++){ 
+//            X[startSin * n + k * n * 2 + i] = sin(2 * (k+1) * M_PI * SinXvar[i] / period);            
+//            X[startSin * n + k * n * 2 + n + i] = cos(2 * (k+1) * M_PI * SinXvar[i] / period);
+//	    }     
+//	}   	    
+//}
 
-
-
-
-
-
-
-
-
-
+//update X matrix given Period
+void updateSinXPer(int n, double *SinXvar, int startSin, int harmonics, int amplitude, 
+                   double period, double *X, double *sinWphsP, int *gammaHar, double * betaHar,
+                   double *Dynamic)
+{    
+    int i, k;        
+    if (amplitude > 1){
+        for (i = 0; i < n; i++){
+            sinWphsP[i] = 0;
+            for (k = 0; k < harmonics; k++)
+                if (gammaHar[2*k]==1) 
+                    sinWphsP[i] += betaHar[2*k] * sin(2 * (k+1) * M_PI * SinXvar[i] / period) +
+                                   betaHar[2*k+1] * cos(2 * (k+1) * M_PI * SinXvar[i] / period);
+			for (k = 0; k < (amplitude+1); k++)
+			    X[startSin*n+k*n+i] = sinWphsP[i] * Dynamic[k*n+i];     			          				    
+		}
+	}
+    else{
+        for (i = 0; i < n; i++){ 				
+            for (k = 0; k < harmonics; k++){ 
+                X[startSin * n + k * n * 2 + i] = sin(2 * (k+1) * M_PI * SinXvar[i] / period);            
+                X[startSin * n + k * n * 2 + n + i] = cos(2 * (k+1) * M_PI * SinXvar[i] / period);
+	        }     
+	    }   	    
+	}
+}

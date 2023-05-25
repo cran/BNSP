@@ -128,41 +128,52 @@ label.count <- function(term,labels,counts,model){
     return(c(int.label,count))
 }	
 
-plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, SCALE,                          
+plotGeneric <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, SCALE,                          
                          response, intercept, grid, 
                          centre, quantiles, static, contour, centreEffects, plotOptions, 
                          int.label, count, vars, label, is.D, formula.term, which.Spec, assign,
                          knots, storeMeanVector, storeIndicator, data, plotEmptyCluster){
     p<-mvrmObj$p    
+    period0<-0
     for (i in 1:length(formula.term)){
         if (!grepl("knots",formula.term[i]) && which.Spec[i] > 0){
     	    formula.term[i]<-substr(formula.term[i],1,nchar(formula.term[i])-1)
             formula.term[i]<-paste(formula.term[i],", knots=knots[[",which.Spec[i],"]])",sep="")
+	    }
+	    if (grepl("period = 0",formula.term[i])){
+		   period0<-1		    	
+		   calc.p <- mean(mvrm2mcmc(mvrmObj,"period"))
+    	   formula.term[i]<-substr(formula.term[i],1,nchar(formula.term[i])-1)
+    	   formula.term[i]<-sub(", period = 0", "", formula.term[i])
+           formula.term[i]<-paste(formula.term[i],", period = ", calc.p,")",sep="")
 	    }	
-    }
+    }    
     V<-NULL
+    Dynamic<-NULL
     for (k in 1:length(int.label)) V<-c(V,which(assign %in% int.label[k]))
 	if (STDEV) V <- V - 1
     if ((intercept || sum(is.D)) && MEAN) V<-c(1,V)    
     indeces<-V
+    if (MEAN && !(1 %in% indeces)) indeces<-c(1,indeces)
     if (STDEV) indeces<-c(1,indeces+1)
     if (count==1){
 	    if (!is.D){
+			max.shift <- 0
+			if (mvrmObj$nBreaks > 0) max.shift <- max(mvrm2mcmc(mvrmObj,"breaks"))
 	        min1<-min(with(data,eval(as.name(vars[1]))))
-		    max1<-max(with(data,eval(as.name(vars[1]))))
+		    max1<-max(with(data,eval(as.name(vars[1])))) + max.shift
 		    newR1<-seq(min1,max1,length.out=grid)
             newData<-data.frame(newR1)
             colnames(newData)<-vars
             if (sum(!is.na(formula.term))){
                 dm<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=knots,
-                       meanVector=storeMeanVector[indeces],indicator=storeIndicator[indeces],centre=TRUE)
+                       meanVector=storeMeanVector[indeces],indicator=storeIndicator[indeces],centre=TRUE)                
                 Ds<-dm$X
                 Dynamic<-dm$Dynamic
                 amplitude<-dm$DSP[1]
-                startSin<-dm$DSP[2]
                 harmonics<-dm$DSP[3]
-                #print(dim(Ds))
-                #print(startSin)
+                startSin<-dm$DSP[2]
+                ifelse(intercept, startSin <- startSin, startSin <- startSin - 1)
 		    }            
             if (!sum(!is.na(formula.term))) Ds<-matrix(1,1,1)
             if (((!1%in%V)||STDEV) && sum(!is.na(formula.term))) Ds<-Ds[,-1]
@@ -224,11 +235,15 @@ plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, SCALE,
 			etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.beta.txt",sep=""))
 			how.many <- p*(mvrmObj$LG+1)
 			multiplier <- mvrmObj$LG+1
-			#print(dim(Dynamic))
 			if (!is.null(Dynamic)){
 				harmonicsFN <- file.path(paste(mvrmObj$DIR,"BNSP.Hbeta.txt",sep=""))
 			    how.many2 <- 2*harmonics 
-			} 
+			}			
+			if (period0==1){
+                periodFN <- file.path(paste(mvrmObj$DIR,"BNSP.period.txt",sep=""))
+                periodFile<-file(periodFN,open="r")
+                per.val <- calc.p
+			}			 
 		}else if (CORM==1){
 		    if (mvrmObj$H==1) etaFN <- file.path(paste(mvrmObj$DIR,"BNSP.eta.txt",sep=""))
 		    if (mvrmObj$H > 1){
@@ -255,34 +270,39 @@ plot.generic <- function(mvrmObj, MEAN, STDEV, CORM, CORS, DEP, SCALE,
 	    for (i in 1:mvrmObj$nSamples){
             eta<-scan(eFile,what=numeric(),n=how.many,quiet=TRUE)
             if (!is.null(Dynamic)){
-			    etaHar<-scan(eFile2,what=numeric(),n=how.many2,quiet=TRUE)						            
-			    #ifelse(sum(Ds[,1] == 1) == dim(Ds)[1], addIntercept <- 1, addIntercept <- 0)
-			    #print(addIntercept)
-			    #Ds[,-c(1:startSin)] <- 0
-			    Ds[,c((startSin+1):(startSin+amplitude+1))] <- 0
-			    for (l in 1:how.many2)
-			        Ds[,c((startSin+1):(startSin+amplitude+1))] <- Ds[,c((startSin+1):(startSin+amplitude+1))] + etaHar[l] * Dynamic[,(1+(amplitude+1)*(l-1)):((amplitude+1)*l)]
-			    #if (addIntercept) Ds <- cbind(1,Ds)
-			    #print(Ds)
-			    #print(dim(Ds))
-			}
-			#print(dim(Ds))
-			
-			#print("a")
-			#print(dim(Ds))
-			#print(length(c(eta[V+(response-1)*multiplier])))
-			
-            fit[i,,] <- matrix(c(eta[V+(response-1)*multiplier]),byrow=TRUE,ncol=dim(Ds)[2]) %*% t(as.matrix(Ds))            
-            
-            #print("b")
-            #if (i==1) {print(fit[i,,]);print(matrix(c(eta[V+(response-1)*multiplier]),nrow=1));print(t(as.matrix(Ds)))}
-            #fit[i,,]<-as.matrix(Ds)%*%matrix(c(eta[V+(response-1)*multiplier]))
-            #meanReg[i,,] <- eta[i,,]%*%t(uXc)            
+    	        etaHar<-scan(eFile2,what=numeric(),n=how.many2,quiet=TRUE)	
+		        ifelse(period0==1,
+	        	       per.val<-scan(periodFile,what=numeric(),n=1,quiet=TRUE),
+	        	       per.val<-mvrmObj$period)
+		        sinWphs <- 0 * newR1
+		        for (l in 1:harmonics)
+		            sinWphs <- sinWphs + 
+		                       etaHar[2*l-1] * sin(2 * l * pi * newR1 / per.val) + 
+		                       etaHar[2*l] * cos(2 * l * pi * newR1 / per.val)
+		        Ds[,c((startSin+1):(startSin+amplitude+1))] <- sweep(Dynamic, MARGIN=1, sinWphs, `*`)
+			}            
+		    if (period0==1 && is.null(Dynamic)){
+		        per.val.r <- per.val
+			    per.val<-scan(periodFile,what=numeric(),n=1,quiet=TRUE)			
+			    #for (k in 1:length(formula.term)){
+                #    formula.term[k]<-substr(formula.term[k],1,nchar(formula.term[k])-1)
+                #    formula.term[k]<-sub(paste(", period = ", per.val.r,sep=""), "", formula.term[k])
+                #    formula.term[k]<-paste(formula.term[k],", period = ", per.val,")",sep="")	
+			    #}
+                #dm<-DM(formula=reformulate(formula.term),data=newData,n=NROW(newData),knots=knots,
+                #       meanVector=storeMeanVector[indeces],indicator=storeIndicator[indeces],centre=TRUE)
+                #Ds<-dm$X
+                for (l in 1:harmonics)
+                    Ds[,startSin+2*l-1] <- sin(2 * l * pi * newR1 / per.val)
+                    Ds[,startSin+2*l] <- cos(2 * l * pi * newR1 / per.val)
+		    }
+		    fit[i,,] <- matrix(c(eta[V+(response-1)*multiplier]),byrow=TRUE,ncol=dim(as.matrix(Ds))[2]) %*% t(as.matrix(Ds))
             if (CORM && mvrmObj$FT==1) fit[i,,] <- tanh(fit[i,,])                        
             if (centreEffects) fit[i,,]<-fit[i,,]-mean(fit[i,,])
 	    }
 	    close(eFile)
 	    if (!is.null(Dynamic)) close(eFile2)
+	    if (period0==1) close(periodFile)
     }
 	if (STDEV){	
 	    fit<-array(0,dim=c(mvrmObj$nSamples,1,NROW(Ds)))
@@ -568,15 +588,10 @@ plot.mvrm <- function(x, model, term, response, response2,
 			    if (!sum(is.DArg)) is.DArg <- 0
 			    which.SpecArg <- unlist(x$which.SpecX[int.labelX])			    
 			    if ((length(unique(varsArg)) > 1) && (sum(!is.DArg) > 1)) stop("can't combine more than 2 continuous terms; consider interaction terms")	
-			    #print(c(int.labelX))
-			    #print(c(countX))
-			    #print(c(varsArg))
-			    #print(c(is.DArg))
-			    #print(c(which.SpecArg))
 			}            
             if (countX==1) contour <- 1
-            plotOptions2 <- list(ggtitle(paste("mean of", x$varsY[r])),plotOptions)            
-            my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=1, STDEV=0, CORM=0, CORS=0, DEP=0, SCALE=0,                                               
+            plotOptions2 <- list(ggtitle(paste("mean of", x$varsY[r])),plotOptions)                     
+            my_plots[[count]] <- plotGeneric(mvrmObj=x, MEAN=1, STDEV=0, CORM=0, CORS=0, DEP=0, SCALE=0,                                               
                                               response=r, intercept=intercept, grid=grid,
                                               centre=centre, quantiles=quantiles, static=static, 
                                               contour=contour,
@@ -615,7 +630,7 @@ plot.mvrm <- function(x, model, term, response, response2,
             if (countZ==1) contour <- 1            
             plotOptions2 <- list(ggtitle(paste("stdev of", x$varsY[[r]])),plotOptions)
             if (x$LUT > 1) plotOptions2 <- list(ggtitle(paste("innov stdev of", x$varsY[[r]])),plotOptions)            
-            my_plots[[count]] <- plot.generic(x, MEAN=0, STDEV=1, CORM=0, CORS=0, DEP=0, SCALE=0,
+            my_plots[[count]] <- plotGeneric(mvrmObj=x, MEAN=0, STDEV=1, CORM=0, CORS=0, DEP=0, SCALE=0,
                                               response=r, intercept=intercept, grid=grid,
                                               centre=centre, quantiles=quantiles, static=static, 
                                               contour=contour,
@@ -653,7 +668,7 @@ plot.mvrm <- function(x, model, term, response, response2,
             if (combine && (!sum(is.DArg)==1)) stop("can only combine a continuous with a discrete term")                       
             if (countW==1) contour <- 1
             plotOptions2 <- list(ggtitle(paste("scale of", x$varsY[[r]])),plotOptions)
-            my_plots[[count]] <- plot.generic(x, MEAN=0, STDEV=1, CORM=0, CORS=0, DEP=0, SCALE = 1,
+            my_plots[[count]] <- plotGeneric(mvrmObj=x, MEAN=0, STDEV=1, CORM=0, CORS=0, DEP=0, SCALE = 1,
                                               response=r, intercept=intercept, grid=grid,
                                               centre=centre, quantiles=quantiles, static=static, 
                                               contour=contour,
@@ -695,7 +710,7 @@ plot.mvrm <- function(x, model, term, response, response2,
                     if (combine && (!sum(is.DArg)==1)) stop("can only combine a continuous with a discrete term")                                 
                     if (countC==1) contour <- 1
                     plotOptions2 <- list(ggtitle(paste("autoreg", x$varsY[r1], x$varsY[r2])), plotOptions)                                
-                    my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=1, STDEV=0, CORM=0, CORS=0, DEP=1, SCALE=0, 
+                    my_plots[[count]] <- plotGeneric(mvrmObj=x, MEAN=1, STDEV=0, CORM=0, CORS=0, DEP=1, SCALE=0, 
                                                       response=Pair, intercept=intercept, grid=grid,
                                                       centre=centre, quantiles=quantiles, static=static, 
                                                       contour=contour,
@@ -724,7 +739,7 @@ plot.mvrm <- function(x, model, term, response, response2,
             if (length(x$is.Dxc)) is.D <- x$is.Dxc[[1]]
             vars <- x$varTime
             if (length(x$varsXc)) vars <- x$varsXc[[1]]
-            my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=1, STDEV=0, CORM=1, CORS=0, DEP=0, SCALE=0,
+            my_plots[[count]] <- plotGeneric(mvrmObj=x, MEAN=1, STDEV=0, CORM=1, CORS=0, DEP=0, SCALE=0,
                                               response=1, intercept=intercept, 
                                               grid=grid, centre=centre, quantiles=quantiles, static=static, contour=contour,
                                               centreEffects=centreEffects, plotOptions=plotOptions2,
@@ -751,7 +766,7 @@ plot.mvrm <- function(x, model, term, response, response2,
             if (length(x$is.Dzc)) is.D <- x$is.Dzc[[1]]
             vars <- x$varTime
             if (length(x$varsZc)) vars <- x$varsXc[[1]]
-            my_plots[[count]] <- plot.generic(mvrmObj=x, MEAN=0, STDEV=1, CORM=0, CORS=1, DEP=0, SCALE=0, 
+            my_plots[[count]] <- plotGeneric(mvrmObj=x, MEAN=0, STDEV=1, CORM=0, CORS=1, DEP=0, SCALE=0, 
                                               response=1, intercept=intercept, 
                                               grid=grid, centre=centre, quantiles=quantiles, static=static, contour=contour,
                                               centreEffects=centreEffects, plotOptions=plotOptions2,

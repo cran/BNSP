@@ -13,6 +13,7 @@ void setBaseZBSg(int T, int d, int *gamma, int LG, double *AllBases, double *Bas
         for (j = 0; j < (LG+1); j++){
             if (j==0) BaseZBSg[move++] = AllBases[j*T*d+i];
             if (j>0 && gamma[j-1]==1) BaseZBSg[move++] = AllBases[j*T*d+i];
+            //if (i==(T*d-1)) Rprintf("%i %i %i %i %i %f \n",i,j,gamma[j-1],T,d,AllBases[j*T*d+i]);
 		}
 	}
 }
@@ -206,6 +207,7 @@ void cSqRes(int T, int d, int *gamma, int Ngamma, int LG, double *AllBases, gsl_
     gsl_vector *thetaHat = gsl_vector_alloc(T*d);
     gsl_matrix_view Z;
 	Z = gsl_matrix_view_array(BaseZBSg,T*d,Ngamma+1);
+	//print_matrix(&Z.matrix);
     gsl_blas_dgemv(CblasNoTrans,1.0,&Z.matrix,MeanEta,0.0,thetaHat);
     for (i = 0; i < (T*d); i++){
         sqRes[i] = pow(theta[i] - thetaHat->data[i*thetaHat->stride],2);
